@@ -41,6 +41,7 @@ Dialog {
     property string pendingSemanticImportPreference: appModules.semanticGeneration.importPreference
     property string pendingAcceleratorBackend: appModules.project.acceleratorBackend
     property string pendingLockedNodeMaskAction: appModules.editorBehavior.lockedNodeMaskAction
+    property bool pendingSkipDuplicateImports: appModules.importBehavior.skipDuplicateImports
     property int requestedCategory: 0
     // Category indices used by callers outside this dialog.
     readonly property int updatesCategory: 6
@@ -99,6 +100,7 @@ Dialog {
         pendingSemanticImportPreference = appModules.semanticGeneration.importPreference
         pendingAcceleratorBackend = appModules.project.acceleratorBackend
         pendingLockedNodeMaskAction = appModules.editorBehavior.lockedNodeMaskAction
+        pendingSkipDuplicateImports = appModules.importBehavior.skipDuplicateImports
         cachePanel.reloadPending()
     }
 
@@ -195,6 +197,7 @@ Dialog {
         if (appModules.editorBehavior.lockedNodeMaskAction !== pendingLockedNodeMaskAction) {
             appModules.editorBehavior.setLockedNodeMaskAction(pendingLockedNodeMaskAction)
         }
+        appModules.importBehavior.SetSkipDuplicateImports(pendingSkipDuplicateImports)
         cachePanel.applyPending()
         if (appModules.semanticGeneration.importPreference !== pendingSemanticImportPreference) {
             appModules.semanticGeneration.SetImportPreference(pendingSemanticImportPreference)
@@ -626,6 +629,39 @@ Dialog {
                             ColumnLayout {
                                 width: defaultBehaviorScroll.availableWidth
                                 spacing: 18
+
+                                SettingsSection {
+                                    Layout.fillWidth: true
+                                    Layout.topMargin: appTheme.spaceXl
+                                    Layout.leftMargin: 34
+                                    Layout.rightMargin: 34
+                                    title: qsTr("Import")
+                                    textColor: dialog.textColor
+                                    mutedTextColor: dialog.mutedTextColor
+                                    dividerColor: dialog.dividerColor
+
+                                    ColumnLayout {
+                                        Layout.fillWidth: true
+                                        spacing: appTheme.spaceSm
+                                        ThemeCheckBox {
+                                            objectName: "settingsSkipDuplicateImports"
+                                            checked: dialog.pendingSkipDuplicateImports
+                                            alwaysPrimaryText: true
+                                            text: qsTr("Skip duplicate imports")
+                                            onToggled: function(checked) {
+                                                dialog.pendingSkipDuplicateImports = checked
+                                            }
+                                        }
+                                        Label {
+                                            Layout.fillWidth: true
+                                            text: qsTr("Skips repeated imports from the same source path. Files in different folders remain separate.")
+                                            wrapMode: Text.Wrap
+                                            color: dialog.mutedTextColor
+                                            font.family: appTheme.uiFontFamily
+                                            font.pixelSize: appTheme.fontSizeBody
+                                        }
+                                    }
+                                }
 
                                 SettingsSection {
                                     Layout.fillWidth: true

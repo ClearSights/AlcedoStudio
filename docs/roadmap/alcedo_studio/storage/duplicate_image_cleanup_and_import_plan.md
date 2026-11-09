@@ -4,10 +4,11 @@ Created: 2026-11-08
 
 Updated: 2026-11-09
 
-Status: both product features are planned. Product implementation has not started.
-The separate one-time cleanup of Photos is complete.
+Status: Import Duplicate Skipping I1-I5 is implemented and verified on Windows.
+Project Maintenance remains planned. The separate one-time cleanup of Photos is complete.
 
-Source audit revision: `7bcac45d`.
+Planning source audit revision: `7bcac45d`. Import implementation started from `d83f09c0`
+on branch `de_duplicate`; see section 7 and the detailed phase completion records.
 
 This document coordinates two independent feature plans:
 
@@ -39,7 +40,8 @@ an import-time value. Hashing a legacy file later cannot reconstruct its histori
 
 The option is enabled by default. Put its visible control at
 **Settings > Default Behavior > Import > Skip duplicate imports**.
-Use the Settings dialog's pending-value, Apply, and Cancel behavior.
+Use the Settings dialog's pending-value, apply, and dismiss behavior. The current dialog labels
+apply as Done and uses Escape to discard pending edits. Settings is also reachable from Welcome.
 Read the preference when a job starts. A later setting change affects subsequent jobs.
 An explicit automation option overrides the preference for that request.
 
@@ -84,19 +86,19 @@ Do not add a generation, version counter, or a new stale-result protocol.
 
 | Feature | Responsibilities | Detailed plan | Status |
 | --- | --- | --- | --- |
-| Import duplicate skipping | ImportService owns admission, source identity, and checked finalization. Import preferences own the setting. Existing UI and automation adapters pass request options. | [Import phases](import_duplicate_skipping_plan.md) | planned |
+| Import duplicate skipping | ImportService owns admission, source identity, and checked finalization. Import preferences own the setting. Existing UI and automation adapters pass request options. | [Import phases](import_duplicate_skipping_plan.md) | implemented; Windows verified |
 | Project Maintenance | The host-owned service and controller own scan, findings, selection, backup, checked removal, and publication. The controller coordinates project activation. Storage and history owners perform focused operations. | [Maintenance phases](project_maintenance_plan.md) | planned |
 
 Neither feature requires the other feature's UI or database schema to ship.
 Maintenance does not need an import fingerprint table to identify repeated full paths.
 Import skipping does not need a maintenance scan or removal workflow.
 
-Share one proposed pure path utility:
+Import now provides the shared pure path utility:
 
 - Header: `alcedo_studio/src/include/utils/file/source_image_path.hpp`.
 - Implementation: `alcedo_studio/src/utils/file/source_image_path.cpp`.
 - Operation: `NormalizeSourceImagePath(const image_path_t&)` returns the full-path comparison value.
-- Test target: proposed `SourceImagePathTest`.
+- Test target: `SourceImagePathTest`.
 
 The utility accepts an absolute path. It normalizes equivalent separator and dot spellings.
 Windows comparison follows the agreed path case rules. macOS comparison preserves case in this
@@ -104,7 +106,7 @@ feature. The pure helper performs no filesystem case probing. Do not resolve sym
 identity to merge different user-visible paths. Never discard folder components or compare only
 a basename.
 
-The first feature implemented introduces this utility and its tests. The other feature reuses them.
+Project Maintenance reuses this implementation and its tests.
 This shared prerequisite does not create a dependency on either complete feature.
 Do not duplicate the normalizer in QML, import, storage, or the maintenance controller.
 
@@ -114,11 +116,11 @@ The detailed feature documents are authoritative for phase work and completion e
 
 | Feature phase | Result | Expected changed lines | Status |
 | --- | --- | ---: | --- |
-| I1 | Shared full-path identity and source fingerprint persistence | 1,100-1,700 | planned |
-| I2 | Checked finalization owned by ImportService | 1,000-1,700 | planned |
-| I3 | Path, size, and SHA-256 duplicate admission with correct counts | 1,100-1,900 | planned |
-| I4 | Settings preference and UI/automation option propagation | 850-1,500 | planned |
-| I5 | Import integration, failure, and resource qualification | 650-1,100 | planned |
+| I1 | Shared full-path identity and source fingerprint persistence | 1,100-1,700 | complete on Windows |
+| I2 | Checked finalization owned by ImportService | 1,000-1,700 | complete |
+| I3 | Path, size, and SHA-256 duplicate admission with correct counts | 1,100-1,900 | complete on Windows |
+| I4 | Settings preference and UI/automation option propagation | 850-1,500 | complete |
+| I5 | Import integration, failure, and resource qualification | 650-1,100 | complete on Windows; platform limits recorded |
 | PM1 | Read-only full-path scan and preservation evidence | 900-1,500 | planned |
 | PM2 | Review model, background tasks, selection, and sidebar launcher | 1,100-1,800 | planned |
 | PM3 | Explicit project-scope storage removal and rollback invariants | 1,100-1,900 | planned |
@@ -130,6 +132,9 @@ Split a phase before its expected diff can exceed 2,000 lines. Record actual cha
 execution. A planning estimate is not completion evidence.
 
 ## 3. Verified source facts
+
+These are the facts at the planning revision. The completed import changes are recorded in
+[Import execution evidence](import_duplicate_skipping_plan.md#11-execution-evidence-2026-11-09).
 
 Paths in this table are relative to `alcedo_studio/`.
 
@@ -236,7 +241,9 @@ Do not restore these former choices:
 
 ## 6. Execution and completion rules
 
-This update changes documentation only. Do not start implementation, database cleanup, or a build.
+The planning update authorized documentation only. The user subsequently authorized Import Duplicate
+Skipping implementation on 2026-11-09. This authorization covers I1-I5 and their builds/tests; it
+does not authorize Project Maintenance implementation or another cleanup of Photos.
 
 Before executing a feature phase, reread AGENTS.md, CONTRIBUTING.md, the feature plan,
 alcedo-msvc-cmake, and alcedo-qml-ui. Read DESIGN.md and the per-file VI catalog before UI work.
@@ -246,19 +253,59 @@ Use existing owners and focused changes. Do not create Image, metadata, or histo
 The maintenance plan documents the independent package data needed for backup and publication.
 Use defining includes and the repository terminology. New files use LF. Convert any affected
 legacy CRLF file in a separate commit before content edits. Include conversion work in phase-size
-review and split it when necessary. No conversion or commit is part of this plan update.
+review and split it when necessary. The implementation's prerequisite LF conversion is recorded
+under the import phase evidence.
 
 Use supported presets and fixed build directories. Start Windows build allowances at 10-20 minutes.
 Keep temporary evidence under build/tmp/. Run only affected tests and direct callers.
 Only the user may request a full test-suite run. Do not rely on WorkspaceShellTest synthetic input.
 Record unavailable platforms and skipped tests honestly.
 
-GitHub CLI remains unauthenticated. Issue search, maintainer verification, issue creation, and
-roadmap-project updates could not run. No issue or comment was posted. This does not block the
-authorized documentation update. Before implementation, follow CONTRIBUTING.md to track the two
-separate features and the verified import/deletion persistence defects. Do not let an AI continue
-a discussion on an existing issue.
+GitHub CLI was unauthenticated during planning. During implementation the user confirmed that it
+is authenticated and identified `origin` as their fork, with `upstream` outside the permitted remote
+scope. Read-only verification confirmed ClearSights administrator access to `ClearSights/AlcedoStudio`
+and `hasIssuesEnabled=false`. Issues cannot be searched or created on that fork while they are
+disabled. No issue or comment was posted, and upstream was not modified. Do not enable Issues or
+write to upstream as a substitute. The detailed import record identifies the fixed owner-lock defect
+and this tracking limitation. Do not let an AI continue a discussion on an existing issue.
 
 After execution, update each feature's phase record with call chains, modules, changed lines,
 targeted commands, pass/fail/skip counts, manual evidence, platform limits, and issue numbers.
 Do not mark a phase complete without that evidence.
+
+## 7. Import implementation completion (2026-11-09)
+
+I1-I5 are implemented. The default-on setting applies to file, folder, drop, and automation requests.
+An explicit automation boolean overrides the saved preference for one request. Native file/folder
+selection and folder scan/type confirmation retain their existing flows. Welcome now exposes a
+Settings text action so the application-wide preference is editable before entering a project.
+
+```text
+request -> saved preference or explicit override -> ImportService submission owner
+  -> normalized full path -> byte size -> SHA-256
+  -> persisted same-path match: confirmed duplicate skip
+  -> new independent entry: metadata -> checked Image/filesystem/root/fingerprint writes
+  -> result counters -> existing package save and UI/automation completion
+
+source/change/write error -> explicit occurrence error -> provisional removal through owners
+  -> checked restoration or explicit restoration failure and stopped admission
+```
+
+The implementation uses bounded 64-entry batches and finalizes a pending representative before
+deciding a repeated occurrence. It preserves every different source path and all accepted user
+state. Source fingerprints are additive optional data with explicit import/current-source basis.
+
+The final Windows targeted selection has **74 selected, 73 passed, 0 failed, 1 skipped**. The
+existing 1,100-distinct-hard-link capacity case and selected package byte-layout case passed.
+Native Settings checks passed in both themes, with keyboard toggle, dismiss, save/reopen, Welcome
+access, and a smaller window. macOS was unavailable; Windows symlink creation lacked privilege.
+The conditional pipeline-document test lacked its required RAW fixture. The full suite was not run.
+
+Actual feature work before roadmap records totals 2,646 changed lines, plus a separate 34-line
+LF-only conversion in commit `6f4857f6`. Shared core changes are counted once across I2/I3.
+Feature changes remain uncommitted. No remote push was made.
+
+See [phase completion records](import_duplicate_skipping_plan.md#7-detailed-phases) for owner APIs
+and success/failure chains, and [execution evidence](import_duplicate_skipping_plan.md#11-execution-evidence-2026-11-09)
+for exact commands, per-suite counts, source-I/O/memory measurements, file-size review, and limits.
+Project Maintenance and the historical cleanup records are separate from this completion.

@@ -210,6 +210,9 @@ ApplicationModuleHost::ApplicationModuleHost(QObject* parent, LifecycleObserver 
       std::make_unique<ImportExportHandler>(project_.get(), library_.get(), folders_.get(),
                                             project_.get(), this);
   RecordConstruction("ImportExportHandler", import_export_.get());
+  import_behavior_ = std::make_unique<ImportBehaviorPreferences>(this);
+  RecordConstruction("ImportBehaviorPreferences", import_behavior_.get());
+  import_export_->SetImportPreferences(import_behavior_.get());
   import_export_->SetInteractionPolicy(interaction_policy_.get());
   export_queue_ = std::make_unique<ExportQueue>(project_.get(), import_export_.get(), this);
   RecordConstruction("ExportQueue", export_queue_.get());
@@ -753,6 +756,7 @@ ApplicationModuleHost::~ApplicationModuleHost() {
   destroy(export_recipe_, "ExportRecipeBuilder");
   destroy(export_queue_, "ExportQueue");
   destroy(import_export_, "ImportExportHandler");
+  destroy(import_behavior_, "ImportBehaviorPreferences");
   destroy(semantic_generation_, "SemanticGenerationController");
   destroy(ai_provider_profiles_, "AiProviderProfileController");
   destroy(ai_model_download_tasks_, "AiModelDownloadTaskPublisher");

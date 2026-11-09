@@ -31,10 +31,30 @@ struct ImportLogSnapshot {
   std::vector<image_id_t>     metadata_ok_{};
   std::vector<ImportLogEntry> metadata_failed_{};
   std::vector<ImportLogEntry> unsupported_nikon_he_{};
+  std::vector<image_path_t>   duplicates_{};
+  /// These IDs received a present-source value; no historical identity is claimed.
+  std::vector<image_id_t>     legacy_current_source_{};
 };
 
 class ImportLog {
  public:
+  /// Record an occurrence that never created provisional project state.
+  void RecordFailure(const image_path_t& path, ImportErrorCode code, const std::string& message) {
+    std::lock_guard<std::mutex> lock(mtx_);
+    ImportLogEntry              entry;
+    entry.source_path_   = path;
+    entry.error_code_    = code;
+    entry.error_message_ = message;
+    rejected_.push_back(std::move(entry));
+  }
+  void RecordDuplicate(const image_path_t& path) {
+    std::lock_guard<std::mutex> lock(mtx_);
+    duplicates_.push_back(path);
+  }
+  void RecordLegacyCurrentSource(image_id_t id) {
+    std::lock_guard<std::mutex> lock(mtx_);
+    legacy_current_source_.push_back(id);
+  }
   void AddPlaceholder(const image_id_t image_id, const sl_element_id_t element_id,
                       const file_name_t& file_name, const std::filesystem::path& source_path) {
     std::lock_guard<std::mutex> lock(mtx_);
@@ -72,6 +92,9 @@ class ImportLog {
   auto Snapshot() const -> ImportLogSnapshot {
     std::lock_guard<std::mutex> lock(mtx_);
     ImportLogSnapshot           snapshot;
+    snapshot.duplicates_            = duplicates_;
+    snapshot.legacy_current_source_ = legacy_current_source_;
+    snapshot.metadata_failed_       = rejected_;
     snapshot.created_.reserve(entries_.size());
     snapshot.metadata_ok_.reserve(metadata_ok_.size());
     snapshot.metadata_failed_.reserve(entries_.size());
@@ -94,6 +117,9 @@ class ImportLog {
   mutable std::mutex                                      mtx_{};
   std::unordered_map<image_id_t, ImportLogEntry>          entries_{};
   std::unordered_set<image_id_t>                          metadata_ok_{};
+  std::vector<ImportLogEntry>                             rejected_;
+  std::vector<image_path_t>                               duplicates_;
+  std::vector<image_id_t>                                 legacy_current_source_;
 };
 
 }  // namespace alcedo

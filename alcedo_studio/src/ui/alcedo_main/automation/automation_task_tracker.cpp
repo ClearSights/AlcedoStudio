@@ -26,6 +26,7 @@ auto BackgroundTaskObject(const QVariantMap& row) -> QJsonObject {
 auto ImportCounts(const ui::ImportExportHandler& import_export) -> QJsonObject {
   return QJsonObject{{"total", import_export.ImportTotal()},
                      {"completed", import_export.ImportCompleted()},
+                     {"duplicates", import_export.ImportDuplicates()},
                      {"failed", import_export.ImportFailed()},
                      {"unsupported", import_export.ImportUnsupported()},
                      {"excluded", import_export.ImportExcluded()}};
@@ -97,15 +98,17 @@ auto AutomationTaskTracker::NextImportId() -> QString {
 
 auto AutomationTaskTracker::RecordEmptyImport() -> QString {
   const QString id = NextImportId();
-  QJsonObject   task{
-        {"task_id", id},
-        {"kind", "import"},
-        {"state", "succeeded"},
-        {"progress", 100},
-        {"message", ""},
-        {"counts",
-         QJsonObject{
-             {"total", 0}, {"completed", 0}, {"failed", 0}, {"unsupported", 0}, {"excluded", 0}}}};
+  QJsonObject   task{{"task_id", id},
+                     {"kind", "import"},
+                     {"state", "succeeded"},
+                     {"progress", 100},
+                     {"message", ""},
+                     {"counts", QJsonObject{{"total", 0},
+                                            {"completed", 0},
+                                            {"duplicates", 0},
+                                            {"failed", 0},
+                                            {"unsupported", 0},
+                                            {"excluded", 0}}}};
   finished_tasks_[id] = task;
   emit TaskFinished(task);
   return id;
@@ -114,7 +117,8 @@ auto AutomationTaskTracker::RecordEmptyImport() -> QString {
 auto AutomationTaskTracker::RunningImportTask() const -> QJsonObject {
   const ui::ImportExportHandler& import_export = *host_->import_export();
   const int                      total         = import_export.ImportTotal();
-  const int processed = import_export.ImportCompleted() + import_export.ImportFailed();
+  const int processed = import_export.ImportCompleted() + import_export.ImportDuplicates() +
+                        import_export.ImportFailed();
   return QJsonObject{{"task_id", running_import_id_},
                      {"kind", "import"},
                      {"state", "running"},

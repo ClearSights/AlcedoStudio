@@ -87,6 +87,14 @@ void Database::InitializeDB() {
   RunDdl(guard.conn_, ai_annotation_table_query);
   RunDdl(guard.conn_, commit_graph_table_query);
   RunDdl(guard.conn_, mask_asset_table_query);
+  RunDdl(guard.conn_, R"sql(
+    CREATE TABLE IF NOT EXISTS ImageSourceFingerprint (
+      image_id BIGINT PRIMARY KEY,
+      byte_size UBIGINT NOT NULL,
+      sha256 VARCHAR NOT NULL CHECK (regexp_full_match(sha256, '[0-9a-f]{64}')),
+      basis VARCHAR NOT NULL CHECK (basis IN ('import', 'legacy_current_source'))
+    );
+  )sql");
   PopulateSemanticLabelQueries(guard.conn_);
   initialized_ = true;
 }
