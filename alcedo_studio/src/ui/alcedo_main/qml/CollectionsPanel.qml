@@ -1,6 +1,5 @@
 import QtQuick
 import QtQuick.Controls
-import QtQuick.Controls.Material
 import QtQuick.Controls.impl
 import QtQuick.Layouts
 import "CollectionTree.js" as CollectionTree
@@ -14,6 +13,7 @@ ColumnLayout {
     property var folderController
     property var theme
     property var host: null
+    property var maintenanceController: null
     property bool backendInteractive: false
     property bool sortDescending: false
     property string activeUtilityTab: "search"
@@ -27,12 +27,18 @@ ColumnLayout {
             tabId: "background-tasks",
             label: qsTr("Background Tasks"),
             iconSource: "qrc:/panel_icons/clock-play.svg"
+        },
+        {
+            tabId: "maintenance",
+            label: qsTr("Project Maintenance"),
+            iconSource: "qrc:/panel_icons/database-cog.svg"
         }
     ]
     signal importRequested()
     signal importFromFolderRequested()
     signal searchRequested()
     signal backgroundTasksRequested()
+    signal projectMaintenanceRequested()
 
     readonly property var foldersModule: folderController
     readonly property int currentFolderId: foldersModule ? Number(foldersModule.currentFolderId) : 0
@@ -556,68 +562,75 @@ ColumnLayout {
 
             ColumnLayout {
                 Layout.fillWidth: true
-                spacing: 6
+                spacing: appTheme.spaceXs
 
                 Repeater {
                     model: panel.utilityTabs
 
-                    delegate: Rectangle {
+                    delegate: Button {
                         id: utilityTab
                         required property var modelData
 
                         Layout.fillWidth: true
-                        Layout.preferredHeight: Math.max(32, utilityTabRow.implicitHeight
-                                                         + appTheme.spaceXs)
-                        radius: 8
-                        color: utilityMouse.pressed
-                               ? panel.withAlpha(theme.colHover, 0.34)
-                               : (utilityMouse.containsMouse
-                                  ? panel.withAlpha(theme.colHover, 0.24)
-                                  : "transparent")
-
-                        RowLayout {
+                        objectName: modelData.tabId === "maintenance" ? "projectMaintenanceLauncher"
+                                                                    : "collectionsUtility_" + modelData.tabId
+                        implicitHeight: Math.max(appTheme.iconButtonHitSizeCompact,
+                                                 utilityTabRow.implicitHeight + appTheme.spaceSm)
+                        leftPadding: appTheme.spaceXs
+                        rightPadding: appTheme.spaceSm
+                        topPadding: appTheme.spaceXs
+                        bottomPadding: appTheme.spaceXs
+                        activeFocusOnTab: true
+                        enabled: modelData.tabId !== "maintenance"
+                                 || (panel.maintenanceController && panel.maintenanceController.available)
+                        Accessible.name: modelData.label
+                        Accessible.description: ToolTip.text
+                        ToolTip.text: modelData.tabId === "maintenance"
+                                      ? (enabled ? qsTr("Review duplicate and invalid project entries")
+                                                 : qsTr("Open a project to use Project Maintenance"))
+                                      : modelData.label
+                        ToolTip.visible: hovered
+                        onClicked: {
+                            panel.activeUtilityTab = modelData.tabId
+                            if (modelData.tabId === "search") panel.searchRequested()
+                            else if (modelData.tabId === "background-tasks") panel.backgroundTasksRequested()
+                            else panel.projectMaintenanceRequested()
+                        }
+                        contentItem: RowLayout {
                             id: utilityTabRow
-                            anchors.fill: parent
-                            anchors.leftMargin: 2
-                            anchors.rightMargin: 8
-                            spacing: 10
+                            spacing: appTheme.spaceSm
 
-                            Image {
-                                Layout.preferredWidth: 17
-                                Layout.preferredHeight: 17
+                            ColorImage {
+                                Layout.preferredWidth: appTheme.iconOpticalSizeCompact
+                                Layout.preferredHeight: appTheme.iconOpticalSizeCompact
+                                Layout.alignment: Qt.AlignVCenter
                                 source: modelData.iconSource
-                                sourceSize.width: 17
-                                sourceSize.height: 17
+                                sourceSize.width: appTheme.iconSourceSizeCompact
+                                sourceSize.height: appTheme.iconSourceSizeCompact
+                                color: utilityTab.enabled ? appTheme.iconColor : appTheme.textMutedColor
                                 fillMode: Image.PreserveAspectFit
-                                mipmap: false
-                                smooth: false
+                                smooth: true
                             }
 
                             Label {
                                 Layout.fillWidth: true
                                 text: modelData.label
-                                color: panel.withAlpha(theme.colText, 0.92)
+                                color: utilityTab.enabled ? appTheme.textColor : appTheme.textMutedColor
                                 font.family: appTheme.uiFontFamily
-                                font.pixelSize: 13
-                                font.weight: 600
+                                font.pixelSize: appTheme.fontSizeTitle
+                                font.weight: appTheme.fontWeightStrong
                                 wrapMode: Text.Wrap
                                 verticalAlignment: Text.AlignVCenter
                             }
                         }
 
-                        MouseArea {
-                            id: utilityMouse
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: {
-                                panel.activeUtilityTab = modelData.tabId
-                                if (modelData.tabId === "search") {
-                                    panel.searchRequested()
-                                } else if (modelData.tabId === "background-tasks") {
-                                    panel.backgroundTasksRequested()
-                                }
-                            }
+                        background: Rectangle {
+                            radius: appTheme.controlRadiusSmall
+                            color: utilityTab.down ? appTheme.buttonPressedFillColor
+                                                   : utilityTab.hovered ? appTheme.buttonHoveredFillColor
+                                                                        : "transparent"
+                            border.width: utilityTab.visualFocus ? 1 : 0
+                            border.color: appTheme.textMutedColor
                         }
                     }
                 }
@@ -656,7 +669,7 @@ ColumnLayout {
                     rightInset: 0
                     topInset: 0
                     bottomInset: 0
-                    Material.foreground: theme.colText
+                    palette.buttonText: theme.colText
                     onClicked: panel.sortDescending = !panel.sortDescending
 
                     background: Rectangle {
@@ -714,7 +727,7 @@ ColumnLayout {
                     topInset: 0
                     bottomInset: 0
                     enabled: panel.backendInteractive
-                    Material.foreground: theme.colText
+                    palette.buttonText: theme.colText
                     // A new collection goes inside the selected one.
                     onClicked: panel.beginCreateCollection(panel.currentFolderId)
 
@@ -1171,7 +1184,7 @@ ColumnLayout {
         icon.height: 14
         icon.color: theme.colText
         display: AbstractButton.TextBesideIcon
-        Material.foreground: theme.colText
+        palette.text: theme.colText
         onClicked: panel.importRequested()
 
         background: Rectangle {

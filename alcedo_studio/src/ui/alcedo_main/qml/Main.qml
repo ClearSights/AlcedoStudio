@@ -506,6 +506,9 @@ ApplicationWindow {
     function openBackgroundTasksDialog() {
         appDialogs.openBackgroundTasksDialog()
     }
+    function openProjectMaintenanceDialog() {
+        appDialogs.openProjectMaintenanceDialog()
+    }
 
     function openLutImportDialog() {
         appDialogs.openLutImportDialog()
@@ -714,6 +717,8 @@ ApplicationWindow {
                     onImportFromFolderRequested: root.importFolderDialog.open()
                     onSearchRequested: root.globalSearchDialog.openFromCollection()
                     onBackgroundTasksRequested: root.openBackgroundTasksDialog()
+                    maintenanceController: appModules.maintenance
+                    onProjectMaintenanceRequested: root.openProjectMaintenanceDialog()
                 }
             }
 

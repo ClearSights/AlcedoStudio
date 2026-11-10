@@ -101,6 +101,28 @@ void ImageStore::RemoveImagesWithoutFileBinding() {
   transaction.commit();
 }
 
+void ImageStore::RemoveUnreferencedImagesInTransaction(duckdb_connection&          connection,
+                                                       std::span<const image_id_t> ids) {
+  const bool source_sizes =
+      duckorm::select_int64(connection,
+                            duckorm::expr::raw("SELECT count(*) FROM information_schema.tables "
+                                               "WHERE table_name='ImageSourceSize'"))
+          .value_or(0) != 0;
+  for (auto id : ids) {
+    if (duckorm::select_int64(
+            connection,
+            duckorm::expr::raw(std::format("SELECT count(*) FROM FileImage WHERE image_id={}", id)))
+            .value() != 0) {
+      continue;
+    }
+    if (source_sizes) {
+      duckorm::execute(connection, duckorm::expr::raw(std::format(
+                                       "DELETE FROM ImageSourceSize WHERE image_id={}", id)));
+    }
+    ImageMapper(connection).Remove(id);
+  }
+}
+
 /**
  * @brief Remove an image by its type.
  *

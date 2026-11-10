@@ -149,6 +149,9 @@ explicitly approved stroke width, but it must not redesign the approved path
 geometry. The pipeline icon added on 2026-09-17 is user-provided and approved.
 The Compare page icon `panel_icons/compare.svg` (Tabler `columns-2`, stroke
 width normalized to 1.5) was approved by the user on 2026-10-01.
+The Project Maintenance icon `panel_icons/database-cog.svg` (Tabler `database-cog`,
+white source stroke normalized to 1.5) was approved by the user on 2026-11-09.
+Its path geometry is unchanged; its source URL and MIT license are recorded in the asset.
 
 ### Text truncation policy
 
@@ -1449,6 +1452,7 @@ surfaces with the page margins 26 px (top) and 34 px (sides) and `spaceMd` betwe
 | `SegmentedCardSwitcher.qml` | Monochrome segmented track; per-entry `enabled: false` keeps unsupported choices visible but non-interactive |
 | `AdjustmentSlider.qml` | Shared numeric slider + field bound to `EditorAdjustmentValueModel` |
 | `ThemedProgressBar.qml` | Shared determinate / indeterminate progress track (Background Tasks, Export, Settings tiles); detail text in Manrope with tabular figures |
+| `ImportProgressRing.qml` | Counted import/removal work; rotates a waiting arc during stages without measurable entry progress. Project Maintenance reuses it with the working-task color and stops rotation under reduced motion |
 | `BentoTile.qml` | Settings bento surface (radius 14, `cardSurfaceColor`, `cardBorderColor`, 22 px padding) |
 | `CountTile.qml` | Bento tile with one large count; optional short form for large counts with the exact count below |
 | `SplitBar.qml` / `LegendItem.qml` | Two-part count bar and its legend entries (swatch, name, grouped count) |
@@ -1493,3 +1497,22 @@ framework-provided selection items as well as Alcedo-painted chrome. Existing
 accent tokens do not count as an exception to these acceptance checks.
 
 DPR coverage: inspect icon optical/source sizing at logical 1.0, 1.5, and 2.0.
+
+### Project Maintenance review and removal (2026-11-09)
+
+The Collections launcher shares the Search and Background Tasks delegate: compact hit height,
+compact optical/source sizes, `spaceSm` icon-to-label gap, and vertically centered title text.
+The approved database-cog icon is used by the sole launcher in the project/library sidebar.
+
+The review dialog uses one aligned title/X row, a divider, and one `spaceLg` body inset. The
+compact transparent X uses the same close asset and IconActionButton settings as Search.
+Fields share a control height. Full paths wrap above a wrapping metadata row. Three equal-width
+selection actions sit above the selected count; backup location and final actions have stable
+left and right edges. The actual destructive confirmation may use DialogActionButton's danger style.
+
+During a removal, the same dialog shows the import-style compact progress card. It reuses
+ImportProgressRing and RotatingTaskBorder with `backgroundTaskWorkingColor`. Progress is measured
+as processed entries while the checked storage transaction runs. Backup, package verification,
+publication, reopening, and restoration use an indeterminate ring and the current stage text.
+Only activation can publish the final removed count. Hiding never cancels removal. Recovery errors
+return to the review/error surface. All new geometry uses existing AppTheme tokens.
