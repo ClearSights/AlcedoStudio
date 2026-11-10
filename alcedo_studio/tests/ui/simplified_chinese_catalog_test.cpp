@@ -426,5 +426,38 @@ TEST(SimplifiedChineseCatalogTest, CompiledCatalogTranslatesTheAiModelDownloadSt
   ASSERT_TRUE(QCoreApplication::removeTranslator(&translator));
 }
 
+TEST(SimplifiedChineseCatalogTest, CompiledCatalogTranslatesTheColorLabelNames) {
+  const QString qm_path = QStringLiteral(ALCEDO_ZH_CN_QM_FILE);
+  QTranslator   translator;
+  ASSERT_TRUE(translator.load(qm_path)) << "QTranslator failed to load " << qm_path.toStdString();
+  ASSERT_TRUE(QCoreApplication::installTranslator(&translator));
+
+  // Library color labels (#770): the default names of the seven codes and the Settings row.
+  const char* const context = "alcedo::ui::LibraryViewPreferences";
+  EXPECT_EQ(QCoreApplication::translate(context, "Red"), QStringLiteral("红色"));
+  EXPECT_EQ(QCoreApplication::translate(context, "Orange"), QStringLiteral("橙色"));
+  EXPECT_EQ(QCoreApplication::translate(context, "Yellow"), QStringLiteral("黄色"));
+  EXPECT_EQ(QCoreApplication::translate(context, "Green"), QStringLiteral("绿色"));
+  EXPECT_EQ(QCoreApplication::translate(context, "Blue"), QStringLiteral("蓝色"));
+  EXPECT_EQ(QCoreApplication::translate(context, "Purple"), QStringLiteral("紫色"));
+  EXPECT_EQ(QCoreApplication::translate(context, "Gray"), QStringLiteral("灰色"));
+  EXPECT_EQ(QCoreApplication::translate("SettingDialog", "Color Labels"),
+            QStringLiteral("颜色标签"));
+  EXPECT_EQ(QCoreApplication::translate("ColorLabelNamesEditor", "Reset %1"),
+            QStringLiteral("重置 %1"));
+  EXPECT_EQ(QCoreApplication::translate("ThumbnailDeleteMark", "Marked for deletion"),
+            QStringLiteral("已标记删除"));
+  // The marks control and By Custom Label (#772).
+  EXPECT_EQ(QCoreApplication::translate("AlbumInspectorPanel", "By Custom Label"),
+            QStringLiteral("按自定义标签"));
+  EXPECT_EQ(QCoreApplication::translate("ColorLabelFilterChips", "Deleted"),
+            QStringLiteral("待删除"));
+  EXPECT_EQ(QCoreApplication::translate("LibraryMarksControl", "Mixed"), QStringLiteral("混合"));
+  EXPECT_EQ(QCoreApplication::translate("LibraryMarksControl", "Mark"), QStringLiteral("标记"));
+  EXPECT_EQ(QCoreApplication::translate("LibraryMarksControl", "Marked"), QStringLiteral("已标记"));
+
+  ASSERT_TRUE(QCoreApplication::removeTranslator(&translator));
+}
+
 }  // namespace
 }  // namespace alcedo::ui::test

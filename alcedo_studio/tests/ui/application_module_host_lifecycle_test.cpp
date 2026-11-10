@@ -152,6 +152,7 @@ TEST_F(ApplicationModuleHostLifecycleTests,
         {"editorSession", "alcedo::ui::EditorSessionController*"},
         {"editorComparison", "alcedo::ui::EditorComparisonController*"},
         {"editorBehavior", "alcedo::ui::EditorBehaviorPreferences*"},
+        {"libraryView", "alcedo::ui::LibraryViewPreferences*"},
         {"projectLaunch", "alcedo::ui::ProjectLaunchCoordinator*"},
         {"applicationClose", "alcedo::ui::ApplicationCloseCoordinator*"},
         {"libraryMutations", "alcedo::ui::LibraryMutationOperations*"},
@@ -190,7 +191,6 @@ TEST_F(ApplicationModuleHostLifecycleTests, ModulesCanBeConstructedWithoutTheCom
   EXPECT_EQ(stats.parent(), nullptr);
   EXPECT_EQ(search.parent(), nullptr);
   EXPECT_EQ(import_export.parent(), nullptr);
-  EXPECT_EQ(stats.FormatPhotoInfo(0, 0), QStringLiteral("No images loaded."));
 }
 
 }  // namespace

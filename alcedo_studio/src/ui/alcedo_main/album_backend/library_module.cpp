@@ -97,6 +97,8 @@ LibraryModule::LibraryModule(ProjectModule* project, QObject* parent)
       thumbs_(*this),
       query_worker_(std::make_unique<SearchRequestWorker>()) {
   LoadThumbnailDiskCacheSettings();
+  connect(&selection_, &LibrarySelection::SelectionChanged, this,
+          [this]() { ScheduleSelectionMarksRead(); });
 }
 
 LibraryModule::~LibraryModule() { query_worker_.reset(); }
@@ -124,10 +126,6 @@ void LibraryModule::EmitThumbnailUpdated(uint elementId, const QString& thumbUrl
                                          bool missingSource, const QString& errorText) {
   emit ThumbnailUpdated(elementId, thumbUrl, loading, missingSource, errorText);
   emit thumbnailUpdated(elementId, thumbUrl, loading, missingSource, errorText);
-}
-
-auto LibraryModule::FilterInfo() const -> QString {
-  return stats_->FormatPhotoInfo(ShownCount(), TotalCount());
 }
 
 
@@ -416,6 +414,12 @@ void ReadRowDisplayValues(const LibraryQueryInput& input, LibraryQueryOutput& ou
           display.aperture     = static_cast<double>(exif.aperture_);
           display.focal_length = static_cast<double>(exif.focal_);
           display.is_hdr       = exif.is_hdr_;
+          // The stored dimensions are those of the oriented image (see
+          // SetDisplayDimensionsFromLibRaw and PopulateRasterDimensionsFromHeader).
+          if (exif.width_ > 0 && exif.height_ > 0) {
+            display.aspect_ratio =
+                static_cast<double>(exif.width_) / static_cast<double>(exif.height_);
+          }
         });
       } catch (...) {
       }
@@ -496,6 +500,17 @@ auto FilterReadsRating(const FilterNode& node) -> bool {
   }
   return std::any_of(node.children_.begin(), node.children_.end(),
                      [](const FilterNode& child) { return FilterReadsRating(child); });
+}
+
+/// True when @p node reads a library mark (the raw SQL of BuildColorLabelFilter or
+/// BuildDeleteMarkFilter).
+auto FilterReadsMarks(const FilterNode& node) -> bool {
+  if (node.raw_sql_.has_value() && (node.raw_sql_->find(L"color_labels") != std::wstring::npos ||
+                                    node.raw_sql_->find(L"delete_mark") != std::wstring::npos)) {
+    return true;
+  }
+  return std::any_of(node.children_.begin(), node.children_.end(),
+                     [](const FilterNode& child) { return FilterReadsMarks(child); });
 }
 
 auto OptionsReadRating(const AlbumQueryOptions& options) -> bool {
@@ -585,7 +600,74 @@ void LibraryModule::ScheduleRefresh(RefreshKind kind) {
 }
 
 void LibraryModule::NoteRatingsChanged() {
-  if (!accepted_input_ || PresentationReadsRating()) {
+  RefreshAfterColumnWrite(PresentationReadsRating());
+  ScheduleSelectionMarksRead();
+}
+
+void LibraryModule::NoteMarksChanged() {
+  RefreshAfterColumnWrite(PresentationReadsMarks());
+  ScheduleSelectionMarksRead();
+}
+
+void LibraryModule::ScheduleSelectionMarksRead() {
+  if (selection_marks_read_scheduled_) {
+    return;
+  }
+  selection_marks_read_scheduled_ = true;
+  // A rubber band drag changes the selection many times in one turn; one read follows.
+  QMetaObject::invokeMethod(
+      this,
+      [this]() {
+        selection_marks_read_scheduled_ = false;
+        SubmitSelectionMarksRead();
+      },
+      Qt::QueuedConnection);
+}
+
+void LibraryModule::SubmitSelectionMarksRead() {
+  auto       proj   = project_ ? project_->handler().project() : nullptr;
+  auto       browse = proj ? proj->GetAlbumBrowseService() : nullptr;
+  const auto ids    = selection_.SelectedElementIds();
+  if (ids.empty() || !browse) {
+    query_worker_->Invalidate(SearchRequestKind::kSelectionMarks);
+    selection_marks_.Clear();
+    return;
+  }
+  const auto revision = selection_marks_.LocalChangeRevision();
+  query_worker_->Submit(SearchRequestKind::kSelectionMarks, [this, browse, ids,
+                                                             revision](std::uint64_t generation) {
+    std::vector<SearchResultRow> rows;
+    bool                         ok = true;
+    try {
+      rows = browse->ReadAlbumFileRows(ids);
+    } catch (const std::exception&) {
+      ok = false;
+    }
+    QMetaObject::invokeMethod(
+        this,
+        [this, generation, revision, ok, rows = std::move(rows)]() {
+          if (!ok || !query_worker_->IsCurrent(SearchRequestKind::kSelectionMarks, generation) ||
+              selection_marks_.LocalChangeRevision() != revision) {
+            return;
+          }
+          selection_marks_.Replace(rows);
+        },
+        Qt::QueuedConnection);
+  });
+}
+
+auto LibraryModule::PresentationReadsMarks() const -> bool {
+  if (!accepted_input_) {
+    return false;
+  }
+  const auto& stats_filter  = accepted_input_->stats_filter_;
+  const auto& search_filter = accepted_input_->search_.filter_;
+  return (stats_filter.has_value() && FilterReadsMarks(*stats_filter)) ||
+         (search_filter.has_value() && FilterReadsMarks(*search_filter));
+}
+
+void LibraryModule::RefreshAfterColumnWrite(bool reads_changed_column) {
+  if (!accepted_input_ || reads_changed_column) {
     RequestLibraryRefresh();
     return;
   }
@@ -761,12 +843,15 @@ auto LibraryModule::ItemFromRow(const AlbumQueryRow& query_row, const AlbumItem&
   item.aperture     = display.aperture;
   item.focal_length = display.focal_length;
   item.is_hdr       = display.is_hdr;
+  item.aspect_ratio = display.aspect_ratio;
   item.tags         = display.tags;
   // SQL supplies these display values.
   item.file_name    = QString::fromUtf8(row.file_name_.c_str());
   item.camera_model = QString::fromUtf8(row.camera_model_.c_str());
   item.lens         = QString::fromUtf8(row.lens_.c_str());
   item.rating       = row.rating_;
+  item.color_labels = row.color_labels_;
+  item.delete_mark  = row.delete_mark_;
   item.edited_at_ns      = query_row.edited_at_ns_;
   item.edit_version_name = query_row.edited_at_ns_.has_value()
                                ? QString::fromUtf8(query_row.edit_version_name_.c_str())
@@ -1458,6 +1543,8 @@ void LibraryModule::AddOrUpdateAlbumItem(sl_element_id_t elementId, image_id_t i
         item->aperture          = static_cast<double>(exif.aperture_);
         item->focal_length      = static_cast<double>(exif.focal_);
         item->rating            = exif.rating_;
+        item->color_labels      = image->color_labels_;
+        item->delete_mark       = image->delete_mark_;
         item->is_hdr            = exif.is_hdr_;
         const QDate captureDate = DateFromExifString(exif.date_time_str_);
         if (captureDate.isValid()) {

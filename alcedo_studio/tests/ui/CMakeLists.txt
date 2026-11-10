@@ -521,6 +521,10 @@ alcedo_register_test_target(AlbumBackendImageDetailsTest ui)
 def_ui_test(AlbumBackendRatingTest album_backend_rating_test.cpp "ci_raw_flow")
 alcedo_register_test_target(AlbumBackendRatingTest ui)
 
+# Library color labels and the Delete mark (#769).
+def_ui_test(AlbumBackendLibraryMarksTest album_backend_library_marks_test.cpp)
+alcedo_register_test_target(AlbumBackendLibraryMarksTest ui)
+
 def_ui_test(AlbumBackendThumbnailTest album_backend_thumbnail_test.cpp)
 alcedo_register_test_target(AlbumBackendThumbnailTest ui)
 
@@ -542,6 +546,9 @@ alcedo_register_test_target(AlbumBackendSearchWorkerTest ui)
 # section projection geometry, and the one library query path of LibraryModule.
 def_ui_test(AlbumSectionModelTest album_section_model_test.cpp)
 alcedo_register_test_target(AlbumSectionModelTest ui)
+# Issue 745: justified-rows Library layout geometry, its window model, and the layout setting.
+def_ui_test(JustifiedLayoutTest justified_layout_test.cpp)
+alcedo_register_test_target(JustifiedLayoutTest ui)
 def_ui_test(AlbumBackendLibraryQueryTest album_backend_library_query_test.cpp)
 alcedo_register_test_target(AlbumBackendLibraryQueryTest ui)
 
@@ -1084,6 +1091,38 @@ alcedo_ui_gtest_discover_tests(LutSettingsQmlTest
 )
 alcedo_register_test_target(LutSettingsQmlTest ui)
 
+# Library color labels L2 (#770): Settings > Library > Color Labels on the production
+# SettingDialog and module host with isolated QSettings (typed names, reset glyph, restart).
+add_executable(LibraryColorLabelSettingsQmlTest
+    ${ALCEDO_TEST_ROOT}/ui/library_color_label_settings_qml_test.cpp
+    ${ALCEDO_TEST_ROOT}/ui/widget_test_main.cpp
+)
+target_include_directories(LibraryColorLabelSettingsQmlTest
+    PUBLIC ${ALCEDO_INCLUDE_DIR}
+    PRIVATE ${ALCEDO_TEST_DIR}
+)
+target_link_libraries(LibraryColorLabelSettingsQmlTest
+    PRIVATE
+        AlbumBackendLib
+        GTest::gtest
+        Qt6::Core
+        Qt6::Test
+        Qt6::Qml
+        Qt6::Quick
+        Qt6::QuickControls2
+        Qt6::QuickEffects
+        Qt6::Svg
+        Qt6::Widgets
+)
+target_compile_definitions(LibraryColorLabelSettingsQmlTest
+    PRIVATE ALCEDO_TEST_SRC_DIR="${ALCEDO_SRC_DIR}"
+)
+alcedo_ui_gtest_discover_tests(LibraryColorLabelSettingsQmlTest
+    TEST_PREFIX "LibraryColorLabelSettingsQmlTest."
+    PROPERTIES LABELS "workspace_qml;library_settings"
+)
+alcedo_register_test_target(LibraryColorLabelSettingsQmlTest ui)
+
 # AI Models plan AM4: Settings > AI Models on the production SettingDialog and module host with
 # the signed AI model test feed and a held downloader (feed check per page opening, download
 # statement), and the page alone with CLIP stand-ins (active border, Activate, Remove).
@@ -1117,6 +1156,40 @@ alcedo_ui_gtest_discover_tests(AiModelsSettingsQmlTest
     PROPERTIES LABELS "workspace_qml;ai_models_settings"
 )
 alcedo_register_test_target(AiModelsSettingsQmlTest ui)
+
+# Issue #762: Settings > Local Content Recognition and the AI label dialog alone, with a QML
+# stand-in for the label controller (counts, split bar, short photo counts, generate buttons,
+# progress and remaining time, model row, dialog prompt and progress, page height).
+add_executable(SemanticSettingsQmlTest
+    ${ALCEDO_TEST_ROOT}/ui/semantic_settings_qml_test.cpp
+    ${ALCEDO_TEST_ROOT}/ui/widget_test_main.cpp
+)
+target_include_directories(SemanticSettingsQmlTest
+    PUBLIC ${ALCEDO_INCLUDE_DIR}
+    PRIVATE ${ALCEDO_TEST_DIR}
+)
+target_link_libraries(SemanticSettingsQmlTest
+    PRIVATE
+        AlbumBackendLib
+        GTest::gtest
+        Qt6::Core
+        Qt6::Test
+        Qt6::Qml
+        Qt6::Quick
+        Qt6::QuickControls2
+        Qt6::QuickEffects
+        Qt6::Svg
+        Qt6::Widgets
+)
+set_target_properties(SemanticSettingsQmlTest PROPERTIES AUTOMOC ON)
+target_compile_definitions(SemanticSettingsQmlTest
+    PRIVATE ALCEDO_TEST_SRC_DIR="${ALCEDO_SRC_DIR}"
+)
+alcedo_ui_gtest_discover_tests(SemanticSettingsQmlTest
+    TEST_PREFIX "SemanticSettingsQmlTest."
+    PROPERTIES LABELS "workspace_qml;semantic_settings"
+)
+alcedo_register_test_target(SemanticSettingsQmlTest ui)
 
 # Phase 6A: typed adjustment models (no GPU/QML rendering; QSignalSpy drives the
 # debounce timer deterministically via the event loop).

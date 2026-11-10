@@ -20,6 +20,7 @@
 #include <algorithm>
 
 #include "alcedo_version.hpp"
+#include "image/color_label.hpp"
 
 // resource.qrc is compiled into the AppTheme library. MSVC still drops that
 // object unless the final executable references qInitResources_resource().
@@ -990,6 +991,12 @@ auto AppTheme::thumbnailEditMarkFillColor() const -> QColor {
   return WithAlpha(bgDeepColor(), 200);
 }
 
+auto AppTheme::thumbnailDetailsScrimColor() const -> QColor {
+  // Deep base under the hover details of a justified-rows tile: the text and the stars read on
+  // bright photos, and the photo stays visible through it.
+  return WithAlpha(bgDeepColor(), 180);
+}
+
 auto AppTheme::scopeGridColor() const -> QColor {
   return Blend(bgDeepColor(), textMutedColor(), 0.32);
 }
@@ -1082,6 +1089,15 @@ auto AppTheme::maskCoverageTintOpacity() const -> qreal { return 0.5; }
 auto AppTheme::aiMaskInputAddColor() const -> QColor { return QColor(0x30, 0xA4, 0x6C); }
 
 auto AppTheme::aiMaskInputSubtractColor() const -> QColor { return QColor(0xE5, 0x48, 0x4D); }
+
+auto AppTheme::colorLabelColors() const -> QVariantList {
+  // alcedo-cli library.color_labels reads the same table.
+  QVariantList colors;
+  for (const std::uint32_t rgb : kColorLabelDisplayRgb) {
+    colors.push_back(QColor(QRgb(rgb)));
+  }
+  return colors;
+}
 
 auto AppTheme::scopePlotBorderColor() const -> QColor {
   return Blend(bgBaseColor(), textMutedColor(), 0.42);

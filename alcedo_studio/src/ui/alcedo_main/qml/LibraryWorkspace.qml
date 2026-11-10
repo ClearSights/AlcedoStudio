@@ -579,7 +579,20 @@ RowLayout {
                     onContextMenuRequested: function(item, sceneX, sceneY) {
                         host.openImageContextMenu(item, sceneX, sceneY)
                     }
+                    onColorLabelSettingsRequested: host.openColorLabelSettings()
                 }
+            }
+
+            // Rating, color labels, and Delete mark of the selection (#772).
+            LibraryMarksControl {
+                Layout.fillWidth: true
+                visible: !inspectorPanel.exportPageActive
+                selectionState: host.selectionState
+                selectedCount: host.selectedCount
+                backendInteractive: host.backendInteractive
+                theme: root
+                onMessageRequested: function(message) { host.showSnackbar(message) }
+                onRatingApplied: host.refreshFocusedImageInspection()
             }
 
             LibraryInspectorActions {
@@ -680,6 +693,8 @@ RowLayout {
         ThumbnailGridView {
             objectName: "libraryThumbnailGridView"
             zoomLevel: root.gridZoomLevel
+            // Ctrl+wheel: the grid asks for the level, so the zoomLevel binding stays.
+            onZoomLevelRequested: function(level) { root.gridZoomLevel = level }
             zoomAdjusting: zoomSlider.pressed
             geometryAnimating: root.geometryAnimating
             onZoomLevelChanged: root.gridZoomLevel = zoomLevel

@@ -103,12 +103,20 @@ QVariant AlbumThumbnailModel::roleValue(const AlbumItem& item, int role) const {
       return EditedAtValue(item);
     case EditVersionName:
       return item.edit_version_name;
+    case AspectRatio:
+      return item.aspect_ratio;
+    case ColorLabels:
+      return static_cast<int>(item.color_labels);
+    case DeleteMark:
+      return item.delete_mark;
     default:
       return {};
   }
 }
 
-QHash<int, QByteArray> AlbumThumbnailModel::roleNames() const {
+QHash<int, QByteArray> AlbumThumbnailModel::roleNames() const { return RoleNameTable(); }
+
+auto AlbumThumbnailModel::RoleNameTable() -> QHash<int, QByteArray> {
   return {
       {ElementId, "elementId"},
       {FileId, "fileId"},
@@ -134,6 +142,9 @@ QHash<int, QByteArray> AlbumThumbnailModel::roleNames() const {
       {IsEdited, "isEdited"},
       {EditedAt, "editedAt"},
       {EditVersionName, "editVersionName"},
+      {AspectRatio, "aspectRatio"},
+      {ColorLabels, "colorLabels"},
+      {DeleteMark, "deleteMark"},
   };
 }
 
@@ -342,6 +353,22 @@ bool AlbumThumbnailModel::updateRating(sl_element_id_t elementId, image_id_t ima
   return updated;
 }
 
+bool AlbumThumbnailModel::updateMarks(sl_element_id_t elementId, image_id_t imageId,
+                                      ColorLabelMask colorLabels, bool deleteMark) {
+  const int row = rowByElementId(elementId);
+  if (row < 0 || row >= static_cast<int>(rows_.size())) return false;
+
+  auto& item = rows_[static_cast<size_t>(row)];
+  if (imageId != 0 && item.image_id != imageId) return false;
+  if (item.color_labels == colorLabels && item.delete_mark == deleteMark) return false;
+
+  item.color_labels     = colorLabels;
+  item.delete_mark      = deleteMark;
+  const QModelIndex idx = index(row);
+  emit dataChanged(idx, idx, {ColorLabels, DeleteMark});
+  return true;
+}
+
 bool AlbumThumbnailModel::updateEditState(sl_element_id_t elementId, image_id_t imageId,
                                           std::optional<std::int64_t> editedAtNs,
                                           const QString&              versionName) {
@@ -386,6 +413,8 @@ QVariantMap AlbumThumbnailModel::getItemAt(int idx) const {
       {"scopeType", item.scope_type},
       {"fileName", item.file_name.isEmpty() ? QStringLiteral("(unnamed)") : item.file_name},
       {"rating", item.rating},
+      {"colorLabels", static_cast<int>(item.color_labels)},
+      {"deleteMark", item.delete_mark},
       {"isHdr", item.is_hdr},
       {"captureDate", item.capture_date.isValid()
                           ? item.capture_date.toString(QStringLiteral("yyyy-MM-dd"))

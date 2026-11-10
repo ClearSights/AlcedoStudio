@@ -28,6 +28,7 @@
 #include "ui/alcedo_main/album_backend/album_thumbnail_model.hpp"
 #include "ui/alcedo_main/album_backend/album_types.hpp"
 #include "ui/alcedo_main/album_backend/library_selection.hpp"
+#include "ui/alcedo_main/album_backend/library_selection_marks.hpp"
 #include "ui/alcedo_main/album_backend/search_controller.hpp"
 #include "ui/alcedo_main/album_backend/search_request_worker.hpp"
 #include "ui/alcedo_main/album_backend/thumbnail_manager.hpp"
@@ -106,7 +107,6 @@ class LibraryModule final : public QObject, public IAlbumCatalog {
   Q_PROPERTY(int shownCount READ ShownCount NOTIFY CountsChanged)
   Q_PROPERTY(int totalCount READ TotalCount NOTIFY CountsChanged)
   Q_PROPERTY(bool hasMoreThumbnails READ HasMoreThumbnails NOTIFY CountsChanged)
-  Q_PROPERTY(QString filterInfo READ FilterInfo NOTIFY CountsChanged)
   Q_PROPERTY(bool thumbnailDiskCacheEnabled READ ThumbnailDiskCacheEnabled NOTIFY
                  ThumbnailDiskCacheStateChanged)
   Q_PROPERTY(QString thumbnailDiskCacheRoot READ ThumbnailDiskCacheRoot NOTIFY
@@ -127,6 +127,8 @@ class LibraryModule final : public QObject, public IAlbumCatalog {
   Q_PROPERTY(uint pendingRevealFileId READ PendingRevealFileId NOTIFY PendingRevealChanged)
   /// The library image selection.
   Q_PROPERTY(LibrarySelection* selection READ selection CONSTANT)
+  /// The rating and the marks of the selected photos (marks control, #772).
+  Q_PROPERTY(LibrarySelectionMarks* selectionMarks READ selection_marks CONSTANT)
 
  public:
   explicit LibraryModule(ProjectModule* project, QObject* parent = nullptr);
@@ -140,6 +142,7 @@ class LibraryModule final : public QObject, public IAlbumCatalog {
   [[nodiscard]] auto thumbs() const -> const ThumbnailManager& { return thumbs_; }
   [[nodiscard]] auto selection() -> LibrarySelection* { return &selection_; }
   [[nodiscard]] auto selection() const -> const LibrarySelection* { return &selection_; }
+  [[nodiscard]] auto selection_marks() -> LibrarySelectionMarks* { return &selection_marks_; }
   [[nodiscard]] auto model() -> AlbumThumbnailModel& { return thumbnail_model_; }
   [[nodiscard]] auto model() const -> const AlbumThumbnailModel& { return thumbnail_model_; }
   [[nodiscard]] auto project() -> ProjectModule* { return project_; }
@@ -158,7 +161,6 @@ class LibraryModule final : public QObject, public IAlbumCatalog {
   int          ShownCount() const { return thumbnail_model_.count(); }
   int          TotalCount() const;
   bool         HasMoreThumbnails() const { return thumbnail_model_.hasMore(); }
-  QString      FilterInfo() const;
   bool         ThumbnailDiskCacheEnabled() const;
   QString      ThumbnailDiskCacheRoot() const;
   int          ThumbnailDiskCacheMaxEntries() const;
@@ -274,6 +276,19 @@ class LibraryModule final : public QObject, public IAlbumCatalog {
    *        UI thread only.
    */
   void                   NoteRatingsChanged();
+
+  /**
+   * @brief The color labels or the Delete mark of loaded photos changed in storage, and their
+   *        rows already show it (AlbumThumbnailModel::updateMarks). When the Inspector filter or
+   *        the search reads a mark, refresh the library; otherwise read only the statistics of
+   *        the accepted query, as NoteRatingsChanged does. UI thread only.
+   */
+  void                   NoteMarksChanged();
+
+  /// Read the rating and the marks of the selected photos into selectionMarks once in this
+  /// event loop turn. Runs after each selection change and from NoteRatingsChanged and
+  /// NoteMarksChanged. UI thread only.
+  void                   ScheduleSelectionMarksRead();
 
   /// Request one refresh of the accepted library query. Requests of one event loop turn are
   /// combined: the refresh reads the filters, the search, and the presentation options when it
@@ -396,6 +411,15 @@ class LibraryModule final : public QObject, public IAlbumCatalog {
   /// True when the accepted or the requested presentation reads the rating (see
   /// NoteRatingsChanged).
   auto               PresentationReadsRating() const -> bool;
+  /// True when the accepted Inspector filter or search reads a library mark (see
+  /// NoteMarksChanged).
+  auto               PresentationReadsMarks() const -> bool;
+  /// Refresh the library when @p reads_changed_column, else read only the statistics.
+  void               RefreshAfterColumnWrite(bool reads_changed_column);
+  /// Read the rating and the marks of the selected photos on the worker into selection_marks_.
+  /// A read that a local change (LibrarySelectionMarks::Apply*) passed while it ran is dropped;
+  /// the write that made the change asks for the next read.
+  void                  SubmitSelectionMarksRead();
   /// Read the statistics of the accepted query on the worker and publish them (no photo rows).
   void               SubmitStatisticsRead();
   /// Load the next missing page of the requested section rows or flat range, if any.
@@ -427,6 +451,8 @@ class LibraryModule final : public QObject, public IAlbumCatalog {
   AlbumThumbnailModel thumbnail_model_{};
   AlbumViewState      view_state_{};
   LibrarySelection    selection_{this};
+  LibrarySelectionMarks selection_marks_{};
+  bool                  selection_marks_read_scheduled_    = false;
 
   bool    thumbnail_disk_cache_enabled_      = true;
   QString thumbnail_disk_cache_root_;

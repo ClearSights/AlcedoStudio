@@ -199,6 +199,7 @@ class AppTheme final : public QObject {
   Q_PROPERTY(QColor ratingStarEmptyColor READ ratingStarEmptyColor NOTIFY ThemeChanged)
   // Fill of the edit mark chip on the top-right corner of a thumbnail photo.
   Q_PROPERTY(QColor thumbnailEditMarkFillColor READ thumbnailEditMarkFillColor NOTIFY ThemeChanged)
+  Q_PROPERTY(QColor thumbnailDetailsScrimColor READ thumbnailDetailsScrimColor NOTIFY ThemeChanged)
   Q_PROPERTY(QColor scopeGridColor READ scopeGridColor NOTIFY ThemeChanged)
   Q_PROPERTY(QColor scopePlotBorderColor READ scopePlotBorderColor NOTIFY ThemeChanged)
   Q_PROPERTY(QColor scopeHistogramRedColor READ scopeHistogramRedColor NOTIFY ThemeChanged)
@@ -256,6 +257,8 @@ class AppTheme final : public QObject {
   // AI Mask tool input markers on the photograph (SM9): fixed in every theme, like the tint.
   Q_PROPERTY(QColor aiMaskInputAddColor READ aiMaskInputAddColor CONSTANT)
   Q_PROPERTY(QColor aiMaskInputSubtractColor READ aiMaskInputSubtractColor CONSTANT)
+  // Library color label codes 0 Red ... 6 Gray (#768): fixed in every theme, in code order.
+  Q_PROPERTY(QVariantList colorLabelColors READ colorLabelColors CONSTANT)
   Q_PROPERTY(QColor dateGraphLevel0Color READ dateGraphLevel0Color NOTIFY ThemeChanged)
   Q_PROPERTY(QColor dateGraphLevel1Color READ dateGraphLevel1Color NOTIFY ThemeChanged)
   Q_PROPERTY(QColor dateGraphLevel2Color READ dateGraphLevel2Color NOTIFY ThemeChanged)
@@ -445,6 +448,7 @@ class AppTheme final : public QObject {
   auto editorListFavoriteActiveOnSelectedColor() const -> QColor;
   auto ratingStarEmptyColor() const -> QColor;
   auto thumbnailEditMarkFillColor() const -> QColor;
+  auto thumbnailDetailsScrimColor() const -> QColor;
   auto scopeGridColor() const -> QColor;
   auto scopePlotBorderColor() const -> QColor;
   auto scopeHistogramRedColor() const -> QColor;
@@ -493,6 +497,7 @@ class AppTheme final : public QObject {
   auto maskCoverageTintOpacity() const -> qreal;
   auto aiMaskInputAddColor() const -> QColor;
   auto aiMaskInputSubtractColor() const -> QColor;
+  auto colorLabelColors() const -> QVariantList;
   auto dateGraphLevel0Color() const -> QColor;
   auto dateGraphLevel1Color() const -> QColor;
   auto dateGraphLevel2Color() const -> QColor;

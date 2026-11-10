@@ -22,6 +22,7 @@
 #include <QVariantMap>
 #include <algorithm>
 #include <chrono>
+#include <cstdint>
 #include <ctime>
 #include <filesystem>
 #include <functional>
@@ -35,6 +36,7 @@
 #include "app/project_package_backend.hpp"
 #include "app/project_service.hpp"
 #include "edit/graph/pipeline_document.hpp"
+#include "image/color_label.hpp"
 #include "image/image.hpp"
 #include "sleeve/sleeve_element/sleeve_file.hpp"
 #include "ui/album_backend_test_fixture.hpp"
@@ -99,6 +101,11 @@ struct LibraryPhotoSpec {
   std::string                date_time_ = "2026-05-25 10:00:00";
   int                        rating_    = 0;
   std::optional<std::time_t> added_time_{};  ///< Element.added_time; creation time when empty.
+  uint32_t                   width_  = 0;     ///< Oriented photo width; 0 is unknown.
+  uint32_t                   height_ = 0;     ///< Oriented photo height; 0 is unknown.
+  ColorLabelMask             color_labels_ = 0;  ///< Library color label code bits.
+  bool                       delete_mark_  = false;
+  std::wstring               file_name_;  ///< Library file name; "album-delete-<n>.dng" when empty.
 };
 
 /// Build a packed project with one synthetic DNG image (no real pixels, no GPU),
@@ -147,12 +154,20 @@ inline auto CreatePopulatedPackedProject(
     image->image_type_ = ImageType::DNG;
 
     const LibraryPhotoSpec spec = index < specs.size() ? specs[index] : LibraryPhotoSpec{};
+    if (sourceImagePaths.empty() && !spec.file_name_.empty()) {
+      image->image_path_ = tempDir / spec.file_name_;
+      image->image_name_ = spec.file_name_;
+    }
     ExifDisplayMetaData   metadata;
     metadata.model_         = spec.model_;
     metadata.lens_          = spec.lens_;
     metadata.date_time_str_ = spec.date_time_;
     metadata.rating_        = spec.rating_;
+    metadata.width_         = spec.width_;
+    metadata.height_        = spec.height_;
     image->SetExifDisplayMetaData(std::move(metadata));
+    image->color_labels_ = spec.color_labels_;
+    image->delete_mark_  = spec.delete_mark_;
 
     auto file = project->GetSleeveService()->Write<std::shared_ptr<SleeveFile>>(
         [image, &spec](FileSystem& fs) -> std::shared_ptr<SleeveFile> {

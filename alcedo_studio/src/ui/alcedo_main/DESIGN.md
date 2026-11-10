@@ -49,7 +49,7 @@ Drift checklist: `docs/roadmap/alcedo_studio/ui/qml_visual_literal_review_checkl
 | UI caption | `uiFontFamily` | `fontSizeCaption` (11) | `fontWeightRegular` | `lineHeightCaption` (14) | Secondary chrome |
 | Headline | `headlineFontFamily` | `fontSizeHeadline` (22) | `fontWeightHeading` | `lineHeightHeadline` (28) | Empty-state titles |
 | Settings card title | `headlineFontFamily` | `fontSizeSection` (14) | DemiBold | 1.1 | Title of a `PackageCard` (Settings > LUTs, Settings > AI Models) and of the folder tiles of those pages. Below it, after a `spaceSm` gap, one sentence in `uiFontFamily` + `fontSizeBody` muted text says what the package or model does; no list and no version text there (a Pill shows the version). A GitHub button beside the title opens the project of the package when it has one. Do not use a display size: a model name must stay on one line in the two-column page. |
-| Data / numeric | `dataFontFamily` | body/caption | regular/strong | matching | Tabular metrics, zoom, crop degrees (IBM Plex Sans) |
+| Data / numeric | `headlineFontFamily` (Manrope) with `font.features: { "tnum": 1 }` | body to display | DemiBold for inline counts, ExtraLight for display counts | matching | Counts, sizes, revisions, progress values, and remaining times. `dataFontFamily` (IBM Plex Sans) is retired page by page: a new or changed surface uses Manrope. Counts use the digit grouping of the locale (`DataFormat.grouped`); see "Settings bento pages" for large counts. |
 | Mono | `monoFontFamily` | body/caption | regular | matching | Minigit history/Versions data (commit hashes, before/after delta lines) and the adjustment-header EXIF tokens. Family is **DM Mono** (`data_DMMono.ttf`). Do **not** use for general metrics, filmstrip counts, zoom, crop degrees, or the selected node display name. |
 
 Families resolve at runtime from registered Alcedo fonts (`AppTheme::RegisterFonts`).
@@ -268,6 +268,7 @@ parallel palette to satisfy the policy.
 | **List favorite active on selected** | **`editorListFavoriteActiveOnSelectedColor`** | **Starred glyph inverted on the light well** (full ink) |
 | Rating star empty | `ratingStarEmptyColor` | Empty star of Library card ratings, the Inspector rating filter, and the photo Inspector rating; filled stars use `textColor`, the hover preview `textMutedColor` |
 | Thumbnail edit mark fill | `thumbnailEditMarkFillColor` | `bgDeepColor` (alpha 200) fill of the edit mark chip on the top-right corner of a Library card or filmstrip photo |
+| Thumbnail details scrim | `thumbnailDetailsScrimColor` | `bgDeepColor` (alpha 180) fill of the hover details panel on the bottom of a justified-rows Library tile |
 
 **Monochrome inverted list selection:** dense catalogs (the LUT browser first) keep a
 black-and-white row language — sunken `bgBaseColor` track, light
@@ -443,7 +444,11 @@ wordmark and the small import progress ring.
 | New-collection and rename name field | Inline in the tree row: a plain `TextInput` (no Controls `TextField`, so no style-provided floating label or underline) in a `collectionRowHeight` - 4 high `bgBaseColor` box with `controlRadiusSmall` corners; 1 px `dividerColor` border, `textMutedColor` on focus; placeholder in `textMutedColor` inside the box; text selection `textMutedColor` (alpha 0.6) with `textColor` text. The "Add to" filter field uses the same construction |
 | Grid zoom slider | `textColor` fill and handle on the `bgBaseColor` track; the handle has no border |
 | Inspector resize handle | `textMutedColor` on hover and drag |
-| Inspector stats cards (date calendar, By Camera Model, By Labels, By Lens) | Neutral bars (`textMutedColor`) and rank dots (`textColor`, then `textMutedColor`). The selected chip, row, or day tile is the `editorListSelectedFillColor` well with `editorListSelectedInkColor` text. Hover stays a `hoverColor` wash |
+| Album Inspector sections (`InspectorSection.qml`) | Every field of the Library Overview (By Capture Date, By Import Time, By Edit Time, By Camera Model, By Labels, By Custom Label, By Rating, By Lens, Search Filter) is one rounded card: `bgBaseColor` fill, 1 px `cardBorderColor`, `panelRadius` corners, `spaceMd` from the panel edges, `spaceSm` between the cards. The header and, when the section is expanded, its content sit inside the same card; a collapsed section is the 36 px header alone. In the header: the fold glyph `▾`/`▸` in `textMutedColor` at the left (the Collections tree glyphs; empty for a section that does not fold), the title in title case (`uiFontFamily`, `fontSizeBody`, `fontWeightStrong`, `textColor`, no upper-case transform), and the sort ascending, sort descending, and Group actions (`InspectorFieldActions`) at the right with `spaceXs` between them. The title elides at the right; the actions stay on the title row at the minimum inspector width (300 px) in every UI language. Only when the header cannot hold the glyph, a 56 px title, and the actions do the actions move to a second header row, together at the right. A click on the header outside the actions folds the section with the fold rules of "Motion": the card height follows the clipped content, the content fades with the same progress, and the `▸` glyph turns 90 degrees to point down (`motionFoldOpenMs` / `motionFoldCloseMs`, `motionEasing`; `reduceMotion` makes it a cut); the date content stays loaded until the close ends. The content has `spaceMd` side and bottom padding. Controls inside the card keep their contrast against the `bgBaseColor` fill: chips and day tiles use `controlFillColor` (hover `controlHoveredFillColor`) with a 1 px `cardBorderColor`, the "+N more" and "Show less" chips are transparent with a 1 px `controlBorderColor`, the lens row hover is `controlFillColor`, and the calendar/activity switch track and the search field are `bgCanvasColor`. The Search Filter card shows the query text directly, without a nested box (user decisions 2026-11-09, issue #766: the sections had no visible boundaries, the actions spread across a second row, then rounded cards that extend over the expanded content, consistent with the other panel cards) |
+| Album Inspector value search (By Camera Model, By Labels, By Lens) | First row of the section content: a plain `TextInput` in a `collectionRowHeight` hairline box (`bgCanvasColor`, sunken against the card; `controlRadiusSmall`, 1 px `dividerColor` border, `textMutedColor` on focus), a 12 px `search.svg` in `textMutedColor` at the left, the "Search" placeholder in `textMutedColor`, and a `×` that clears the text once there is text (Escape also clears). Typing filters the values of that section (case-insensitive, matches inside the value) and shows every match without the preview limit; the selected value stays in the list, first when it does not match. The field never changes the library query. The field is hidden when the section has no values |
+| By Custom Label (`ColorLabelFilterChips.qml`) | The section between By Labels and By Rating. Its content is one chip per color label code in code order (Red to Gray), always present, then "Deleted". A chip is 38 px high with fully round ends, like the By Labels chips: `controlFillColor` fill (hover `controlHoveredFillColor`), 1 px `cardBorderColor`; inside, a 10 px dot of the code color (`appTheme.colorLabelColors`; a 12 px `trash.svg` in `textMutedColor` for Deleted), the user name of the code (`colorLabelNames`, 11 px `fontWeight` 600, `textColor`), and the match-set count in `dataFontFamily` with tabular figures in `textMutedColor`. Counts below 10,000 use the digit grouping of the locale; larger counts use the short form (12.8K, 102K, 1.25M; 1.28万 in Chinese). The chip of the active filter is the `editorListSelectedFillColor` well with `editorListSelectedInkColor` text; the dot keeps its color. A click toggles the filter (`colorLabel` with the code, or `deleted`). The header action is one pencil (`edit.svg`) in the `InspectorFieldActions` action style; it opens Settings > Language / Theme scrolled to Library > Color Labels. The section has no sort or Group actions, because a photo can have several codes (issue #772) |
+| Library marks control (`LibraryMarksControl.qml`) | One card above the button row of the Library inspector on the Album and Image tabs (hidden on the Export tab): `bgBaseColor` fill, 1 px `cardBorderColor`, `panelRadius` corners, `spaceMd` side padding. Three 40 px rows with a 1 px `dividerColor` hairline between them; each row starts with its name (Rating, Label, Delete) in a 64 px column, `fontSizeCaption`, `textMutedColor`. Rating: five 18 px stars in the rating filter inks; when the selected photos have different ratings, all stars are hollow and "Mixed" (`textMutedColor`) follows them; a click sets that rating on every selected photo, and a click on the star of the common rating clears it. Label: the seven codes as 18 px circles, 8 px apart: filled with the code color when all selected photos have the code, a 1.5 px ring of the code color with an 8 by 2 px dash in its center when some have it, the ring alone when none has it; hover draws a 1 px `textMutedColor` ring 3 px outside the circle; the tooltip is the user name of the code. A click on a code that all photos have removes it from all; otherwise it adds it to all; the other codes of each photo stay. Delete: a 28 px neutral button "Mark" (the secondary button fill and border of the inspector buttons); when all selected photos have the Delete mark it is the light filled "Marked" (`filledActionFill`, `filledActionInk`), and a click clears the mark. The control shows each change at once, with the library cards. It is enabled under the conditions of "Add to Export Queue" while `interactionPolicy.canChangeStateAsUser` is true; disabled, the stars and circles are at 45% opacity (issue #772) |
+| Inspector stats cards (date calendar, By Camera Model, By Labels, By Lens) | Neutral bars (`textMutedColor`) and rank dots (`textColor`, then `textMutedColor`). The selected chip, row, or day tile is the `editorListSelectedFillColor` well with `editorListSelectedInkColor` text. Hover follows the section card rules above (a `controlFillColor` step) |
 | Rating filter and photo Inspector rating | Filled stars `textColor`, hover preview `textMutedColor`, other stars `ratingStarEmptyColor` |
 | Active search filter row | No marker dot; the row text names the filter |
 | Photo Inspector AI description | `sparkles.svg` in `textMutedColor` and a 3 px `dividerColor` rule |
@@ -485,8 +490,8 @@ edit state and the rating. The shared parts are `ThumbnailEditMark.qml` and
   another, 30 ms apart, with a short scale settle in `motionFadeMs`;
   `reduceMotion` makes it a cut. A multi-selection keeps the context menu and
   keyboard paths.
-- **8 and 11 columns:** one caption line with the file name and only the
-  filled stars; the file name elides first. The stars are display
+- **8 and 11 columns:** one caption line with the file name, the color label
+  dots, and only the filled stars; the file name elides first. The stars are display
   only: no hover preview, no stars for an unrated photo, and a click on them is
   a normal card click (selection).
 - **14 columns:** no caption, so no stars. The edit mark chip still shows.
@@ -501,6 +506,40 @@ edit state and the rating. The shared parts are `ThumbnailEditMark.qml` and
   `textMutedColor` border, `textColor` icon), not gold.
 - The accessible name of a card includes the rating ("3 stars", "Unrated") and
   "Edited" for an edited photo.
+- **Zoom:** a zoom step moves each card from its drawn rectangle to its new
+  rectangle (position and size) in 280 ms (`OutCubic`; `reduceMotion` makes it
+  a cut). The card under the pointer (Ctrl+wheel) or at the view centre keeps
+  that point at the same height on the screen. Cards that leave the view move
+  to their new place and fade out; cards that enter fade in. A step during the
+  animation starts from the drawn rectangles of that moment. The thumbnail of a
+  new tier replaces the shown one when it is ready. The grouped view uses the
+  same rules (260 ms).
+
+### Library justified rows
+
+Settings "Language / Theme" > Library > Photo layout selects the layout of the
+ungrouped Library: "Classic grid" (the cards above) or "Justified rows"
+(`LibraryViewPreferences`, QSettings `library/gridLayout`). Grouped photos
+always use the classic cells.
+
+- **Rows:** the tiles of one row have one photo height; the tile width follows
+  the aspect ratio of the oriented photo, and a complete row fills the view
+  width. The photo fills the tile (`PreserveAspectCrop`); there is no 3:2 box
+  and no side bands. The last row keeps the target height and starts at the
+  left edge. The zoom slider sets the target row height: 480, 360, 280, 220,
+  180, 140, 104, 80 px.
+- **Gaps:** `cardInset` between tiles and rows (8, 6, 4 px as on the cards).
+- **Caption:** the file name and the color label dots (see "Library color
+  labels"), in `dataFontFamily` at the card title size; 22 px high, 16 px from
+  8 columns, none at the smallest level.
+- **Hover details:** while the pointer is on a tile, a panel on the bottom of
+  the photo shows the camera, ISO, and aperture line, the date and labels line,
+  and the stars, on a `thumbnailDetailsScrimColor` fill; the panel fades in
+  `motionFadeMs`. At the levels where the cards have the star control, the stars
+  are the same control here; at smaller levels they are display only.
+- **Marks and selection:** the edit mark chip, the missing-source mark, and the
+  Delete mark sit on the photo as on the cards. Selection is the 2 px
+  `textColor` outline around the photo.
 
 ### Library sort, group, and sections
 
@@ -517,6 +556,54 @@ The sort and Group icons are the user-provided Tabler `sort-ascending`,
 upstream 2 px stroke and drawn at `iconOpticalSizeCompact`.
 Selected actions use the monochrome list well (`editorListSelectedFillColor` /
 `editorListSelectedInkColor`). Per-file details: `docs/VI/README.md`.
+
+### Library color labels
+
+A photo carries any of seven color label codes (#768). The colors are fixed in
+every theme; `appTheme.colorLabelColors` lists them in code order. The name of a
+code is the user name from Settings, or the translated color name
+(`appModules.libraryView.colorLabelNames`).
+
+| Code | Color name | `colorLabelColors` value |
+| --- | --- | --- |
+| 0 | Red | `#E5534B` |
+| 1 | Orange | `#E8863A` |
+| 2 | Yellow | `#D8B43A` |
+| 3 | Green | `#4FAE6B` |
+| 4 | Blue | `#4C8DDB` |
+| 5 | Purple | `#9B6BD3` |
+| 6 | Gray | `#8C8C8C` |
+
+Settings > Language / Theme > Library > Color Labels (`ColorLabelNamesEditor.qml`,
+#770): one 36 px row per code, in code order. A 12 px color dot in a 22 px cell;
+the name field, a plain `TextInput` in a 28 px `bgBaseColor` box with
+`controlRadiusSmall` corners and a 1 px `dividerColor` border (`textMutedColor`
+on focus); the translated color name as the placeholder in `textMutedColor`; a
+`reset.svg` glyph in `textMutedColor` in a 28 px cell, shown only on a row with a
+user name. The rows are at most 520 px wide. Names follow the Apply button of the
+dialog, like the other settings of the page.
+
+**Caption dots** (`ThumbnailColorLabelDots.qml`, #771): the classic cards, the
+justified tiles, and the grouped cells show one dot per code after the file
+name, in code order. A dot is 9 px (7 px at 8 and 11 columns), overlaps the
+previous dot by 3 px, and has a 1.5 px ring of the surface behind it: the card
+fill on a card (`cardSurfaceColor`, `hoverColor` while hovered) and
+`glassPanelColor` under a justified tile. The space from the name to the first
+dot color is 6 px (4 px at 8 and 11 columns). The file name elides first; the
+dots stay whole. At 8 and 11 columns the line is the name, the dots, and the
+filled stars. A photo without codes shows no dots. The accessible name of the
+card lists the names of its codes.
+
+**Delete mark** (`ThumbnailDeleteMark.qml`, #771): the photo box (the photo
+area of a justified tile) is covered by a `rgba(6,6,6,0.72)` scrim with a round
+trash badge in the centre: 34 px (24 px at 8 and 11 columns), `bgDeepColor`
+fill, 1 px `controlBorderColor` hairline, `panel_icons/trash.svg` in
+`textColor` at 16 px (12 px). The photo under it is desaturated (MultiEffect
+saturation -0.65). The edit mark chip and the justified hover details stay above
+the scrim. The file name turns `textMutedColor`. The mark takes no pointer
+input: the photo stays selectable and editable. A change of the marks updates
+the shown cards in place (`AlbumThumbnailModel::updateMarks`), without a
+delegate rebuild or a scroll move.
 
 ---
 
@@ -1255,7 +1342,7 @@ perpetual animation is the `SkeletonBlock` content placeholder (table below).
 | Library first reveal | Grid Loader fades in `motionFoldOpenMs` with `spaceMd` translateY | Prepared hidden while the overlay is up; plays as the overlay starts to fade; skipped under `reduceMotion` |
 | Window maximize / restore / minimize | Native `QWindow` state transition (`showMaximized`, `showNormal`, `showMinimized`) | Windows keeps the standard resizable HWND styles and extends the client area through `WindowsFramelessWindow`. macOS keeps the system traffic lights over the leading side of the full-width toolbar and hides the title-bar surface with `Qt.ExpandedClientAreaHint` + `Qt.NoTitleBarBackgroundHint`; toolbar content reserves that leading region. Other platforms use Qt frameless behavior plus drawn caption buttons. The platform owns animation and geometry; QML never fades, snapshots, or interpolates the top-level window |
 
-**Fold rules (History/Versions/Nodes, adjustment stack, filmstrip, collapsible section):**
+**Fold rules (History/Versions/Nodes, adjustment stack, filmstrip, collapsible section, Album Inspector sections):**
 
 1. Logical expanded/collapsed (or session page) flips immediately.
 2. Persistent rail / handle / section header stays stationary.
@@ -1322,18 +1409,54 @@ are not a valid target.
 
 ---
 
+## Settings bento pages
+
+Settings > LUTs, Settings > AI Models, and Settings > Local Content Recognition use `BentoTile`
+surfaces with the page margins 26 px (top) and 34 px (sides) and `spaceMd` between tiles.
+
+- **Count tile** (`CountTile.qml`, 190 px wide): the name in muted Manrope `fontSizeSection`
+  Medium, the count in Manrope 72 px ExtraLight with tabular figures, centered. A page that can
+  hold 10,000 or more items sets `compactLargeCounts`: the count then shows at most three
+  significant digits, truncated (12.8K, 102K, 1.25M; in Chinese 1.28万, 10.2万, 1.23亿), and the
+  exact grouped count stands below it in muted Manrope `fontSizeBody`.
+- **Split bar and legend** (`SplitBar.qml`, `LegendItem.qml`): a 10 px track in
+  `bgBaseColor`, the first part from the left, a 3 px gap, the second part at the right. The
+  legend swatch (8 px) carries the color of its bar part; it names a color, it is not a status
+  dot. The LUT categories keep `accentColor` and `toneMist` at 0.7. The label coverage of
+  Local Content Recognition is neutral: `textColor` for photos with labels and
+  `textMutedColor` at 0.45 for photos that need labels.
+- **Task progress in a tile**: `ThemedProgressBar` with `showDetails`; `fillColor` is
+  `textColor` on neutral pages. The detail text is percent, `completed / total` (grouped), and
+  the remaining time from `DataFormat.remaining` ("About 3 min remaining", "About 2 h 10 min
+  remaining", "Less than a minute remaining", "Estimating the remaining time"). The running
+  body takes the place of the idle body at the same height, so the tile does not resize.
+- **Neutral actions**: Local Content Recognition and the AI label dialog use no theme blue. The
+  main action is `DialogActionButton` `kind: "light"` (`textColor` fill, `bgCanvasColor`
+  text); the other actions are `kind: "normal"`. "Move task to background" is an
+  `IconButton` with `to_bg.svg` in the normal control colors (`controlFillColor`,
+  `controlBorderColor`). Buttons are 34 px high in tiles and in this dialog.
+- **Settings rows** in a tile: the name in `uiFontFamily` `fontSizeTitle` `fontWeightStrong` at
+  the left; the value and the control at the right (combos 220 px wide); 1 px `dividerColor`
+  lines between the rows. No explanatory sentence under a row or in a tile: the name, the value,
+  and the state words carry the meaning. Background information goes into the page info badge.
+- Local Content Recognition fits the dialog at its full size (980 x 620) without scrolling.
+
 ## Shared components
 
 | Component | Responsibility |
 | --- | --- |
 | `IconActionButton.qml` | Structural SVG action (Item root, true square chrome): hit/optical/source, tooltip, a11y, hover, focus, selected fill; SVG tint via `ColorImage` (same as `Button.icon.color`) |
 | `CollapsibleSection.qml` | Folding group shell with shared motion driver |
-| `DialogActionButton.qml` | Text dialog actions (46 px floor; wrapped labels grow the button) |
+| `DialogActionButton.qml` | Text dialog actions (46 px floor; wrapped labels grow the button); kinds `normal`, `light` (main action of a neutral surface), `accent`, `danger`, `warning` |
 | `IconButton.qml` | Legacy square icon control; defaults now follow tokens |
 | `SegmentedCardSwitcher.qml` | Monochrome segmented track; per-entry `enabled: false` keeps unsupported choices visible but non-interactive |
 | `AdjustmentSlider.qml` | Shared numeric slider + field bound to `EditorAdjustmentValueModel` |
-| `ThemedProgressBar.qml` | Shared determinate / indeterminate progress track (Background Tasks + Export) |
+| `ThemedProgressBar.qml` | Shared determinate / indeterminate progress track (Background Tasks, Export, Settings tiles); detail text in Manrope with tabular figures |
 | `ImportProgressRing.qml` | Counted import/removal work; rotates a waiting arc during stages without measurable entry progress. Project Maintenance reuses it with the working-task color and stops rotation under reduced motion |
+| `BentoTile.qml` | Settings bento surface (radius 14, `cardSurfaceColor`, `cardBorderColor`, 22 px padding) |
+| `CountTile.qml` | Bento tile with one large count; optional short form for large counts with the exact count below |
+| `SplitBar.qml` / `LegendItem.qml` | Two-part count bar and its legend entries (swatch, name, grouped count) |
+| `DataFormat.js` | Grouped counts, short large counts (K/M, 万/亿), and remaining-time text |
 | `ThemeCheckBox.qml` | Monochrome check row (Adjustment Transfer / Export): selected well + check, muted label when off; disabled: hairline box, muted mark and label |
 | `ThemeSwitch.qml` | Monochrome switch row (search settings): label + track; on = selected well + ink knob, off = sunken track + muted knob |
 | `AppContextMenu.qml` | Shared dark popup menu shell (`Menu` + `AppMenuItem` delegate, fade transition, `openAt`) |

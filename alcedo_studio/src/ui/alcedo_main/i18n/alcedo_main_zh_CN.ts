@@ -990,7 +990,7 @@
     <name>AlbumInspectorPanel</name>
     <message>
         <location filename="../qml/AlbumInspectorPanel.qml" line="+43"/>
-        <source>LIBRARY OVERVIEW</source>
+        <source>Library Overview</source>
         <translation>图库概览</translation>
     </message>
     <message>
@@ -1020,8 +1020,12 @@
     </message>
     <message>
         <location line="+20"/>
-        <source>SEARCH FILTER</source>
+        <source>Search Filter</source>
         <translation>搜索筛选</translation>
+    </message>
+    <message>
+        <source>By Rating</source>
+        <translation>按评分</translation>
     </message>
     <message>
         <location line="+38"/>
@@ -1083,6 +1087,14 @@
     <message>
         <source>lens</source>
         <translation>镜头</translation>
+    </message>
+    <message>
+        <source>By Custom Label</source>
+        <translation>按自定义标签</translation>
+    </message>
+    <message>
+        <source>Color label names</source>
+        <translation>颜色标签名称</translation>
     </message>
 </context>
 <context>
@@ -1927,6 +1939,10 @@ Alcedo 将改用 %1。</translation>
         <source>Delete Images</source>
         <translation>删除图像</translation>
     </message>
+    <message>
+        <source>Labels and Marks</source>
+        <translation>标签与标记</translation>
+    </message>
 </context>
 <context>
     <name>BackgroundTasksDialog</name>
@@ -2046,6 +2062,10 @@ Alcedo 将改用 %1。</translation>
     <message>
         <source>Delete Images</source>
         <translation>删除图像</translation>
+    </message>
+    <message>
+        <source>Labels and Marks</source>
+        <translation>标签与标记</translation>
     </message>
     <message>
         <source>Agent Sessions</source>
@@ -7105,6 +7125,22 @@ Create a new layer above it and draw the Mask there?</source>
         <source>Move task to background</source>
         <translation>将任务移至后台</translation>
     </message>
+    <message>
+        <source>Generating AI labels</source>
+        <translation>正在生成 AI 标签</translation>
+    </message>
+    <message>
+        <source>Generate AI labels for the new photos?</source>
+        <translation>为新照片生成 AI 标签？</translation>
+    </message>
+    <message>
+        <source>photos need labels</source>
+        <translation>张照片需要标签</translation>
+    </message>
+    <message>
+        <source>Remember my choice</source>
+        <translation>记住我的选择</translation>
+    </message>
 </context>
 <context>
     <name>SemanticGenerationSettingsPanel</name>
@@ -7344,9 +7380,53 @@ Create a new layer above it and draw the Mask there?</source>
         <source>Open AI Models</source>
         <translation>打开 AI 模型</translation>
     </message>
+    <message>
+        <source>AI labels</source>
+        <translation>AI 标签</translation>
+    </message>
+    <message>
+        <source>Labeling</source>
+        <translation>正在标注</translation>
+    </message>
+    <message>
+        <source>photos</source>
+        <translation>张照片</translation>
+    </message>
+    <message>
+        <source>Regenerate all</source>
+        <translation>全部重新生成</translation>
+    </message>
+    <message>
+        <source>Photos</source>
+        <translation>照片</translation>
+    </message>
+    <message>
+        <source>No open project</source>
+        <translation>未打开项目</translation>
+    </message>
+    <message>
+        <source>No model</source>
+        <translation>无模型</translation>
+    </message>
+    <message>
+        <source>Manage</source>
+        <translation>管理</translation>
+    </message>
+    <message>
+        <source>Keep the model loaded</source>
+        <translation>保持模型加载</translation>
+    </message>
+    <message>
+        <source>Labels for imported photos</source>
+        <translation>导入照片的标签</translation>
+    </message>
 </context>
 <context>
     <name>SettingDialog</name>
+    <message>
+        <source>Color Labels</source>
+        <translation>颜色标签</translation>
+    </message>
     <message>
         <location filename="../qml/SettingDialog.qml" line="+1"/>
         <source>LUTs</source>
@@ -7543,6 +7623,10 @@ CLIP / SigLIP 这类视觉语言模型会把图像和文字映射到同一语义
         <source>Skips repeated imports from the same source path. Files in different folders remain separate.</source>
         <translation>跳过同一源路径的重复导入。不同文件夹中的文件将保持独立。</translation>
     </message>
+    <message>
+        <source>The AI model runs on this computer, and no photo is uploaded. The labeling speed depends on the CPU, the GPU, and the disk.</source>
+        <translation>AI 模型在本机运行，照片不会上传。标注速度取决于 CPU、GPU 和磁盘。</translation>
+    </message>
 </context>
 <context>
     <name>ShellSignals</name>
@@ -7601,15 +7685,11 @@ CLIP / SigLIP 这类视觉语言模型会把图像和文字映射到同一语义
     </message>
 </context>
 <context>
-    <name>StarRatingFilter</name>
-    <message>
-        <location filename="../qml/StarRatingFilter.qml" line="+59"/>
-        <source>BY RATING</source>
-        <translation>按评分</translation>
-    </message>
-</context>
-<context>
     <name>StatsCard</name>
+    <message>
+        <source>Search</source>
+        <translation>搜索</translation>
+    </message>
     <message>
         <location filename="../qml/StatsCard.qml" line="+358"/>
         <source> more</source>
@@ -9045,6 +9125,13 @@ CLIP / SigLIP 这类视觉语言模型会把图像和文字映射到同一语义
     </message>
 </context>
 <context>
+    <name>ThumbnailDeleteMark</name>
+    <message>
+        <source>Marked for deletion</source>
+        <translation>已标记删除</translation>
+    </message>
+</context>
+<context>
     <name>ThumbnailEditMark</name>
     <message>
         <source>Edited</source>
@@ -9426,6 +9513,107 @@ The verified backup was restored and reopened.</source>
     <message>
         <source>%1 commits; %2 Versions</source>
         <translation>%1 个提交；%2 个版本</translation>
+    </message>
+</context>
+<context>
+    <name>alcedo::ui::LibraryViewPreferences</name>
+    <message>
+        <source>Red</source>
+        <translation>红色</translation>
+    </message>
+    <message>
+        <source>Orange</source>
+        <translation>橙色</translation>
+    </message>
+    <message>
+        <source>Yellow</source>
+        <translation>黄色</translation>
+    </message>
+    <message>
+        <source>Green</source>
+        <translation>绿色</translation>
+    </message>
+    <message>
+        <source>Blue</source>
+        <translation>蓝色</translation>
+    </message>
+    <message>
+        <source>Purple</source>
+        <translation>紫色</translation>
+    </message>
+    <message>
+        <source>Gray</source>
+        <translation>灰色</translation>
+    </message>
+</context>
+<context>
+    <name>ColorLabelNamesEditor</name>
+    <message>
+        <source>Reset %1</source>
+        <translation>重置 %1</translation>
+    </message>
+</context>
+<context>
+    <name>ColorLabelFilterChips</name>
+    <message>
+        <source>Deleted</source>
+        <translation>待删除</translation>
+    </message>
+</context>
+<context>
+    <name>LibraryMarksControl</name>
+    <message>
+        <source>Rating</source>
+        <translation>评分</translation>
+    </message>
+    <message numerus="yes">
+        <source>%n star(s)</source>
+        <translation>
+            <numerusform>%n 星</numerusform>
+        </translation>
+    </message>
+    <message>
+        <source>Mixed</source>
+        <translation>混合</translation>
+    </message>
+    <message>
+        <source>Label</source>
+        <translation>标签</translation>
+    </message>
+    <message>
+        <source>Delete</source>
+        <translation>删除</translation>
+    </message>
+    <message>
+        <source>Marked</source>
+        <translation>已标记</translation>
+    </message>
+    <message>
+        <source>Mark</source>
+        <translation>标记</translation>
+    </message>
+</context>
+<context>
+    <name>DataFormat</name>
+    <message>
+        <source>Estimating the remaining time</source>
+        <translation>正在估算剩余时间</translation>
+    </message>
+    <message>
+        <source>Less than a minute remaining</source>
+        <translation>剩余不到 1 分钟</translation>
+    </message>
+    <message>
+        <source>About %1 min remaining</source>
+        <translation>剩余约 %1 分钟</translation>
+    </message>
+    <message>
+        <source>About %1 h remaining</source>
+        <translation>剩余约 %1 小时</translation>
+    </message>
+    <message>
+        <source>About %1 h %2 min remaining</source>
+        <translation>剩余约 %1 小时 %2 分钟</translation>
     </message>
 </context>
 </TS>

@@ -42,8 +42,15 @@ Dialog {
     property string pendingAcceleratorBackend: appModules.project.acceleratorBackend
     property string pendingLockedNodeMaskAction: appModules.editorBehavior.lockedNodeMaskAction
     property bool pendingSkipDuplicateImports: appModules.importBehavior.skipDuplicateImports
+    property string pendingLibraryGridLayout: appModules.libraryView.gridLayout
+    // User names of the seven color label codes; an empty entry keeps the color name.
+    property var pendingColorLabelNames: Array.from(appModules.libraryView.colorLabelUserNames)
     property int requestedCategory: 0
+    // The next opening scrolls the Language / Theme page to Library > Color Labels (the pencil of
+    // By Custom Label in the Library Overview).
+    property bool revealColorLabelsOnOpen: false
     // Category indices used by callers outside this dialog.
+    readonly property int colorLabelsCategory: 0
     readonly property int updatesCategory: 6
     readonly property int lutCategory: 8
     readonly property int aiModelsCategory: 9
@@ -64,6 +71,10 @@ Dialog {
             resetPendingValues()
             aiModelFeedCheckedThisOpening = false
             currentCategory = requestedCategory
+            if (revealColorLabelsOnOpen) {
+                revealColorLabelsOnOpen = false
+                Qt.callLater(revealColorLabels)
+            }
             // Each Settings opening checks the signed LUT package list once; the
             // application never checks it at startup (plan L6B).
             if (appModules.lutPackages)
@@ -71,6 +82,16 @@ Dialog {
             // Settings can open on the AI Models page; no category change follows then.
             showAiModelsPage()
         }
+    }
+
+    // Scroll the Language / Theme page so that the Color Labels row is at its top.
+    function revealColorLabels() {
+        const flick = languageScroll.contentItem
+        if (!flick || !colorLabelsRow)
+            return
+        const rowY = colorLabelsRow.mapToItem(flick.contentItem, 0, 0).y
+        const maxY = Math.max(0, flick.contentHeight - flick.height)
+        flick.contentY = Math.max(0, Math.min(maxY, rowY - 26))
     }
 
     function showAiModelsPage() {
@@ -101,7 +122,15 @@ Dialog {
         pendingAcceleratorBackend = appModules.project.acceleratorBackend
         pendingLockedNodeMaskAction = appModules.editorBehavior.lockedNodeMaskAction
         pendingSkipDuplicateImports = appModules.importBehavior.skipDuplicateImports
+        pendingLibraryGridLayout = appModules.libraryView.gridLayout
+        pendingColorLabelNames = Array.from(appModules.libraryView.colorLabelUserNames)
         cachePanel.reloadPending()
+    }
+
+    function setPendingColorLabelName(code, name) {
+        const names = pendingColorLabelNames.slice()
+        names[code] = name
+        pendingColorLabelNames = names
     }
 
     function acceleratorIndexForValue(value) {
@@ -137,6 +166,16 @@ Dialog {
         const entries = lockedNodeMaskComboModel.entries
         for (let i = 0; i < entries.length; ++i) {
             if (entries[i].value === action) {
+                return i
+            }
+        }
+        return 0
+    }
+
+    function libraryGridLayoutIndex(layout) {
+        const entries = libraryGridLayoutComboModel.entries
+        for (let i = 0; i < entries.length; ++i) {
+            if (entries[i].value === layout) {
                 return i
             }
         }
@@ -179,7 +218,7 @@ Dialog {
 
     function currentPageInfoText() {
         if (currentCategory === 3) {
-            return qsTr("本地 AI 功能运行在本机 AI 模型上，图片内容不会上传至云端。识别速度和可处理规模取决于你的 CPU、GPU、内存与磁盘性能。\n\n默认推荐使用 SigLIP2 模型：它是当前最均衡的选择，多语言语义理解更稳，适合大多数相册标注和自然语言搜索。\n\n本地模型特点：\nSigLIP2 B/32 256 Multilingual：默认推荐，多语言、质量稳定、适合长期使用。\nMobileCLIP2 S2 English：更轻更快，偏英文场景，适合低配电脑或快速试用。\nJina CLIP v2 INT8 Multilingual：多语言，512px 输入，模型更大，适合需要更细图文语义的场景。\nSigLIP2 Base CoreML macOS：macOS 原生 CoreML 版本，适合 Apple Silicon 设备。\n\nCLIP / SigLIP 这类视觉语言模型会把图像和文字映射到同一语义空间，因此可以理解“海边日落”“人像”“建筑细节”等自然语言概念，并用于生成标签和语义检索。")
+            return qsTr("The AI model runs on this computer, and no photo is uploaded. The labeling speed depends on the CPU, the GPU, and the disk.")
         }
         if (currentCategory === 4) {
             return qsTr("高级内容识别会通过你配置的 Anthropic / OpenAI 兼容提供商，与指定 agent 交互来识别图像内容并进行评分。数据保留、隐私与合规政策请咨询你使用的 AI 提供商；Alcedo Studio 不会保留任何内容。\n\n这个设置界面的灵感来自 ccswitch，使用方式也类似。")
@@ -198,6 +237,16 @@ Dialog {
             appModules.editorBehavior.setLockedNodeMaskAction(pendingLockedNodeMaskAction)
         }
         appModules.importBehavior.SetSkipDuplicateImports(pendingSkipDuplicateImports)
+        if (appModules.libraryView.gridLayout !== pendingLibraryGridLayout) {
+            appModules.libraryView.setGridLayout(pendingLibraryGridLayout)
+        }
+        const storedColorLabelNames = appModules.libraryView.colorLabelUserNames
+        for (let code = 0; code < pendingColorLabelNames.length; ++code) {
+            const pendingName = String(pendingColorLabelNames[code] || "").trim()
+            if (pendingName !== storedColorLabelNames[code]) {
+                appModules.libraryView.SetColorLabelName(code, pendingName)
+            }
+        }
         cachePanel.applyPending()
         if (appModules.semanticGeneration.importPreference !== pendingSemanticImportPreference) {
             appModules.semanticGeneration.SetImportPreference(pendingSemanticImportPreference)
@@ -264,6 +313,22 @@ Dialog {
             const item = entries[index]
             if (item)
                 dialog.pendingLockedNodeMaskAction = item.value
+        }
+    }
+
+    QtObject {
+        id: libraryGridLayoutComboModel
+        property string label: ""
+        property bool enabled: true
+        readonly property var entries: [
+            { value: "classic", label: qsTr("Classic grid") },
+            { value: "justified", label: qsTr("Justified rows") }
+        ]
+        property int currentIndex: dialog.libraryGridLayoutIndex(dialog.pendingLibraryGridLayout)
+        function selectIndex(index) {
+            const item = entries[index]
+            if (item)
+                dialog.pendingLibraryGridLayout = item.value
         }
     }
 
@@ -589,7 +654,6 @@ Dialog {
                                     Layout.topMargin: 8
                                     Layout.leftMargin: 34
                                     Layout.rightMargin: 34
-                                    Layout.bottomMargin: 26
                                     title: qsTr("Workspace appearance")
                                     textColor: dialog.textColor
                                     mutedTextColor: dialog.mutedTextColor
@@ -614,6 +678,87 @@ Dialog {
                                             controlHeight: 36
                                             showResetButton: false
                                             model: themeComboModel
+                                        }
+                                    }
+                                }
+
+                                SettingsSection {
+                                    Layout.fillWidth: true
+                                    Layout.topMargin: 8
+                                    Layout.leftMargin: 34
+                                    Layout.rightMargin: 34
+                                    Layout.bottomMargin: 26
+                                    title: qsTr("Library")
+                                    textColor: dialog.textColor
+                                    mutedTextColor: dialog.mutedTextColor
+                                    dividerColor: dialog.dividerColor
+
+                                    ColumnLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 10
+
+                                        RowLayout {
+                                            Layout.fillWidth: true
+                                            spacing: 16
+
+                                            Label {
+                                                Layout.preferredWidth: 160
+                                                text: qsTr("Photo layout")
+                                                color: dialog.textColor
+                                                font.pixelSize: 15
+                                                font.weight: 600
+                                                wrapMode: Text.Wrap
+                                            }
+
+                                            AdjustmentCombo {
+                                                objectName: "settingsLibraryGridLayoutControl"
+                                                controlObjectName: "settingsLibraryGridLayoutCombo"
+                                                Layout.fillWidth: true
+                                                controlHeight: 36
+                                                showResetButton: false
+                                                model: libraryGridLayoutComboModel
+                                            }
+                                        }
+
+                                        Label {
+                                            Layout.fillWidth: true
+                                            Layout.leftMargin: 176
+                                            text: qsTr("Classic grid shows each photo in a card of the same size, with its details below it. Justified rows show the photos in rows of one height that fill the width; each photo keeps its shape, and its details and rating show when the pointer is on it. Grouped photos always use the classic grid.")
+                                            wrapMode: Text.WordWrap
+                                            color: dialog.mutedTextColor
+                                            font.pixelSize: 12
+                                            font.weight: 500
+                                            lineHeight: 1.25
+                                        }
+
+                                        RowLayout {
+                                            id: colorLabelsRow
+                                            objectName: "settingsColorLabelsRow"
+                                            Layout.fillWidth: true
+                                            Layout.topMargin: 8
+                                            spacing: 16
+
+                                            Label {
+                                                Layout.preferredWidth: 160
+                                                Layout.alignment: Qt.AlignTop
+                                                Layout.topMargin: 8
+                                                text: qsTr("Color Labels")
+                                                color: dialog.textColor
+                                                font.pixelSize: 15
+                                                font.weight: 600
+                                                wrapMode: Text.Wrap
+                                            }
+
+                                            ColorLabelNamesEditor {
+                                                objectName: "settingsColorLabelNames"
+                                                Layout.fillWidth: true
+                                                Layout.maximumWidth: 520
+                                                userNames: dialog.pendingColorLabelNames
+                                                defaultNames: appModules.libraryView.colorLabelDefaultNames
+                                                onNameEdited: function(code, name) {
+                                                    dialog.setPendingColorLabelName(code, name)
+                                                }
+                                            }
                                         }
                                     }
                                 }
@@ -743,44 +888,29 @@ Dialog {
                             }
                         }
 
+                        // The page fits the dialog (#762); the scroll view only serves a window
+                        // smaller than the dialog's full size.
                         ScrollView {
                             id: semanticScroll
+                            objectName: "semanticSettingsScroll"
                             contentWidth: availableWidth
                             clip: true
 
-                            ColumnLayout {
+                            SemanticGenerationSettingsPanel {
                                 width: semanticScroll.availableWidth
-                                spacing: 20
-
-                                SemanticGenerationSettingsPanel {
-                                    Layout.fillWidth: true
-                                    Layout.topMargin: 26
-                                    Layout.leftMargin: 34
-                                    Layout.rightMargin: 34
-                                    Layout.bottomMargin: 26
-                                    semanticController: appModules.semanticGeneration
-                                    interactionPolicy: appModules.interactionPolicy
-                                    importPreference: dialog.pendingSemanticImportPreference
-                                    primaryAccent: dialog.primaryAccent
-                                    secondaryAccent: dialog.secondaryAccent
-                                    textColor: dialog.textColor
-                                    mutedTextColor: dialog.mutedTextColor
-                                    canvasColor: dialog.canvasColor
-                                    dividerColor: dialog.dividerColor
-                                    dangerColor: dialog.dangerColor
-                                    dataFontFamily: dialog.dataFontFamily
-                                    onImportPreferenceRequested: function(preference) {
-                                        dialog.pendingSemanticImportPreference = preference
-                                    }
-                                    onMessageRequested: function(message) {
-                                        dialog.messageRequested(message)
-                                    }
-                                    onBackgroundRequested: {
-                                        dialog.semanticGenerationBackgroundRequested()
-                                        dialog.close()
-                                    }
-                                    onAiModelsPageRequested: dialog.currentCategory = dialog.aiModelsCategory
+                                semanticController: appModules.semanticGeneration
+                                interactionPolicy: appModules.interactionPolicy
+                                projectOpen: appModules.project.serviceReady
+                                languageCode: languageManager.effectiveLanguageCode
+                                importPreference: dialog.pendingSemanticImportPreference
+                                onImportPreferenceRequested: function(preference) {
+                                    dialog.pendingSemanticImportPreference = preference
                                 }
+                                onBackgroundRequested: {
+                                    dialog.semanticGenerationBackgroundRequested()
+                                    dialog.close()
+                                }
+                                onAiModelsPageRequested: dialog.currentCategory = dialog.aiModelsCategory
                             }
                         }
 
