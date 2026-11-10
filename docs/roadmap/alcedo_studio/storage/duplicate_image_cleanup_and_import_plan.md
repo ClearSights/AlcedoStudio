@@ -5,7 +5,7 @@ Created: 2026-11-08
 Updated: 2026-11-09
 
 Status: Import Duplicate Skipping I1-I5 is implemented and verified on Windows.
-Project Maintenance remains planned. The separate one-time cleanup of Photos is complete.
+Project Maintenance PM1-PM5 is implemented and qualified on Windows; platform and native review limits are recorded in its feature plan. The separate one-time cleanup of Photos is complete.
 
 Planning source audit revision: `7bcac45d`. Import implementation started from `d83f09c0`
 on branch `de_duplicate`; see section 7 and the detailed phase completion records.
@@ -121,11 +121,11 @@ The detailed feature documents are authoritative for phase work and completion e
 | I3 | Path, size, and SHA-256 duplicate admission with correct counts | 1,100-1,900 | complete on Windows |
 | I4 | Settings preference and UI/automation option propagation | 850-1,500 | complete |
 | I5 | Import integration, failure, and resource qualification | 650-1,100 | complete on Windows; platform limits recorded |
-| PM1 | Read-only full-path scan and preservation evidence | 900-1,500 | planned |
-| PM2 | Review model, background tasks, selection, and sidebar launcher | 1,100-1,800 | planned |
-| PM3 | Explicit project-scope storage removal and rollback invariants | 1,100-1,900 | planned |
-| PM4 | Verified backup, staged publication, activation, and restoration | 1,000-1,800 | planned |
-| PM5 | Maintenance integration, automation, and manual qualification | 700-1,300 | planned |
+| PM1 | Read-only full-path scan and preservation evidence | 900-1,500 | complete on Windows; limits recorded |
+| PM2 | Review model, background tasks, selection, and sidebar launcher | 1,100-1,800 | complete on Windows; limits recorded |
+| PM3 | Explicit project-scope storage removal and rollback invariants | 1,100-1,900 | complete on Windows; limits recorded |
+| PM4 | Verified backup, staged publication, activation, and restoration | 1,000-1,800 | complete on Windows; limits recorded |
+| PM5 | Maintenance integration, automation, and manual qualification | 700-1,300 | complete on Windows; limits recorded |
 
 Each estimate includes production code, tests, resources, build registration, and documentation.
 Split a phase before its expected diff can exceed 2,000 lines. Record actual changed lines during
@@ -243,7 +243,9 @@ Do not restore these former choices:
 
 The planning update authorized documentation only. The user subsequently authorized Import Duplicate
 Skipping implementation on 2026-11-09. This authorization covers I1-I5 and their builds/tests; it
-does not authorize Project Maintenance implementation or another cleanup of Photos.
+did not authorize Project Maintenance implementation or another cleanup of Photos. The user
+subsequently authorized PM1-PM5 implementation on 2026-11-09, including targeted builds/tests
+and qualification on disposable copies. Another cleanup of Photos remains outside this scope.
 
 Before executing a feature phase, reread AGENTS.md, CONTRIBUTING.md, the feature plan,
 alcedo-msvc-cmake, and alcedo-qml-ui. Read DESIGN.md and the per-file VI catalog before UI work.
@@ -309,3 +311,13 @@ See [phase completion records](import_duplicate_skipping_plan.md#7-detailed-phas
 and success/failure chains, and [execution evidence](import_duplicate_skipping_plan.md#11-execution-evidence-2026-11-09)
 for exact commands, per-suite counts, source-I/O/memory measurements, file-size review, and limits.
 Project Maintenance and the historical cleanup records are separate from this completion.
+
+### Project Maintenance implementation completion (2026-11-09)
+
+PM1-PM5 now provide whole-project scan, protected-work review, explicit selection, verified backup,
+atomic staged removal, checked publication/reopening, and guarded restoration. UI and commands use
+one application-owned controller. Windows verification passed 47 maintenance cases and 87 direct
+caller cases, with four prerequisite-related skips. A copied real project completed backup, one
+selected test-entry removal, and reopening; 2,576 entries remained and a repeat scan had no findings.
+The original Photos package was unchanged. See [the completion evidence](project_maintenance_plan.md#11-completion-record)
+for commands, preservation checks, native review, timing, and unavailable coverage.

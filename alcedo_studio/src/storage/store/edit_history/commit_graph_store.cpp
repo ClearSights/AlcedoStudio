@@ -553,13 +553,17 @@ void CommitGraphStore::VisitStoredHistoryJsonContaining(
 }
 
 void CommitGraphStore::DeleteGraphForElement(sl_element_id_t element_id) {
+  duckorm::Transaction transaction(conn_);
+  DeleteGraphForElementInTransaction(element_id);
+  transaction.commit();
+}
+
+void CommitGraphStore::DeleteGraphForElementInTransaction(sl_element_id_t element_id) {
   const auto state = GetImageEditState(element_id);
   if (!state.has_value()) {
     return;
   }
 
-  duckorm::begin_transaction(conn_);
-  try {
     version_ref_mapper_.RemoveByClause(std::format("element_id={}", element_id));
     ExecuteOrThrow(conn_, std::format("DELETE FROM EditCommitAttribution WHERE commit_hash IN "
                                       "(SELECT commit_hash FROM EditCommit WHERE root_id={});",
@@ -567,11 +571,6 @@ void CommitGraphStore::DeleteGraphForElement(sl_element_id_t element_id) {
     commit_mapper_.RemoveByClause(std::format("root_id={}", SqlQuote(state->root_id.ToString())));
     image_edit_state_mapper_.Remove(element_id);
     ExecuteOrThrow(conn_, std::format("DELETE FROM PipelineRoot WHERE element_id={};", element_id));
-    duckorm::commit_transaction(conn_);
-  } catch (...) {
-    duckorm::rollback_transaction(conn_);
-    throw;
-  }
 }
 
 auto CommitGraphStore::CreateEmptyPersisted(sl_element_id_t element_id,

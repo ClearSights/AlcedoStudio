@@ -75,7 +75,7 @@ Item {
     readonly property int panelGap: appTheme.spaceSm
 
     // Visual fold progress (0 closed → 1 open). Drives layout width + body
-    // opacity, the same contract as EditorFilmstrip.dockExpandProgress.
+    // opacity, the same behavior as EditorFilmstrip.dockExpandProgress.
     property real panelOpenProgress: 0
     property bool foldManualDrive: false
     property bool _motionArmed: false
@@ -306,6 +306,14 @@ Item {
                 label: qsTr("Tasks")
                 actionName: qsTr("Background Tasks")
                 onClicked: root.host.openBackgroundTasksDialog()
+            }
+            RailButton {
+                objectName: "editorProjectMaintenanceLauncher"
+                iconSrc: "qrc:/panel_icons/database-cog.svg"
+                label: qsTr("Maintain")
+                actionName: qsTr("Project Maintenance")
+                enabled: root.host && appModules.maintenance.available
+                onClicked: root.host.openProjectMaintenanceDialog()
             }
         }
     }

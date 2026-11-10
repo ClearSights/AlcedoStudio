@@ -30,6 +30,8 @@ enum class BackgroundTaskKind {
   RatingUpdate,
   /// Library images deleted (or removed from an album) and the project saved.
   ImageDelete,
+  MaintenanceScan,
+  MaintenanceApply,
   /// An automation agent (CLI or MCP) holds control of the GUI session. Canceling the task
   /// gives control back to the user.
   AgentControl,

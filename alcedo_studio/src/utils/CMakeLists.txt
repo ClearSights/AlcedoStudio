@@ -9,6 +9,7 @@ def_library(TimeProvider
 def_library(SourceImageFile
     SOURCES
         ${ALCEDO_SRC_ROOT}/utils/file/source_image_path.cpp
+        ${ALCEDO_SRC_ROOT}/utils/file/source_image_status.cpp
         ${ALCEDO_SRC_ROOT}/utils/file/source_fingerprint.cpp
     PUBLIC_DEPS Qt6::Core
 )

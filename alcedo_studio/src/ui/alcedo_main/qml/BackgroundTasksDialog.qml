@@ -121,6 +121,7 @@ Dialog {
         if (kind === "adjustmentPaste") return qsTr("Paste Adjustments")
         if (kind === "ratingUpdate") return qsTr("Ratings")
         if (kind === "imageDelete") return qsTr("Delete Images")
+        if (kind === "maintenanceScan" || kind === "maintenanceApply") return qsTr("Project Maintenance")
         if (kind === "agentControl") return qsTr("Agent")
         return qsTr("Task")
     }
@@ -129,7 +130,7 @@ Dialog {
         if (taskCount === 0)
             return qsTr("No active work")
         if (runningCount > 0)
-            return qsTr("%1 total · %2 working").arg(taskCount).arg(runningCount)
+            return qsTr("%1 working").arg(runningCount)
         return qsTr("%1 total").arg(taskCount)
     }
 

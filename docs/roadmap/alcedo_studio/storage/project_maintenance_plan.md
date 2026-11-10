@@ -2,7 +2,7 @@
 
 Date: 2026-11-09
 
-Status: planned. Product implementation has not started.
+Status: PM1-PM5 are implemented and qualified on Windows. Platform and native review limits are recorded in section 11.
 
 Source audit: `7bcac45d`.
 
@@ -18,7 +18,7 @@ Its workflow is **Scan -> Review -> Remove selected**.
 Users review existing project entries before any removal.
 
 - Add a **Project Maintenance** text button immediately below **Background Tasks** in the top-left
-  Collections sidebar. Use one shared dialog and controller. A new SVG is not required.
+  Collections sidebar. Use one shared dialog and controller. The user-approved UI revision adds the Tabler database-cog icon in the same utility-row layout as Search and Background Tasks.
 - Scan the entire loaded project, regardless of the selected album, filters, or search.
 - Identify repeated imports by normalized full source path. Preserve every folder component.
   Equal names or equal bytes under different full paths do not make maintenance duplicates.
@@ -33,8 +33,8 @@ Users review existing project entries before any removal.
 - Publish a successful result only after checked removal, package writing, and project reopening.
   Report real failures. Do not continue through a substitute deletion or recovery algorithm.
 
-The user has approved these decisions and requested planning only at this stage.
-Do not start implementation while updating this document.
+The user authorized PM1-PM5 implementation on 2026-11-09. This authorization includes targeted
+builds, tests, and checks on disposable project copies. It does not authorize another cleanup of Photos.
 
 The earlier proposal for CLI-only cleanup is superseded. CLI support now uses the same application
 service as the UI. The earlier Photos operation is completed operational work, not this feature.
@@ -54,7 +54,7 @@ Project Maintenance
 The button opens the following shared dialog:
 
 ```text
-Project Maintenance                                      Close
+Project Maintenance                                      X
 Current project name
 
 Scan project
@@ -74,7 +74,7 @@ Cancel / Remove selected
 ```
 
 Use a text utility row with the same alignment and spacing as the existing utility rows.
-Preserve the other rows and the collection tree. Add no icon asset, status dot, or decorative badge.
+Preserve the collection tree. The user approved the Tabler database-cog icon on 2026-11-09, at the existing white 1.5 px source stroke. Add no status dot or decorative badge.
 Expose the same dialog from the editor rail below its Background Tasks action so the entry point
 remains available when switching workspaces. Both launchers use the same controller and findings.
 
@@ -217,7 +217,7 @@ Paths in this table are relative to `alcedo_studio/`.
 
 | Area | Current owner and source | Observed behavior | Planned change |
 | --- | --- | --- | --- |
-| Sidebar | `src/ui/alcedo_main/qml/CollectionsPanel.qml:20` | Search and Background Tasks utility rows | Add text action below Background Tasks |
+| Sidebar | `src/ui/alcedo_main/qml/CollectionsPanel.qml:20` | Search and Background Tasks utility rows | Add the icon/text action below Background Tasks |
 | Dialog routing | `src/ui/alcedo_main/qml/Main.qml:680`, `src/ui/alcedo_main/qml/AppDialogs.qml` | Main forwards utility signals to shared dialogs | Add one maintenance launcher/dialog |
 | Editor rail | `src/ui/alcedo_main/qml/EditorWorkspaceRail.qml:302` | Background Tasks action exists | Add matching text entry to the same shared dialog |
 | Background tasks | `src/include/ui/alcedo_main/album_backend/background_task_controller.hpp` | UI-thread RegisterTask/UpdateTask/FinishTask, cancellation, and locks | Add scan/apply kinds; reuse lifecycle |
@@ -393,7 +393,7 @@ owners, so a queued result cannot publish into a destroyed project controller.
 
 ## 6. File and API map
 
-All source paths below are relative to `alcedo_studio/`. Proposed files do not yet exist.
+All source paths below are relative to `alcedo_studio/`. The completion records map the proposed APIs to implemented owners.
 
 | Area | Current files that change | Proposed files and responsibility |
 | --- | --- | --- |
@@ -428,11 +428,11 @@ their actual use sites. Add no long-lived DuckDB connections to new storage cont
 
 | Phase | Result | Main modules | Dependency | Expected changed lines | Status |
 | --- | --- | --- | --- | ---: | --- |
-| PM1 | Full-path scan and preservation classification | Shared utility, app service, storage/history reads | None | 900-1,500 | planned |
-| PM2 | Sidebar launcher, background scan, paged review and selection | Controller/model/QML/task policy | PM1 | 1,100-1,800 | planned |
-| PM3 | Checked whole-project storage removal transaction | Element/Image/history/asset stores | PM1 | 1,100-1,900 | planned |
-| PM4 | Verified backup, staged publication, activation and restore | Package/service/project lifecycle | PM2, PM3 | 1,000-1,800 | planned |
-| PM5 | UI/automation parity and product qualification | Commands, caller tests, translations, docs | PM4 | 700-1,300 | planned |
+| PM1 | Full-path scan and preservation classification | Shared utility, app service, storage/history reads | None | 900-1,500 | complete on Windows |
+| PM2 | Sidebar launcher, background scan, paged review and selection | Controller/model/QML/task policy | PM1 | 1,100-1,800 | complete on Windows |
+| PM3 | Checked whole-project storage removal transaction | Element/Image/history/asset stores | PM1 | 1,100-1,900 | complete on Windows |
+| PM4 | Verified backup, staged publication, activation and restore | Package/service/project lifecycle | PM2, PM3 | 1,000-1,800 | complete on Windows |
+| PM5 | UI/automation parity and product qualification | Commands, caller tests, translations, docs | PM4 | 700-1,300 | complete on Windows |
 
 Each estimate includes production source, tests, build registration, resources, and documentation.
 PM3 is a storage capability tested on isolated fixtures. The product Remove selected action remains
@@ -441,7 +441,7 @@ before implementation if its expected diff can exceed 2,000 lines. The features 
 path comparison; import detection is not a prerequisite for any maintenance phase.
 
 Before implementation, reread AGENTS.md, CONTRIBUTING.md, `alcedo-create-plan`, `alcedo-qml-ui`, and
-`alcedo-msvc-cmake`. Confirm current source and the parent plan. Do not implement during this update.
+`alcedo-msvc-cmake`. The execution records below use the current source and the parent plan under the subsequent implementation authorization.
 
 ## 8. Detailed phases
 
@@ -486,12 +486,24 @@ fatal owner failure/cancel -> incomplete scan with no apply result. Existing sta
 **Build and run commands:** Use section 10; build SourceImagePathTest and
 ProjectMaintenanceServiceTest. Discover and run their cases only.
 
-**Exit criteria:** [ ] Every finding has an exact reason. [ ] All preservation/path/error tests pass.
-[ ] Scan creates no database, history, or source-file mutation. [ ] Result paging stays bounded.
+**Exit criteria:** [x] Every finding has an exact reason. [x] All preservation/path/error tests pass.
+[x] Scan creates no database, history, or source-file mutation. [x] Result paging stays bounded.
 
 **Expected diff:** 900-1,500 lines, including tests and source registration.
 
-**Completion record:** Not started. Fill section 11 during execution.
+**Completion record (2026-11-09):** Implemented on Windows.
+
+- `ProjectMaintenanceService::Scan` -> `ProjectMaintenanceStore::ListEntryIds/Inspect` ->
+  normalized full-path groups and source checks -> completed advisory findings. Storage reads use
+  64-entry pages; the UI and command output use 100-row pages. No RAW decode is required.
+- Invalid references and uncertain source status become protected findings. Cancellation leaves
+  `Complete()` false, so no partial selection can reach package work.
+- `ProjectMaintenanceServiceTest`: 12 cases cover deterministic survivors, directory identity,
+  rating, renamed/inactive Versions, undone commits, missing/error paths, pipeline differences,
+  invalid references, unchanged table digests, cancellation, and bounded enumeration.
+  The existing `SourceImagePathTest` supplies platform path identity coverage.
+- The existing full-path utility is reused. Source availability has a separate focused utility;
+  maintenance inspection belongs to `ProjectMaintenanceStore`, rather than the large ElementStore.
 
 ### PM2 - Background scan, launchers, review, and selection
 
@@ -509,7 +521,7 @@ findings; the model owns selection. Rows cannot enable protected entries. Partia
 **Implementation steps:**
 
 1. Add task kinds and route scan progress/cancel callbacks to the existing registry on the UI thread.
-2. Add the two text launchers and one shared dialog route without a new SVG.
+2. Add the two launchers and one shared dialog route. The subsequent approved UI revision uses the Tabler database-cog SVG.
 3. Implement the paged model's display roles, filters, selected IDs, and protected reasons.
 4. Implement the explicit selection actions and total selected count across filters/pages.
 5. Implement empty/error/canceled states and hide/reopen behavior.
@@ -531,13 +543,23 @@ Manually check both themes, keyboard navigation, long paths, and narrow-window r
 **Build and run commands:** Build the proposed controller/model targets plus
 AlbumBackendBackgroundTaskTest and AlbumBackendInteractionPolicyTest. Use targeted discovered cases.
 
-**Exit criteria:** [ ] All approved review states work. [ ] Protected selection is rejected in C++.
-[ ] Background task cancellation/close behavior passes. [ ] Manual VI/accessibility record exists.
-[ ] Remove selected remains unavailable before PM4.
+**Exit criteria:** [x] All approved review states work. [x] Protected selection is rejected in C++.
+[x] Background task cancellation/close behavior passes. [x] Manual VI/accessibility record exists.
+[x] Remove selected requires the complete PM4 operation.
 
 **Expected diff:** 1,100-1,800 lines.
 
-**Completion record:** Not started. Fill section 11 during execution.
+**Completion record (2026-11-09):** Implemented on Windows.
+
+- Collections or editor rail -> shared `ProjectMaintenanceDialog` -> application-owned controller
+  -> background scan -> model reset and bounded review. Hiding the dialog does not own or cancel
+  the worker. Selection is stored as IDs and survives filtering and paging.
+- Protected/incomplete/read-only rows reject selection in C++, including direct calls. Project close
+  cancels and waits for a scan through the existing close coordinator. Errors have no removal count.
+- `ProjectMaintenanceModelTest` covers protected rows, hidden selection, incomplete scans,
+  unsigned 32-bit IDs, and independent command paging. Controller tests cover no project,
+  scan lifetime, deterministic cancellation, and close during scan.
+- Native appearance and keyboard evidence is recorded with PM5 in section 11.
 
 ### PM3 - Whole-project checked storage removal
 
@@ -580,12 +602,23 @@ after partial statements -> transaction rollback -> unchanged isolated database.
 **Build and run commands:** Build ProjectMaintenanceStorageTest, SleeveServiceTest, PipelineMapperTest,
 and AlbumBackendImageDeleteTest. Run targeted affected cases and direct callers using section 10.
 
-**Exit criteria:** [ ] Batch validation is complete before mutation. [ ] All rollback/ref-count tests
-pass. [ ] No history or image state is copied back over a live owner. [ ] No UI mutator is enabled.
+**Exit criteria:** [x] Batch validation is complete before mutation. [x] All rollback/ref-count tests
+pass. [x] No history or image state is copied back over a live owner. [x] The storage operation alone does not enable a UI mutator.
 
 **Expected diff:** 1,100-1,900 lines.
 
-**Completion record:** Not started. Fill section 11 during execution.
+**Completion record (2026-11-09):** Implemented on Windows.
+
+- Explicit ID/retained-ID pairs -> complete source/preservation validation -> one storage transaction
+  -> union album memberships -> existing history/annotation/image owners -> nominated entry removal.
+- Any bad ID, protected entry, invalid survivor, chain, cycle, or dependent-owner failure rejects
+  or rolls back the whole batch. Only nominated unreferenced Images are removed. Mask assets stay.
+- `ProjectMaintenanceStorageTest`: 9 cases cover project scope, membership union, protected batch
+  rejection, malformed pairs, invalid retained references, actual dependent-row failure rollback,
+  missing-source proof, last Image reference, and complete retained history/mask row digests.
+- Transaction-neutral history and Image removal helpers remain with those owners. The annotation
+  owner is called once per batch because its full-text index rebuild cannot run twice in one
+  transaction. No persisted schema change is introduced.
 
 ### PM4 - Verified backup, staged publication, activation, and restore
 
@@ -644,13 +677,29 @@ before injected activation failure and asserts no backup restore touches the cha
 affected project lifecycle/task targets. Run targeted discovered cases. Run package/filesystem
 replacement cases on Windows and macOS; report an unavailable platform honestly.
 
-**Exit criteria:** [ ] Backup exists and verifies before every mutation. [ ] Failure injection covers
-each publication/activation boundary. [ ] Retained-row and reopen evidence passes. [ ] Shared admission
-blocks conflicting UI/automation writes. [ ] The UI enables only the complete operation.
+**Exit criteria:** [x] Backup exists and verifies before every mutation. [x] Failure injection covers
+each publication/activation boundary. [x] Retained-row and reopen evidence passes. [x] Shared admission
+blocks conflicting UI/automation writes. [x] The UI enables only the complete operation.
 
 **Expected diff:** 1,000-1,800 lines. Split before execution if lifecycle changes can exceed 2,000.
 
-**Completion record:** Not started. Fill section 11 during execution.
+**Completion record (2026-11-09):** Implemented on Windows.
+
+- Confirmation -> controller reserves writes and settles existing tasks/editor -> handler package
+  mutex -> save current work -> verified unique backup -> independent working database transaction
+  -> retained-row verification -> independently reopened result -> atomic replacement -> close old
+  owners without saving -> normal project launch -> UUID/digest verification -> final counts/unlock.
+- Before publication, failure leaves the captured saved baseline intact. After verified installation,
+  activation failure -> confirm installed digest -> restore verified backup -> reopen baseline ->
+  explicit failed outcome. Externally changed bytes or failed restore leave writes disabled and
+  expose the backup, without overwriting the observed file.
+- `ProjectMaintenanceApplyTest`: 9 cases cover success/reopen/repeat, backup failure, result-write
+  failure, unique backup, changed baseline, restoration, externally changed installed package,
+  review-then-rating rejection, and a real Windows file-sharing replacement failure.
+- Controller tests drive actual activation, restoration failure, already-admitted rating work,
+  shared UI/automation write refusal, and external replacement during activation. The package owner
+  serializes normal save jobs and maintenance under the same mutex. Activation is the success boundary.
+- Windows filesystem behavior is executed. The equivalent macOS code is not executed here.
 
 ### PM5 - Commands, caller coverage, and real product qualification
 
@@ -692,13 +741,24 @@ rows visible in the final confirmation count. Use copies of user data; never alt
 **Build and run commands:** Build alcedo_main, alcedo_cli, AutomationProjectCommandsTest, and the
 maintenance targets. Run targeted command/owner/caller cases and the manual checks in section 10.
 
-**Exit criteria:** [ ] UI and commands have identical preservation/removal behavior. [ ] Empty,
-cancel, failure, recovery, and repeat-run checks pass. [ ] Manual VI record and actual counts exist.
-[ ] No imported detection feature or full test suite was required to qualify maintenance.
+**Exit criteria:** [x] UI and commands have identical preservation/removal behavior. [x] Empty,
+cancel, failure, recovery, and repeat-run checks pass. [x] Manual VI record and actual counts exist.
+[x] No imported detection feature or full test suite was required to qualify maintenance.
 
 **Expected diff:** 700-1,300 lines.
 
-**Completion record:** Not started. Fill section 11 during execution.
+**Completion record (2026-11-09):** Implementation and qualification are recorded in section 11.
+
+- `project.maintenance.scan`, `project.maintenance.findings`, and
+  `project.maintenance.remove_selected` use the same service/controller as the dialog. Results have
+  explicit schemas. Removal requires reviewed IDs; paging is bounded and does not change UI state.
+- Schema/selection failure -> explicit rejection before backup; owner failure -> PM4's verified
+  recovery outcome. No command can select protected findings or implicitly remove all findings.
+- The in-process command integration imports real raster fixtures, scans without row changes,
+  rejects protected/empty requests, removes one explicit entry, reopens, saves, and scans again.
+  Invalid numeric IDs are rejected by the controller as well as command validation.
+- English and Simplified Chinese dialog/controller strings, QML/CMake registration, and VI notes
+  are included. Detailed owner diagnostics retain their original error text.
 
 ## 9. Acceptance matrix
 
@@ -779,26 +839,218 @@ or UI coverage. Do not rerun destructive operations on Photos to qualify this fe
 
 ## 11. Completion record
 
-Each phase remains planned until its owner/tests/product evidence is recorded.
-Use this empty template during execution:
+### Implementation decisions (2026-11-09)
 
-```text
-Phase / date / status:
-Source revision and branch:
-Actual changed modules and changed-line count:
-Implemented behavior and implementation decisions with reasons:
-Primary success call chain:
-Primary failure and restore call chain:
-Build/test commands and exit codes:
-Discovered / passed / failed / skipped counts:
-Manual QML/accessibility/appearance verification:
-Backup/package/activation and retained-row evidence:
-Performance and resource evidence:
-Evidence path and unavailable platforms:
-Related issues and remaining defects:
+The implementation starts at `e128d588` on `de_duplicate`.
+
+- `ProjectMaintenanceService` owns derived scan findings and validates explicit selection.
+  `ProjectMaintenanceStore` owns the scoped storage inspection and the atomic removal operation.
+  This keeps the existing large ElementStore file from absorbing maintenance inspection rules.
+- `ProjectMaintenancePackage` owns the independent backup, working database, verified result,
+  publication digests, and checked restoration. ProjectHandler supplies the existing package
+  write exclusion. The application-owned controller completes activation before it reports success.
+- The saved baseline starts after current work is saved without history cleanup. A new DuckDB
+  export can change package bytes without changing logical rows. Failure tests compare the package
+  with this captured baseline. They also compare live rows and verified backup contents.
+- The annotation owner rebuilds its full-text index. The storage transaction calls it once for
+  the complete removal batch. Rebuilding its stopword table twice in one transaction failed in
+  the executed multi-entry removal test.
+- Invalid retained references reject the complete removal batch. A group with an invalid
+  protected copy retains an additional valid entry when needed. All protected copies remain.
+- Activation checks the project UUID and the installed or restored package digest. An external
+  package replacement between publication and activation produces recovery-required state.
+  Restoration never overwrites that externally changed package.
+- The permitted fork, `ClearSights/AlcedoStudio`, reports administrator permission and
+  `has_issues=false`. Issue tracking is unavailable there. No upstream write or AI issue
+  conversation is used as a substitute.
+
+### Executed Windows verification (2026-11-09)
+
+Source: uncommitted implementation on `de_duplicate`, based on `e128d588`.
+The existing `win_release` build has tests enabled. No new build tree was created.
+MSVC 14.44 matches the existing cache; Qt 6.12.0 is installed on this machine.
+
+```powershell
+Set-Location C:/Users/Haidong/Data/Photography/AlcedoStudio
+$env:VCVARS_USER_VERSION = '14.44'
+cmd /c scripts\msvc_env.cmd --build --preset win_release --target ProjectMaintenanceServiceTest ProjectMaintenanceStorageTest ProjectMaintenanceApplyTest ProjectMaintenanceModelTest ProjectMaintenanceControllerTest alcedo_main alcedo_cli alcedo_studio_test_host --parallel 4
+$env:PATH = "$PWD/build/release/vcpkg_installed/x64-windows/bin;$env:PATH"
+$env:QT_QPA_PLATFORM = 'offscreen'
+& build/release/alcedo_studio/tests/app/ProjectMaintenanceServiceTest_runtime/ProjectMaintenanceServiceTest.exe
+& build/release/alcedo_studio/tests/app/ProjectMaintenanceStorageTest_runtime/ProjectMaintenanceStorageTest.exe
+& build/release/alcedo_studio/tests/app/ProjectMaintenanceApplyTest_runtime/ProjectMaintenanceApplyTest.exe
+& build/release/alcedo_studio/tests/ui/ProjectMaintenanceModelTest_runtime/ProjectMaintenanceModelTest.exe
+& build/release/alcedo_studio/tests/ui/ProjectMaintenanceControllerTest_runtime/ProjectMaintenanceControllerTest.exe
 ```
 
-Stop and update this plan before continuing if the source owners differ, a phase can exceed 2,000
-changed lines, a new persisted format has no compatibility behavior, protected work can be selected,
-or rollback/activation cannot retain the backup and report its real outcome. Resolve implementation
-details within the approved decisions; do not defer them to an unfinished final-report decision list.
+The build and all five binaries exited 0. The final maintenance run passed **47/47** cases.
+The controller's 12 cases ran together, including activation restoration, failed restoration,
+command integration, numeric ID rejection, and external replacement during activation.
+
+| Executed target | Passed | Skipped | Evidence goal |
+| --- | ---: | ---: | --- |
+| ProjectMaintenanceServiceTest | 12 | 0 | Full-project read-only classification and preservation |
+| ProjectMaintenanceStorageTest | 9 | 0 | Atomic batch removal and retained rows |
+| ProjectMaintenanceApplyTest | 9 | 0 | Backup, publication, replacement failure, restoration, reopen |
+| ProjectMaintenanceModelTest | 5 | 0 | Protection, paging, hidden selection, full ID range |
+| ProjectMaintenanceControllerTest | 12 | 0 | Async lifecycle, admission, commands, actual activation/recovery |
+| ProjectPackageBackendTest | 7 | 0 | Existing package callers and persisted package contents |
+| SourceImagePathTest | 3 | 1 | Platform full-path identity; symlink privilege unavailable |
+| AlbumBackendBackgroundTaskTest | 18 | 0 | Existing task policies and lifecycle |
+| AlbumBackendInteractionPolicyTest | 15 | 0 | Existing mutation restrictions |
+| ApplicationCloseCoordinatorTest | 5 | 0 | Existing project/application close behavior |
+| LibraryMutationOperationsTest | 5 | 0 | Existing mutation owners |
+| SleeveServiceTest (selected) | 11 | 0 | Project/album file identity and persistence |
+| PipelineMapperTest (selected) | 8 | 0 | Root, checkpoint, history, mask persistence and deletion |
+| AlbumBackendImageDeleteTest | 9 | 3 | Existing deletion owner; RAW fixture absent for three cases |
+| AutomationProjectCommandsTest | 6 | 0 | Existing project command behavior |
+| **Total** | **134** | **4** | **0 failures in the recorded qualification runs** |
+
+Direct callers were built and executed before the final model/query and QML-only adjustments.
+Their source was unchanged by those adjustments. Whole caller binaries ran unless the table says
+selected. The exact selected filters were:
+
+```text
+SleeveServiceTest --gtest_filter=*SaveLoadTest:*CreateFileInLibraryAndLinkToAlbumKeepsSingleFileIdentity:*SharedAlbumFileEditIsVisibleFromRootAndOtherAlbums:*DeletingAlbumFolderKeepsLinkedLibraryFiles:*ExplicitDuplicateClonesStateAndKeepsPipelineIndependent:*ReloadedRootMembershipKeepsLibraryFile:*ReloadedAlbumMembershipKeepsSharedFileIdentity:*ReloadedAlbumUnlinkKeepsRootMembershipOnly:*DuplicateLinkIsIdempotentAndPersistsAsSingleMembership:*DeletingFromAlbumOnlyUnlinksMembership:*DeletingFromRootDeletesFileEverywhereAndPersists
+PipelineMapperTest --gtest_filter=*NewImageRootHoldsTheDefaultThreeNodeDocument:*EditorPersistedEditSurvivesProjectReopen:*CheckpointReloadPreservesNodesEdgesAndParameters:*HeldEditorLeaseRefusesStorageHistoryUsersAndReleaseKeepsThePublishedState:*DeletePipelinesRemovesTheDeletedImagesMiniGitGraphOnly:*RootStateRejectsDifferentImageOwner:*PersistEditorHistoryWritesHistoryAndCheckpointInOneTransaction:*MaskAssetsReaderReadsStoredAssetAndReportsMissingKey
+```
+
+No full test suite was run. WorkspaceShell synthetic-input tests were not used. macOS path,
+filesystem replacement, and native UI checks were not executable on this Windows machine.
+No GPU quality policy changed.
+
+### Disposable-project qualification
+
+The original `C:/Users/Haidong/Documents/Alcedo/Photos.alcd` was read and copied only.
+Its SHA-256 before and after qualification was:
+`8AB7F9C8524858E8587BEC9AD534B7681ACA76818071A6A74FB1C09829EBFB4C`.
+
+- Initial read-only scan: 2,575 entries, no findings, 46.2 seconds; process private memory
+  850.8 MiB and peak working set 478.9 MiB. The scan does not decode full RAW images.
+- On the disposable copy only, import two copies of one test raster path with duplicate skipping
+  explicitly disabled. Scan 2,577 entries: exactly two duplicate findings, one removable extra,
+  30.2 seconds. The 100-row output limit remains enforced by the model and command schema.
+- Remove that one explicit extra through `project.maintenance.remove_selected`: verified backup,
+  retained-row digest comparison, independent result reopening, atomic publication, and normal
+  activation all succeeded. Actual result: one entry removed, 2,576 retained; 38.6 seconds including
+  reopen. No source image was deleted.
+- Repeat scan: no duplicate or invalid findings. `library.list` independently reported 2,576 entries.
+  The test session was then stopped. These timings include warmed filesystem and database caches;
+  they are observations, not a throughput requirement.
+- A separate disposable project contains 106 entries: 105 uses of one long Unicode source path,
+  one rated survivor, and one deliberately missing source. Native review verified 104 eligible
+  duplicate extras and one eligible missing entry, with 105 selected across a search hiding all rows.
+  The explicit confirmation reported 104 duplicates and one missing entry. Cancel and Escape
+  performed no removal. Space toggled an individual checkbox. The editor launcher reopened the
+  same selection and search after switching from Library.
+
+### Native visual review and limitations
+
+The QML-only rebuild of `alcedo_main` and `alcedo_studio_test_host` exited 0. Native review
+used the real Main QML module in the isolated test host, with the disposable project only.
+
+- Reviewed the ready, scan, duplicate, missing-source, filtered, selected, and confirmation states.
+  The final dialog and menu were inspected in both Alcedo and Classic themes at 1200 x 760.
+- The filter now reuses `AdjustmentCombo`; the search uses explicit theme text/placeholder/selection
+  colors. This corrects the Basic style's light filter and unreadable placeholder seen during review.
+  Both controls have accessible names. The rail button has no default padding, so Project and
+  Maintenance each fit on one line at the existing caption size.
+- Rescanning with an empty collection selected still returned all 106 project findings. Protected
+  rows remained unselected. Canceling confirmation preserved the source files and project entries.
+- Scan cancellation, close during scan, backup failure, activation failure, and recovery-required
+  state are proven by owner/controller tests. They were not all repeated as native visual states.
+- Attempts to resize the native test host left it at 1200 x 760. The 960 x 640 appearance therefore
+  remains unverified; this is a coverage limit, not a claim that the narrow layout passed.
+- The 12 controller cases passed three additional consecutive runs (`--gtest_repeat=3`), 36 case
+  executions with zero failures. These repeats are not added to the unique-case total above.
+- Entering the empty editor emitted `Cannot find member data` from the untouched
+  `EditorTonePanel.qml:227` and `:290`. No maintenance QML loading or binding error was observed.
+  The permitted fork has issues disabled, so an issue could not be filed for this separate warning.
+  No upstream issue or AI follow-up comment was sent.
+- All local test sessions were stopped. Temporary logs, copied packages, test backups, and synthetic
+  sources under `build/tmp/project_maintenance/` were removed after recording this evidence.
+  The original Photos checksum remained unchanged.
+
+The new source modules remain separate by owner: scan service, storage inspector/removal operation,
+package operation, UI controller/model, and command registration. No new source file exceeds 419
+lines before the final documentation update. Existing large CMake, translation, Collections, and
+package-backend files received focused edits; no unrelated large-file split was required. Shared
+files contain work from several phases and are counted once in the overall diff.
+Initial PM1-PM5 recorded delta: 4,380 lines (1,066 tracked additions, 77 tracked deletions, and 3,237 lines in 20 new files), across 56 files. The largest new source file is 419 lines.
+
+The permitted fork has issue tracking disabled, so no issue number could be created for the
+multi-entry annotation-index defect fixed during implementation. The failure and its correction
+are recorded above. There is no unresolved observed owner-test failure. Temporary qualification
+artifacts belong under `build/tmp/project_maintenance/` and are removed after test sessions stop.
+
+### UI revision requested after manual testing (2026-11-09)
+
+The user approved the specific Tabler database-cog asset, its 24 x 24 viewBox, white stroke, and
+1.5 px normalization. The path geometry and MIT notice remain with the source asset.
+
+- The Collections actions now share one delegate, so icon/text edges and row centers cannot drift.
+  The editor launcher uses the existing icon rail control.
+- The dialog close action reuses Search's compact transparent X. Header/body/footer margins,
+  filter/search heights, metadata flow, selection columns, paging, and final action alignment
+  now follow the existing dialog controls.
+- Removal shows the same ring and working outline as Import. Store progress reports scalar
+  processed/total values before commit; package code forwards them only after verified backup.
+  The controller queues bounded UI updates without publishing a final removal count. Package and
+  activation stages use a waiting ring. Success still requires verified activation; errors retain
+  the existing restoration and write-exclusion behavior.
+- New storage tests exercise progress counts with real removal, and rollback when an observer
+  fails. Existing package/controller success tests now assert backup-before-progress and no final
+  removed count before activation. Build, targeted test, and native review results follow below.
+
+
+**UI revision verification:** The existing `win_release` build completed with exit 0 for
+`ProjectMaintenanceServiceTest`, `ProjectMaintenanceStorageTest`, `ProjectMaintenanceApplyTest`,
+`ProjectMaintenanceModelTest`, `ProjectMaintenanceControllerTest`, `alcedo_main`, `alcedo_cli`,
+and `alcedo_studio_test_host`, through `scripts/msvc_env.cmd` with MSVC 14.44 and parallelism 4.
+The same five direct test binaries were then executed with the release vcpkg bin directory on PATH
+and `QT_QPA_PLATFORM=offscreen`: 12 service, 11 storage, 9 package, 5 model, and 12 controller cases
+passed, **49/49**, with no failures or skips. No full test suite was run.
+The storage additions verify actual processed counts and rollback on observer failure. The package
+and controller assertions verify a checked backup before progress and no final removal count until
+activation. Resource/translation XML parsed; approved SVG geometry matches upstream exactly.
+
+A separate disposable project was opened in the native test host. The Windows desktop was locked,
+so app input stopped before visual review. At that point native appearance and live progress inspection
+were pending desktop unlock; the completed review is recorded below. The provided `maintenance_manual_test` project files were not changed
+by this verification. The disposable native test host was closed and temporary build logs/trial copies were removed after recording this evidence. The provided synthetic projects and launcher remain available for user testing.
+
+
+**Native review resumed after unlock (2026-11-09):** The rebuilt test host opened a new disposable
+`build/tmp/maintenance_ui_native/VisualMaintenance.alcd` copy. At 1200 x 760 in Alcedo theme,
+Search, Background Tasks, and Project Maintenance share the same icon column, label edge, row
+height, and vertical center. The approved icon rendered correctly. The compact X closed the review;
+reopening retained the completed 106-finding scan. Full paths, the metadata flow, filter/search
+fields, three equal selection actions, paging, selected count, backup location, and confirmation
+footer rendered without clipping or new QML errors. Selecting eligible duplicate and missing
+entries produced 105 selected entries; the four-star survivor remained unselected. The final
+confirmation reports 104 duplicates and one missing entry on the disposable copy only.
+The user confirmed the disposable removal. The native progress card displayed the backup stage,
+working outline, waiting ring, and `0 / 105` processed count. The operation then reopened the project
+and displayed 105 removed, one retained, and a verified backup path. The four-star survivor remained
+visible in the Library. A repeat scan found no duplicate or invalid entries. The Classic theme's
+empty-result controls and alignment were also inspected at 1200 x 760. No new maintenance QML
+error was observed. The narrow-window limit recorded above is unchanged.
+
+Native editor review found that the `Maintenance` caption split inside the fixed rail. The caption
+was shortened to `Maintain`, with `Project Maintenance` kept as the accessible name and tooltip;
+the approved icon remains the standard rail icon. The fork's disabled issue tracker prevents an
+issue for this visual defect; its evidence and correction are recorded here. The final caption
+build and native confirmation are recorded below.
+
+
+**Final native completion (2026-11-09):** The QML/translation-only caption rebuild of `alcedo_main`
+and `alcedo_studio_test_host` exited 0. Native inspection confirmed that `Maintain` fits on one rail
+line and the accessible action remains `Project Maintenance`. The already-cleaned project reopened
+with its four-star survivor. No C++ behavior changed after the recorded 49-case pass, so those
+owner tests were not repeated for a caption change. The test host was closed normally.
+
+The provided project files stayed unchanged throughout native qualification:
+`SyntheticMaintenance.alcd` SHA-256 `E8A77725C5B94082ADF34DE4826D7C780A568496712C4C2F950B40342B7DED80`;
+`SyntheticMaintenance.initial.alcd` SHA-256 `CECA00B07A3F6EE0E7F8CFDF100924312D2D0948D921FDBA5D9E5C444152014A`.
+Only the disposable copy received the 105 removals. Its backup and temporary logs/copies were
+removed after recording the results. The supplied synthetic projects and launcher were retained.
