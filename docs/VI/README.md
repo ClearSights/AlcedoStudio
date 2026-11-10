@@ -8,13 +8,13 @@ surface must use those values.
 
 ## Project Maintenance
 
-### `CollectionsPanel.qml` and `EditorWorkspaceRail.qml`
+### `CollectionsPanel.qml`
 
 - Put Project Maintenance directly below Background Tasks in the same utility-row delegate as Search and Background Tasks. All three share the icon slot, label edge, row height, and vertical centering.
-- Both actions open the application-owned `ProjectMaintenanceDialog.qml` and controller.
+- Keep one Project Maintenance launcher in the project/library sidebar. It opens the application-owned `ProjectMaintenanceDialog.qml` and controller.
 - Disable the launcher without a loaded project. Explain the disabled sidebar action in its tooltip.
 - Use the existing body/caption fonts, neutral text, compact control height, and focus outline.
-  Project Maintenance uses the user-approved Tabler `database-cog` SVG, normalized to a 24 x 24 viewBox, white source stroke, and 1.5 px stroke width. Source and MIT license remain in the SVG. The editor action uses the same icon and the existing RailButton, with the compact caption `Maintain` and the full accessible/tooltip name `Project Maintenance`.
+  Project Maintenance uses the user-approved Tabler `database-cog` SVG, normalized to a 24 x 24 viewBox, white source stroke, and 1.5 px stroke width. Source and MIT license remain in the SVG.
 
 ### `ProjectMaintenanceDialog.qml`
 

@@ -4021,18 +4021,6 @@ Original source files on disk will be kept.</source>
         <source>Tasks</source>
         <translation type="unfinished"></translation>
     </message>
-    <message>
-        <source>Project Maintenance</source>
-        <translation>Project Maintenance</translation>
-    </message>
-    <message>
-        <source>Maintenance</source>
-        <translation>Maintenance</translation>
-    </message>
-    <message>
-        <source>Maintain</source>
-        <translation>Maintain</translation>
-    </message>
 </context>
 <context>
     <name>ExportInspectorPanel</name>

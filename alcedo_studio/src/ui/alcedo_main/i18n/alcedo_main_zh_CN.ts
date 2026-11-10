@@ -5212,18 +5212,6 @@ Refresh the library afterwards; they are listed under the User category. Import 
         <source>Show LUT Browser</source>
         <translation>显示 LUT 浏览器</translation>
     </message>
-    <message>
-        <source>Project Maintenance</source>
-        <translation>项目维护</translation>
-    </message>
-    <message>
-        <source>Maintenance</source>
-        <translation>维护</translation>
-    </message>
-    <message>
-        <source>Maintain</source>
-        <translation>维护</translation>
-    </message>
 </context>
 <context>
     <name>ExportInspectorPanel</name>

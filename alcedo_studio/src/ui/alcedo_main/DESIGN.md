@@ -1379,7 +1379,7 @@ DPR coverage: inspect icon optical/source sizing at logical 1.0, 1.5, and 2.0.
 
 The Collections launcher shares the Search and Background Tasks delegate: compact hit height,
 compact optical/source sizes, `spaceSm` icon-to-label gap, and vertically centered title text.
-The approved database-cog icon also appears in the editor rail below Tasks.
+The approved database-cog icon is used by the sole launcher in the project/library sidebar.
 
 The review dialog uses one aligned title/X row, a divider, and one `spaceLg` body inset. The
 compact transparent X uses the same close asset and IconActionButton settings as Search.

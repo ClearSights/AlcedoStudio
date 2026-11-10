@@ -307,14 +307,6 @@ Item {
                 actionName: qsTr("Background Tasks")
                 onClicked: root.host.openBackgroundTasksDialog()
             }
-            RailButton {
-                objectName: "editorProjectMaintenanceLauncher"
-                iconSrc: "qrc:/panel_icons/database-cog.svg"
-                label: qsTr("Maintain")
-                actionName: qsTr("Project Maintenance")
-                enabled: root.host && appModules.maintenance.available
-                onClicked: root.host.openProjectMaintenanceDialog()
-            }
         }
     }
 
