@@ -104,24 +104,21 @@ Dialog {
             Layout.fillHeight: true
             Layout.margins: appTheme.spaceLg
             spacing: appTheme.spaceMd
-            RowLayout {
+            Action {
+                objectName: "maintenanceScanButton"
+                Layout.alignment: Qt.AlignLeft
+                text: root.controller && root.controller.scanning ? qsTr("Cancel scan") : qsTr("Scan project")
+                enabled: root.controller && root.controller.available && (!root.controller.busy || root.controller.scanning)
+                onClicked: {
+                    root.confirming = false
+                    if (root.controller.scanning) root.controller.CancelScan()
+                    else root.controller.Scan()
+                }
+            }
+            Caption {
                 Layout.fillWidth: true
-                spacing: appTheme.spaceLg
-                Caption {
-                    Layout.fillWidth: true
-                    text: root.controller ? root.controller.projectPath : ""
-                    wrapMode: Text.WrapAnywhere
-                }
-                Action {
-                    objectName: "maintenanceScanButton"
-                    text: root.controller && root.controller.scanning ? qsTr("Cancel scan") : qsTr("Scan project")
-                    enabled: root.controller && root.controller.available && (!root.controller.busy || root.controller.scanning)
-                    onClicked: {
-                        root.confirming = false
-                        if (root.controller.scanning) root.controller.CancelScan()
-                        else root.controller.Scan()
-                    }
-                }
+                text: root.controller ? root.controller.projectPath : ""
+                wrapMode: Text.WrapAnywhere
             }
             Label {
                 Layout.fillWidth: true

@@ -19,6 +19,7 @@ surface must use those values.
 ### `ProjectMaintenanceDialog.qml`
 
 - Use `cardSurfaceColor` for the dialog and `bgBaseColor` for review rows.
+- Place Scan project at the body's left edge, above the full `.alcd` project path.
 - Wrap full paths above a wrapping metadata row of entry ID, rating, history counts, and retained ID. Put reasons below that row. Each value keeps its own label; no separator characters join independent values.
 - Use `ThemeCheckBox` for row selection. A selected row has a neutral `textColor` outline.
 - Use `DialogActionButton` for scan, selection, paging, confirmation, and backup-folder actions. Put the three selection actions in equal-width columns; paging stays left and the matching count stays right. The backup-folder action stays left of the right-aligned confirmation actions.
