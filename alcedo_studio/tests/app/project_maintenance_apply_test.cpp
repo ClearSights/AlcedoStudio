@@ -18,6 +18,7 @@
 #include "app/project_maintenance_package.hpp"
 #include "app/project_maintenance_service.hpp"
 #include "storage/mapper/duckorm/duckdb_orm.hpp"
+#include "support/storage_test_access.hpp"
 
 namespace alcedo {
 namespace {
@@ -49,7 +50,7 @@ class ProjectMaintenanceApplyTest : public ::testing::Test {
     importer.ImportToFolder({source_, source_}, {}, options, job);
     ASSERT_EQ(future.wait_for(std::chrono::seconds(90)), std::future_status::ready);
     ASSERT_EQ(future.get().imported_, 2);
-    ASSERT_TRUE(service_.Scan(project_->GetStorage()->GetDatabase()));
+    ASSERT_TRUE(service_.Scan(project_->GetStorage()->GetProjectMaintenanceStore()));
     for (const auto& finding : service_.Findings())
       if (finding.removable) ids_.push_back(finding.evidence.entry_id);
     ASSERT_EQ(ids_.size(), 1);
@@ -69,7 +70,9 @@ class ProjectMaintenanceApplyTest : public ::testing::Test {
     return duckorm::select_int64(guard.conn_, duckorm::expr::raw("SELECT count(*) FROM " + table))
         .value();
   }
-  auto LiveCount() -> int64_t { return Count(project_->GetStorage()->GetDatabase(), "Image"); }
+  auto LiveCount() -> int64_t {
+    return Count(StorageTestAccess::GetDatabase(*project_->GetStorage()), "Image");
+  }
   QTemporaryDir                   directory_{PackageTestDirectory()};
   image_path_t                    root_, source_, original_;
   std::shared_ptr<ProjectService> project_;
@@ -80,7 +83,7 @@ class ProjectMaintenanceApplyTest : public ::testing::Test {
 };
 TEST_F(ProjectMaintenanceApplyTest, SuccessfulMaintenancePreservesCompleteHistoryAndReopens) {
   {
-    auto guard = project_->GetStorage()->GetDatabase().GetConnectionGuard();
+    auto guard = StorageTestAccess::GetDatabase(*project_->GetStorage()).GetConnectionGuard();
     auto lock  = guard.Lock();
     duckorm::execute(
         guard.conn_,
@@ -111,11 +114,13 @@ TEST_F(ProjectMaintenanceApplyTest, SuccessfulMaintenancePreservesCompleteHistor
                                                  QStringLiteral("result"), &db, &meta, &error))
       << error.toStdString();
   Storage reopened(db);
-  EXPECT_EQ(Count(reopened.GetDatabase(), "Image"), 1);
-  EXPECT_EQ(Count(reopened.GetDatabase(), "PipelineRoot"), 1);
-  EXPECT_EQ(Count(reopened.GetDatabase(), "Image WHERE color_labels=5 AND delete_mark"), 1);
+  EXPECT_EQ(Count(StorageTestAccess::GetDatabase(reopened), "Image"), 1);
+  EXPECT_EQ(Count(StorageTestAccess::GetDatabase(reopened), "PipelineRoot"), 1);
+  EXPECT_EQ(
+      Count(StorageTestAccess::GetDatabase(reopened), "Image WHERE color_labels=5 AND delete_mark"),
+      1);
   ProjectMaintenanceService repeat;
-  ASSERT_TRUE(repeat.Scan(reopened.GetDatabase()));
+  ASSERT_TRUE(repeat.Scan(reopened.GetProjectMaintenanceStore()));
   EXPECT_TRUE(repeat.Findings().empty());
   operation.Finish();
 }
@@ -209,7 +214,7 @@ TEST_F(ProjectMaintenanceApplyTest,
   EXPECT_TRUE(std::filesystem::exists(operation.BackupPath()));
 }
 TEST_F(ProjectMaintenanceApplyTest, ReviewThenRatingPreventsSelectedRemoval) {
-  auto guard = project_->GetStorage()->GetDatabase().GetConnectionGuard();
+  auto guard = StorageTestAccess::GetDatabase(*project_->GetStorage()).GetConnectionGuard();
   {
     auto lock = guard.Lock();
     duckorm::execute(
@@ -225,7 +230,7 @@ TEST_F(ProjectMaintenanceApplyTest, ReviewThenRatingPreventsSelectedRemoval) {
   EXPECT_EQ(LiveCount(), 2);
 }
 TEST_F(ProjectMaintenanceApplyTest, ReviewThenColorLabelPreventsSelectedRemoval) {
-  auto guard = project_->GetStorage()->GetDatabase().GetConnectionGuard();
+  auto guard = StorageTestAccess::GetDatabase(*project_->GetStorage()).GetConnectionGuard();
   {
     auto lock = guard.Lock();
     duckorm::execute(guard.conn_, duckorm::expr::raw(std::format(
@@ -239,7 +244,7 @@ TEST_F(ProjectMaintenanceApplyTest, ReviewThenColorLabelPreventsSelectedRemoval)
   EXPECT_EQ(LiveCount(), 2);
 }
 TEST_F(ProjectMaintenanceApplyTest, ReviewThenDeletionMarkPreventsSelectedRemoval) {
-  auto guard = project_->GetStorage()->GetDatabase().GetConnectionGuard();
+  auto guard = StorageTestAccess::GetDatabase(*project_->GetStorage()).GetConnectionGuard();
   {
     auto lock = guard.Lock();
     duckorm::execute(guard.conn_, duckorm::expr::raw(std::format(

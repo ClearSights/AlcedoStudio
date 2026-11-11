@@ -32,6 +32,7 @@ class MaintenanceStorageFixture : public ::testing::Test {
     root_          = std::filesystem::path(directory_.path().toStdWString());
     database_path_ = root_ / "project.db";
     database_      = std::make_unique<Database>(database_path_);
+    store_         = std::make_unique<ProjectMaintenanceStore>(*database_);
     source_        = root_ / "photo.raw";
     std::ofstream(source_) << "source bytes";
   }
@@ -76,6 +77,7 @@ class MaintenanceStorageFixture : public ::testing::Test {
   QTemporaryDir             directory_{MaintenanceTestDirectory()};
   image_path_t              root_, source_, database_path_;
   std::unique_ptr<Database> database_;
+  std::unique_ptr<ProjectMaintenanceStore> store_;
   ProjectMaintenanceService service_;
 };
 

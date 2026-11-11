@@ -19,7 +19,7 @@ void ProjectMaintenanceService::Clear() {
   findings_.clear();
 }
 
-auto ProjectMaintenanceService::Scan(Database&                          database,
+auto ProjectMaintenanceService::Scan(ProjectMaintenanceStore&           store,
                                      const std::filesystem::path&       journal_directory,
                                      std::optional<sl_element_id_t>     active_entry,
                                      const std::function<bool()>&       canceled,
@@ -27,7 +27,6 @@ auto ProjectMaintenanceService::Scan(Database&                          database
                                      SourceChecker                      checker) -> bool {
   Clear();
   if (!checker) checker = CheckSource;
-  ProjectMaintenanceStore                                       store(database);
   std::map<std::wstring, std::vector<MaintenanceEntryEvidence>> groups;
   sl_element_id_t                                               after     = 0;
   size_t                                                        inspected = 0;

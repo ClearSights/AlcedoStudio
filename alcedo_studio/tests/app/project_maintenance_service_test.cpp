@@ -24,7 +24,7 @@ TEST_F(ProjectMaintenanceServiceTest, DuplicateSelectionRetainsEarliestEntryWith
   Add(1);
   Add(2);
   const auto before = Rows("Element");
-  ASSERT_TRUE(service_.Scan(*database_));
+  ASSERT_TRUE(service_.Scan(*store_));
   ASSERT_EQ(service_.Findings().size(), 2);
   EXPECT_FALSE(Find(1).removable);
   EXPECT_TRUE(Find(2).removable);
@@ -38,14 +38,14 @@ TEST_F(ProjectMaintenanceServiceTest, DifferentFoldersWithEqualNamesRemainSepara
   std::filesystem::create_directory(root_ / "other");
   std::filesystem::copy_file(source_, root_ / "other/photo.raw");
   Add(2, root_ / "other/photo.raw");
-  ASSERT_TRUE(service_.Scan(*database_));
+  ASSERT_TRUE(service_.Scan(*store_));
   EXPECT_TRUE(service_.Findings().empty());
 }
 TEST_F(ProjectMaintenanceServiceTest, RatedUneditedEntryIsProtected) {
   Add(1);
   Add(2);
   Execute("UPDATE Image SET rating=4,metadata='{\"Rating\":4}' WHERE id=2");
-  ASSERT_TRUE(service_.Scan(*database_));
+  ASSERT_TRUE(service_.Scan(*store_));
   EXPECT_FALSE(Find(2).removable);
   EXPECT_TRUE(Find(1).removable);
   EXPECT_EQ(Find(1).retained_id, 2);
@@ -60,7 +60,7 @@ TEST_F(ProjectMaintenanceServiceTest,
   Execute(
       "UPDATE Image SET color_labels=1 WHERE id=2;"
       "UPDATE Image SET delete_mark=true WHERE id=3");
-  ASSERT_TRUE(service_.Scan(*database_));
+  ASSERT_TRUE(service_.Scan(*store_));
   EXPECT_TRUE(Find(1).removable);
   EXPECT_EQ(Find(1).retained_id, 2);
   for (const sl_element_id_t id : {2U, 3U}) {
@@ -68,7 +68,7 @@ TEST_F(ProjectMaintenanceServiceTest,
     EXPECT_THROW(service_.Selection(std::span(&id, 1)), std::invalid_argument);
   }
   std::filesystem::remove(source_);
-  ASSERT_TRUE(service_.Scan(*database_));
+  ASSERT_TRUE(service_.Scan(*store_));
   EXPECT_TRUE(Find(1).removable);
   EXPECT_FALSE(Find(2).removable);
   EXPECT_FALSE(Find(3).removable);
@@ -77,7 +77,7 @@ TEST_F(ProjectMaintenanceServiceTest, RenamedVersionAndMissingSourceRemainProtec
   Add(1);
   Execute("UPDATE VersionRef SET display_name='Keep work' WHERE element_id=1");
   std::filesystem::remove(source_);
-  ASSERT_TRUE(service_.Scan(*database_));
+  ASSERT_TRUE(service_.Scan(*store_));
   EXPECT_EQ(Find(1).kind, MaintenanceFindingKind::MissingSource);
   EXPECT_FALSE(Find(1).removable);
 }
@@ -92,7 +92,7 @@ TEST_F(ProjectMaintenanceServiceTest, InactiveVersionProtectsEntry) {
     graph->CreateVersionRefAtRoot("Other");
     store.Materialize(graph->CaptureMaterialization());
   }
-  ASSERT_TRUE(service_.Scan(*database_));
+  ASSERT_TRUE(service_.Scan(*store_));
   EXPECT_FALSE(Find(1).removable);
   EXPECT_EQ(Find(1).evidence.version_count, 2);
 }
@@ -123,7 +123,7 @@ TEST_F(ProjectMaintenanceServiceTest, UndoneCommitProtectsMissingSourceEntry) {
     store.Materialize(graph->CaptureMaterialization());  // Default head remains at the empty root.
   }
   std::filesystem::remove(source_);
-  ASSERT_TRUE(service_.Scan(*database_));
+  ASSERT_TRUE(service_.Scan(*store_));
   EXPECT_EQ(Find(1).kind, MaintenanceFindingKind::MissingSource);
   EXPECT_EQ(Find(1).evidence.commit_count, 1);
   EXPECT_FALSE(Find(1).removable);
@@ -132,7 +132,7 @@ TEST_F(ProjectMaintenanceServiceTest, BrokenReferenceProtectsItsEntry) {
   Add(1);
   Add(2);
   Execute("DELETE FROM PipelineRoot WHERE element_id=2");
-  ASSERT_TRUE(service_.Scan(*database_));
+  ASSERT_TRUE(service_.Scan(*store_));
   EXPECT_FALSE(Find(2).removable);
   EXPECT_FALSE(Find(2).evidence.protection_reasons.empty());
 }
@@ -141,7 +141,7 @@ TEST_F(ProjectMaintenanceServiceTest, UniqueRatedAndEditedEntryIsNotAnInvalidFin
   Execute(
       "UPDATE Image SET rating=4,metadata='{\"Rating\":4}' WHERE id=1;"
       "UPDATE VersionRef SET display_name='Kept version' WHERE element_id=1");
-  ASSERT_TRUE(service_.Scan(*database_));
+  ASSERT_TRUE(service_.Scan(*store_));
   EXPECT_TRUE(service_.Findings().empty());
 }
 TEST_F(ProjectMaintenanceServiceTest, PipelineDifferenceProtectsEntry) {
@@ -154,13 +154,13 @@ TEST_F(ProjectMaintenanceServiceTest, PipelineDifferenceProtectsEntry) {
     auto lock = guard.Lock();
     PipelineMapper(guard.conn_).UpdatePipelineJsonByFileId(2, document.ToJson());
   }
-  ASSERT_TRUE(service_.Scan(*database_));
+  ASSERT_TRUE(service_.Scan(*store_));
   EXPECT_FALSE(Find(2).removable);
 }
 TEST_F(ProjectMaintenanceServiceTest, PermissionAndUnavailableVolumeAreNotMissingSources) {
   Add(1);
   Add(2);
-  ASSERT_TRUE(service_.Scan(*database_, {}, {}, {}, {}, [](const auto&) {
+  ASSERT_TRUE(service_.Scan(*store_, {}, {}, {}, {}, [](const auto&) {
     return MaintenanceSourceCheck{MaintenanceSourceStatus::Error, "Permission denied"};
   }));
   EXPECT_EQ(Find(1).kind, MaintenanceFindingKind::SourceProblem);
@@ -176,7 +176,7 @@ TEST_F(ProjectMaintenanceServiceTest, ScanLeavesAllProjectRowsUnchanged) {
       "PipelineParam", "VersionRef", "ImageEditState", "EditCommit",    "MaskAsset"};
   std::vector<std::string> before;
   for (const auto& table : tables) before.push_back(Rows(table));
-  ASSERT_TRUE(service_.Scan(*database_));
+  ASSERT_TRUE(service_.Scan(*store_));
   for (size_t i = 0; i < tables.size(); ++i) EXPECT_EQ(before[i], Rows(tables[i])) << tables[i];
 }
 TEST_F(ProjectMaintenanceServiceTest, CanceledScanCannotSelectAndEnumerationPagesAreBounded) {
@@ -184,7 +184,7 @@ TEST_F(ProjectMaintenanceServiceTest, CanceledScanCannotSelectAndEnumerationPage
   ProjectMaintenanceStore store(*database_);
   EXPECT_EQ(store.ListEntryIds(0).size(), 64);
   EXPECT_EQ(store.ListEntryIds(64).size(), 1);
-  EXPECT_FALSE(service_.Scan(*database_, {}, {}, [] { return true; }));
+  EXPECT_FALSE(service_.Scan(*store_, {}, {}, [] { return true; }));
   const sl_element_id_t id = 2;
   EXPECT_THROW(service_.Selection(std::span(&id, 1)), std::invalid_argument);
 }

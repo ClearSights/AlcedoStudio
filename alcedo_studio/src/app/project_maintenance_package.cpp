@@ -17,7 +17,6 @@
 #endif
 
 #include "app/project_maintenance_service.hpp"
-#include "storage/mapper/duckorm/duckdb_orm.hpp"
 
 namespace alcedo {
 namespace {
@@ -122,7 +121,8 @@ void ProjectMaintenancePackage::Apply(const std::shared_ptr<ProjectService>& pro
   {
     Storage                   storage(staged_db);
     ProjectMaintenanceService validation;
-    validation.Scan(storage.GetDatabase(), project->GetDBPath().parent_path() / "editor-journal");
+    validation.Scan(storage.GetProjectMaintenanceStore(),
+                    project->GetDBPath().parent_path() / "editor-journal");
     std::vector<sl_element_id_t> ids;
     for (const auto& removal : removals) ids.push_back(removal.entry_id);
     const auto checked = validation.Selection(ids);
@@ -131,7 +131,7 @@ void ProjectMaintenancePackage::Apply(const std::shared_ptr<ProjectService>& pro
         throw std::runtime_error("Retained entry changed since review; scan again");
       }
     }
-    ProjectMaintenanceStore store(storage.GetDatabase());
+    auto& store    = storage.GetProjectMaintenanceStore();
     removed_images = store.ImageIds(removals);
     expected       = store.RetainedRowDigests(removals, removed_images, true);
     Stage(MaintenancePackageStage::Removal);
@@ -140,9 +140,7 @@ void ProjectMaintenancePackage::Apply(const std::shared_ptr<ProjectService>& pro
       throw std::runtime_error("Retained project rows changed during maintenance");
     }
     ProjectService::RefreshPackageDataSummary(staged_meta, storage);
-    auto guard = storage.GetDatabase().GetConnectionGuard();
-    auto lock  = guard.Lock();
-    duckorm::execute(guard.conn_, duckorm::expr::raw("CHECKPOINT"));
+    storage.Maintenance().Checkpoint();
   }
   Stage(MaintenancePackageStage::ResultWrite);
   result_ = workspace_ / "result.alcd";
@@ -157,7 +155,7 @@ void ProjectMaintenancePackage::Apply(const std::shared_ptr<ProjectService>& pro
     throw std::runtime_error("Result project identity changed");
   {
     Storage                 verification(verify_db);
-    ProjectMaintenanceStore store(verification.GetDatabase());
+    auto&                   store = verification.GetProjectMaintenanceStore();
     if (store.RetainedRowDigests(removals, removed_images, false) != expected) {
       throw std::runtime_error("Reopened package retained-row verification failed");
     }

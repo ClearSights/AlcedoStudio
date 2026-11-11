@@ -104,7 +104,7 @@ TEST_F(ProjectMaintenanceStorageTest, BrokenRetainedReferenceRejectsWholeBatch) 
   EXPECT_THROW(ProjectMaintenanceStore(*database_).RemovePristineProjectEntries(removals),
                std::exception);
   EXPECT_EQ(Rows("Element"), before);
-  ASSERT_TRUE(service_.Scan(*database_));
+  ASSERT_TRUE(service_.Scan(*store_));
   EXPECT_FALSE(Find(1).removable);
   EXPECT_FALSE(Find(2).removable);
   EXPECT_TRUE(Find(3).removable);
@@ -114,7 +114,7 @@ TEST_F(ProjectMaintenanceStorageTest, MarkAddedAfterReviewRejectsTheWholeRemoval
   Add(1);
   Add(2);
   Add(3);
-  ASSERT_TRUE(service_.Scan(*database_));
+  ASSERT_TRUE(service_.Scan(*store_));
   const std::vector<sl_element_id_t> ids{3, 2};
   const auto                         removals = service_.Selection(ids);
   for (const auto* mark : {"color_labels=4", "color_labels=0,delete_mark=true"}) {

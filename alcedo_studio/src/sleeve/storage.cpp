@@ -83,20 +83,28 @@ Storage::Storage(std::filesystem::path db_path)
     : database_(db_path),
       element_store_(database_),
       image_store_(database_.GetConnectionGuard()),
+      source_files_(database_),
       semantic_models_(database_),
       semantic_embeddings_(database_),
       semantic_labels_(database_),
       semantic_vector_search_(database_),
       ai_store_(database_),
-      maintenance_(database_) {}
+      maintenance_(database_),
+      project_maintenance_(database_) {}
 
 auto Storage::OpenSession() -> StorageSession { return StorageSession(database_); }
 
 auto Storage::Maintenance() -> StorageMaintenance& { return maintenance_; }
 
+auto Storage::GetProjectMaintenanceStore() -> ProjectMaintenanceStore& {
+  return project_maintenance_;
+}
+
 auto Storage::GetElementStore() -> ElementStore& { return element_store_; }
 
 auto Storage::GetImageStore() -> ImageStore& { return image_store_; }
+
+auto Storage::GetSourceFileStore() -> SourceFileStore& { return source_files_; }
 
 auto Storage::GetSemanticModelRegistry() -> SemanticModelRegistry& { return semantic_models_; }
 

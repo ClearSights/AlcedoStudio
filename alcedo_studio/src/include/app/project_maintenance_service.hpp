@@ -34,7 +34,7 @@ class ProjectMaintenanceService {
   static auto CheckSource(const image_path_t& path) -> MaintenanceSourceCheck;
   /// Enumerate bounded storage pages. Returns false on user cancellation; partial findings
   /// never become applicable. Other fatal owner failures throw. No project writes occur.
-  auto Scan(Database& database, const std::filesystem::path& journal_directory = {},
+  auto Scan(ProjectMaintenanceStore& store, const std::filesystem::path& journal_directory = {},
             std::optional<sl_element_id_t>     active_entry = {},
             const std::function<bool()>&       canceled     = {},
             const std::function<void(size_t)>& progress = {}, SourceChecker checker = {}) -> bool;

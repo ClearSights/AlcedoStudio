@@ -110,7 +110,7 @@ bool ProjectMaintenanceController::Scan() {
     QString failure;
     try {
       complete = service_.Scan(
-          project->GetStorage()->GetDatabase(), journal, active,
+          project->GetStorage()->GetProjectMaintenanceStore(), journal, active,
           [this] { return canceled_.load(); },
           [this](size_t count) {
             if (count % 64 == 0)

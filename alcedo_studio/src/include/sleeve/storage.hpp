@@ -13,11 +13,13 @@
 #include "storage/store/ai/ai_store.hpp"
 #include "storage/store/database.hpp"
 #include "storage/store/image/image_store.hpp"
+#include "storage/store/image/source_file_store.hpp"
 #include "storage/store/semantic/semantic_embedding_store.hpp"
 #include "storage/store/semantic/semantic_label_store.hpp"
 #include "storage/store/semantic/semantic_model_registry.hpp"
 #include "storage/store/semantic/semantic_vector_search.hpp"
 #include "storage/store/sleeve/element_store.hpp"
+#include "storage/store/sleeve/project_maintenance_store.hpp"
 #include "storage/store/storage_maintenance.hpp"
 #include "storage/store/storage_session.hpp"
 #include "type/type.hpp"
@@ -51,12 +53,14 @@ class Storage {
   Database                                                              database_;
   ElementStore                                                         element_store_;
   ImageStore                                                           image_store_;
+  SourceFileStore                                                       source_files_;
   SemanticModelRegistry                                                 semantic_models_;
   SemanticEmbeddingStore                                                semantic_embeddings_;
   SemanticLabelStore                                                    semantic_labels_;
   SemanticVectorSearch                                                  semantic_vector_search_;
   AiStore                                                               ai_store_;
   StorageMaintenance                                                    maintenance_;
+  ProjectMaintenanceStore                                               project_maintenance_;
 
   /// Test fixtures write rows that no store writes (old schemas, broken rows); see
   /// tests/support/storage_test_access.hpp. Production code does not define this type.
@@ -75,8 +79,12 @@ class Storage {
   auto OpenSession() -> StorageSession;
   /// Diagnostics summary, package snapshot, and HNSW index removal (see StorageMaintenance).
   auto Maintenance() -> StorageMaintenance&;
+  /// Project-entry inspection and removal through scoped storage operations.
+  auto GetProjectMaintenanceStore() -> ProjectMaintenanceStore&;
   auto GetElementStore() -> ElementStore&;
   auto GetImageStore() -> ImageStore&;
+  /// Source path and byte-size records; each operation owns its database connection.
+  auto GetSourceFileStore() -> SourceFileStore&;
   auto GetSemanticModelRegistry() -> SemanticModelRegistry&;
   auto GetSemanticEmbeddingStore() -> SemanticEmbeddingStore&;
   auto GetSemanticLabelStore() -> SemanticLabelStore&;

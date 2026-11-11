@@ -17,7 +17,7 @@ alcedo_copy_duckdb_fts_extension(ProjectMaintenanceStorageTest)
 alcedo_register_test_target(ProjectMaintenanceStorageTest app ci_core)
 
 add_executable(ProjectMaintenanceApplyTest ${ALCEDO_TEST_ROOT}/app/project_maintenance_apply_test.cpp)
-target_include_directories(ProjectMaintenanceApplyTest PRIVATE ${ALCEDO_INCLUDE_DIR})
+target_include_directories(ProjectMaintenanceApplyTest PRIVATE ${ALCEDO_INCLUDE_DIR} ${ALCEDO_TEST_DIR})
 target_link_libraries(ProjectMaintenanceApplyTest PRIVATE ProjectMaintenanceService ImportService GTest::gtest_main)
 target_compile_definitions(ProjectMaintenanceApplyTest PRIVATE ALCEDO_RASTER_FIXTURE_DIR="${ALCEDO_TEST_ROOT}/resources/raster")
 gtest_discover_tests(ProjectMaintenanceApplyTest TEST_PREFIX "ProjectMaintenanceApplyTest.")
@@ -25,7 +25,7 @@ alcedo_copy_duckdb_fts_extension(ProjectMaintenanceApplyTest)
 alcedo_register_test_target(ProjectMaintenanceApplyTest app ci_core)
 
 add_executable(ImportDuplicateSkippingTest ${ALCEDO_TEST_ROOT}/app/import_duplicate_skipping_test.cpp)
-target_include_directories(ImportDuplicateSkippingTest PRIVATE ${ALCEDO_INCLUDE_DIR})
+target_include_directories(ImportDuplicateSkippingTest PRIVATE ${ALCEDO_INCLUDE_DIR} ${ALCEDO_TEST_DIR})
 target_link_libraries(ImportDuplicateSkippingTest PRIVATE ImportService ProjectService GTest::gtest_main)
 target_compile_definitions(ImportDuplicateSkippingTest PRIVATE
     ALCEDO_RASTER_FIXTURE_DIR="${ALCEDO_TEST_ROOT}/resources/raster")

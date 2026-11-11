@@ -7,6 +7,7 @@
 #include "../automation/automation_in_process_session.hpp"
 #include "../support/project_maintenance_fixture.hpp"
 #include "storage/mapper/sleeve/element/file_mapper.hpp"
+#include "support/storage_test_access.hpp"
 #include "ui/alcedo_main/album_backend/application_module_host.hpp"
 #include "ui/alcedo_main/automation/automation_project_commands.hpp"
 
@@ -82,8 +83,8 @@ TEST_F(ProjectMaintenanceControllerTest, ScanCancelLeavesApplyDisabled) {
   auto*      maintenance = host.maintenance();
   QSignalSpy scanned(maintenance, &ProjectMaintenanceController::ScanFinished);
   {
-    auto guard =
-        host.project()->handler().project()->GetStorage()->GetDatabase().GetConnectionGuard();
+    auto guard = StorageTestAccess::GetDatabase(*host.project()->handler().project()->GetStorage())
+                     .GetConnectionGuard();
     auto lock = guard.Lock();
     ASSERT_TRUE(maintenance->Scan());
     maintenance->CancelScan();
@@ -191,8 +192,8 @@ TEST_F(ProjectMaintenanceControllerTest, AlreadyAdmittedRatingFinishesBeforeCapt
   ASSERT_NE(id, 0);
   QSignalSpy finished(host.maintenance(), &ProjectMaintenanceController::Finished);
   {
-    auto guard =
-        host.project()->handler().project()->GetStorage()->GetDatabase().GetConnectionGuard();
+    auto guard = StorageTestAccess::GetDatabase(*host.project()->handler().project()->GetStorage())
+                     .GetConnectionGuard();
     auto               lock     = guard.Lock();
     const auto         image_id = FileMapper(guard.conn_).GetBoundImageById(id);
     const QVariantList targets{QVariantMap{{"elementId", id}, {"imageId", image_id}}};
@@ -281,7 +282,8 @@ TEST_F(ProjectMaintenanceControllerTest,
   ImportDuplicates(host);
   QJsonObject scan;
   {
-    ProjectMaintenanceStore store(host.project()->handler().project()->GetStorage()->GetDatabase());
+    ProjectMaintenanceStore store(
+        StorageTestAccess::GetDatabase(*host.project()->handler().project()->GetStorage()));
     const auto              before = store.RetainedRowDigests({}, {}, false);
     scan                           = session.CallResult(QStringLiteral("project.maintenance.scan"));
     EXPECT_EQ(store.RetainedRowDigests({}, {}, false), before);
