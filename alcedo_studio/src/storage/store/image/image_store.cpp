@@ -12,6 +12,7 @@
 
 #include "concurrency/thread_pool.hpp"
 #include "image/image.hpp"
+#include "storage/mapper/duckorm/duckdb_expr.hpp"
 #include "storage/mapper/duckorm/duckdb_orm.hpp"
 #include "storage/mapper/image/image_mapper.hpp"
 #include "utils/queue/queue.hpp"
@@ -67,8 +68,13 @@ void ImageStore::AddImage(std::shared_ptr<Image> image) {
 }
 
 void ImageStore::AddImages(std::span<const std::shared_ptr<Image>> images) {
-  auto db_lock = guard_.Lock();
+  if (images.empty()) {
+    return;
+  }
+  auto                 db_lock = guard_.Lock();
+  duckorm::Transaction transaction(guard_.conn_);
   image_mapper_.InsertBatch(images);
+  transaction.commit();
 }
 
 /**
@@ -95,8 +101,8 @@ void ImageStore::RemoveImagesByIds(std::span<const image_id_t> remove_ids) {
 void ImageStore::RemoveImagesWithoutFileBinding() {
   auto db_lock = guard_.Lock();
   duckorm::Transaction transaction(guard_.conn_);
-  image_mapper_.RemoveByClause(
-      std::string("NOT EXISTS (SELECT 1 FROM FileImage fi WHERE fi.image_id = Image.id)"));
+  image_mapper_.RemoveWhere(
+      duckorm::expr::raw("NOT EXISTS (SELECT 1 FROM FileImage fi WHERE fi.image_id = Image.id)"));
   RemoveUnownedSourceSizes(guard_.conn_);
   transaction.commit();
 }
@@ -119,7 +125,7 @@ void ImageStore::RemoveUnreferencedImagesInTransaction(duckdb_connection&       
       duckorm::execute(connection, duckorm::expr::raw(std::format(
                                        "DELETE FROM ImageSourceSize WHERE image_id={}", id)));
     }
-    ImageMapper(connection).Remove(id);
+    ImageMapper(connection).RemoveById(id);
   }
 }
 
@@ -131,20 +137,8 @@ void ImageStore::RemoveUnreferencedImagesInTransaction(duckdb_connection&       
 void ImageStore::RemoveImageByType(ImageType type) {
   auto db_lock = guard_.Lock();
   duckorm::Transaction transaction(guard_.conn_);
-  image_mapper_.RemoveByClause(std::format("type={}", static_cast<uint32_t>(type)));
-  RemoveUnownedSourceSizes(guard_.conn_);
-  transaction.commit();
-}
-
-/**
- * @brief Remove an image by its path.
- *
- * @param path
- */
-void ImageStore::RemoveImageByPath(const std::wstring& path) {
-  auto db_lock = guard_.Lock();
-  duckorm::Transaction transaction(guard_.conn_);
-  image_mapper_.RemoveByClause(duckorm::expr::column_eq("image_path", conv::ToBytes(path)));
+  image_mapper_.RemoveWhere(
+      duckorm::expr::column_eq("type", static_cast<std::int64_t>(static_cast<uint32_t>(type))));
   RemoveUnownedSourceSizes(guard_.conn_);
   transaction.commit();
 }
@@ -156,7 +150,10 @@ void ImageStore::UpdateImage(const std::shared_ptr<Image> image) {
 
 void ImageStore::UpdateImages(
     std::span<const std::pair<image_id_t, std::shared_ptr<Image>>> updates) {
-  auto db_lock = guard_.Lock();
+  if (updates.empty()) {
+    return;
+  }
+  auto                 db_lock = guard_.Lock();
   duckorm::Transaction transaction(guard_.conn_);
   for (const auto& [id, image] : updates) {
     // A source replacement invalidates the recorded size in the same transaction. Changes
@@ -169,8 +166,8 @@ void ImageStore::UpdateImages(
     query.append(duckorm::expr::param(conv::ToBytes(image->image_path_.wstring())));
     query.append(duckorm::expr::raw(")"));
     duckorm::execute(guard_.conn_, query);
-    image_mapper_.Update(image, id);
   }
+  image_mapper_.UpdateBatch(updates);
   transaction.commit();
 }
 

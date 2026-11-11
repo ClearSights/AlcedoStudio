@@ -41,7 +41,6 @@ class ImageStore {
   static void RemoveUnreferencedImagesInTransaction(duckdb_connection&          connection,
                                                     std::span<const image_id_t> ids);
   void RemoveImageByType(const ImageType type);
-  void RemoveImageByPath(const std::wstring& path);
 
   void UpdateImage(const std::shared_ptr<Image> image);
   // Bulk-update a batch of images in a single transaction, keyed by image id.

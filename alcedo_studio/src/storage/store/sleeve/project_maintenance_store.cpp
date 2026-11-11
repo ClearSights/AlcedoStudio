@@ -243,11 +243,11 @@ auto ProjectMaintenanceStore::RemovePristineProjectEntries(
                                                     *removal.retained_id, id)));
     }
     CommitGraphStore(guard.conn_).DeleteGraphForElementInTransaction(id);
-    PipelineMapper(guard.conn_).Remove(id);
-    FileMapper(guard.conn_).Remove(id);
+    PipelineMapper(guard.conn_).RemoveById(id);
+    FileMapper(guard.conn_).RemoveById(id);
     duckorm::execute(guard.conn_, duckorm::expr::raw(std::format(
                                       "DELETE FROM FolderContent WHERE element_id={}", id)));
-    ElementMapper(guard.conn_).Remove(id);
+    ElementMapper(guard.conn_).RemoveById(id);
     if (removal.retained_id) {
       duckorm::execute(guard.conn_, duckorm::expr::raw(
                                         std::format("UPDATE Element SET ref_count=(SELECT count(*) "
