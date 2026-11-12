@@ -541,6 +541,8 @@ alcedo_register_test_target(AlbumBackendSearchWorkerTest ui)
 # Library sort, group, and import time (album_sort_group_and_import_time_plan.md, Phase 2):
 # section projection geometry, and the one library query path of LibraryModule.
 def_ui_test(AlbumSectionModelTest album_section_model_test.cpp)
+def_ui_test(LibraryDisplayModelTest library_display_model_test.cpp)
+alcedo_register_test_target(LibraryDisplayModelTest ui)
 alcedo_register_test_target(AlbumSectionModelTest ui)
 # Issue 745: justified-rows Library layout geometry, its window model, and the layout setting.
 def_ui_test(JustifiedLayoutTest justified_layout_test.cpp)

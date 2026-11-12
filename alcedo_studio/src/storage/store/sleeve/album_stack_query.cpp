@@ -256,6 +256,7 @@ void ReadDisplay(duckorm::Connection connection, sl_element_id_t folder_id,
   for (auto& row : duckorm::query<PageRow>(connection, page)) {
     const auto      file = FileId(row.file_id);
     AlbumDisplayRow output;
+    output.file_id          = file;
     output.photo.photo_     = album_query_rows::ToSearchResultRow(row);
     output.photo.group_key_ = GroupKey(options.group_field_, row.key);
     if (row.edited_at) output.photo.edited_at_ns_ = static_cast<int64_t>(*row.edited_at);

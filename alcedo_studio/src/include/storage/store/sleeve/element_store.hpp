@@ -131,17 +131,25 @@ struct AlbumQueryRow {
   std::string            edit_version_name_{};
 };
 
-/// One bounded display result. The photo is the actual displayed File. Counts describe its
-/// saved stack and matching fragment; plain photos have counts of one and no saved cover.
-struct AlbumDisplayRow {
-  AlbumQueryRow        photo;
+/// Minimal display-page values, owned by their result or the GUI display model. Actual File
+/// ID and stable identity differ for representatives. No photo metadata or member list is kept.
+/// These values are read results, never editable copies of persisted stack organization.
+struct AlbumDisplayItem {
   AlbumDisplayIdentity identity;
-  sl_element_id_t      saved_cover_file_id  = 0;
-  int64_t              stack_total          = 1;
-  int64_t              query_match_count    = 1;
-  int64_t              fragment_match_count = 1;
-  bool                 temporary_cover      = false;
-  bool                 expanded             = false;
+  sl_element_id_t      file_id                                           = 0;
+  sl_element_id_t      saved_cover_file_id                               = 0;
+  int64_t              stack_total                                       = 1;
+  int64_t              query_match_count                                 = 1;
+  int64_t              fragment_match_count                              = 1;
+  bool                 temporary_cover                                   = false;
+  bool                 expanded                                          = false;
+  auto                 operator==(const AlbumDisplayItem&) const -> bool = default;
+};
+
+/// One bounded display result. Move its item into the display owner and its photo values
+/// into the thumbnail owner; neither owner retains a second copy of the other's data.
+struct AlbumDisplayRow : AlbumDisplayItem {
+  AlbumQueryRow photo;
 };
 
 /// One group of an album query: its key, its photo count, and the position of its first

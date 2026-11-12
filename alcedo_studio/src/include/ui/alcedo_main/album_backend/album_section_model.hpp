@@ -12,6 +12,7 @@
 #include <QVariantMap>
 #include <cstdint>
 #include <map>
+#include <memory>
 #include <set>
 #include <string>
 #include <vector>
@@ -19,6 +20,7 @@
 #include "sleeve/album_query.hpp"
 #include "storage/store/sleeve/element_store.hpp"
 #include "type/type.hpp"
+#include "ui/alcedo_main/album_backend/library_display_model.hpp"
 
 namespace alcedo::ui {
 
@@ -27,8 +29,8 @@ namespace alcedo::ui {
  *        header and one logical row for each line of photo cells.
  *
  * @details Owned by LibraryModule. It stores the accepted group descriptors (key, photo count,
- * first occurrence), the collapse state, the column count, and the file ids of the occurrence
- * pages that are loaded near the viewport. It holds no photo metadata: a cell reads its photo
+ * first display position), the collapse state, and the column count. It reads loaded pages
+ * from LibraryDisplayModel without a second page cache. A cell reads its photo
  * from the thumbnail model by file id.
  *
  * For a group of `n` photos and `c` columns, an expanded group has `1 + ceil(n / c)` rows and a
@@ -74,6 +76,8 @@ class AlbumSectionModel final : public QAbstractListModel {
   };
 
   explicit AlbumSectionModel(QObject* parent = nullptr);
+  /// Read pages from an existing display owner, which must outlive this geometry model.
+  explicit AlbumSectionModel(LibraryDisplayModel& display, QObject* parent = nullptr);
 
   // QAbstractListModel
   int                    rowCount(const QModelIndex& parent = QModelIndex()) const override;
@@ -88,7 +92,8 @@ class AlbumSectionModel final : public QAbstractListModel {
    * result so no owner shows a different result between the notifications.
    */
   void ResetGroups(std::vector<AlbumGroupDescriptor> groups, int64_t unique_file_count,
-                   int64_t occurrence_count, bool keep_collapse_state);
+                   int64_t occurrence_count, bool keep_collapse_state,
+                   AlbumReadMode mode = AlbumReadMode::kPhotos);
   /// Remove every group (flat mode or no result).
   void Clear();
   /// Start a reset whose groups are installed by InstallGroups and shown by EndReplace. Views
@@ -96,7 +101,8 @@ class AlbumSectionModel final : public QAbstractListModel {
   void BeginReplace();
   /// Install groups without notifying (see ResetGroups for the arguments).
   void InstallGroups(std::vector<AlbumGroupDescriptor> groups, int64_t unique_file_count,
-                     int64_t occurrence_count, bool keep_collapse_state);
+                     int64_t occurrence_count, bool keep_collapse_state,
+                     AlbumReadMode mode = AlbumReadMode::kPhotos);
   /// End the reset that BeginReplace started and emit SectionsChanged and PagesChanged.
   void EndReplace();
 
@@ -154,7 +160,7 @@ class AlbumSectionModel final : public QAbstractListModel {
   [[nodiscard]] auto groups() const -> const std::vector<AlbumGroupDescriptor>& { return groups_; }
   [[nodiscard]] auto RowAt(int row) const -> Row;
   /// Number of loaded pages and of loaded occurrence ids (bounded-retention evidence).
-  [[nodiscard]] auto LoadedPageCount() const -> size_t { return pages_.size(); }
+  [[nodiscard]] auto LoadedPageCount() const -> size_t { return display_->LoadedPageCount(); }
   [[nodiscard]] auto LoadedOccurrenceCount() const -> size_t;
   /// Ordered first occurrences of the loaded pages.
   [[nodiscard]] auto LoadedPageStarts() const -> std::vector<int64_t>;
@@ -217,6 +223,8 @@ class AlbumSectionModel final : public QAbstractListModel {
       -> int64_t;
   /// Rebuild the prefix table of row starts. Does not emit.
   void                              RebuildRowStarts();
+  /// Connect page notifications without retaining another page map.
+  void                                 BindDisplay();
   void                              RebuildRows();
   /// Insert or remove the photo rows of one group below its header (no model reset) and
   /// notify the header's Collapsed role. The group's state must differ from @p collapsed.
@@ -235,7 +243,10 @@ class AlbumSectionModel final : public QAbstractListModel {
   int                               column_count_      = 1;
   bool                              replacing_         = false;
   std::set<std::string>             collapsed_keys_{};
-  PageMap                           pages_{};
+  /// A standalone section creates a display owner; the application supplies its shared owner.
+  std::unique_ptr<LibraryDisplayModel> owned_display_;
+  LibraryDisplayModel*                 display_ = nullptr;
+  AlbumReadMode                        mode_    = AlbumReadMode::kPhotos;
 };
 
 }  // namespace alcedo::ui

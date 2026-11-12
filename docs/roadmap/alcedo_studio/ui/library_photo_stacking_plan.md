@@ -2,7 +2,7 @@
 
 Date: 2026-11-11
 
-Status: PS1, PS2A, PS2B, PS3, and PS4 complete (2026-11-11). All other phases remain planned.
+Status: PS1, PS2A, PS2B, PS3, and PS4 complete (2026-11-11). PS5A is in progress. All later phases remain planned.
 The latest Windows Release verification has 113 distinct passes, three skips, and no unresolved
 test failures after fixture preparation and reruns. One GPU rendering comparison was excluded.
 See the PS1 and PS2A review-fix records and the original PS2B completion record.
@@ -1742,8 +1742,64 @@ An expansion choice made after submission remains the live choice for its reques
 **Build and run.** V5A: LibraryDisplayModelTest, AlbumSectionModelTest, and AlbumBackendLibraryQueryTest.
 **Exit criteria.** [ ] One owner per state category. [ ] QAbstractItemModelTester accepts every transition.
 [ ] GUI publication performs no SQL. [ ] No duplicate display-page cache remains.
-**Expected diff.** 800-1300 lines.
-**Completion record.** Not started. Fill the Section 12 template here after implementation.
+**Implementation split (2026-11-11).** Source audit at PR2 `4f3f0b8f` found a 770-line section
+model with its own page map and a 1788-line library facade with separate publication paths.
+The estimate has a material risk of exceeding 2000 changed lines. Keep PS5A as the PR3 scope,
+with these independently tested internal steps. Neither step starts PS5B or a later phase.
+
+| Step | Exact scope | Expected changed lines | Completion |
+| --- | --- | ---: | --- |
+| PS5A.1 | Minimal display-item representation, LibraryDisplayModel page/expansion owner, section-model scoped reads and geometry, model tests | 1200-1850 | complete |
+| PS5A.2 | LibraryModule worker/publication, photo-value owner, host registration, notification/worker/failure tests | 1200-1900 | planned |
+
+PS5A.1 moves the existing section page storage into LibraryDisplayModel. Keep legacy photo-ID
+operation inputs as transient algorithm outputs, never as a second stored page cache. Tests
+use QAbstractItemModelTester and verify geometry, retention, stable keys, and expansion lifetime.
+PS5A.2 installs all components before completion notifications. Remove the duplicate legacy
+photo-value cache through its current callers, and retain the existing raw-photo behavior.
+Capture expansion choices in the existing worker input. Use the existing replacement policy.
+Keep stack presentation available through C++ tests only until the complete layouts are installed.
+Run all V5A targets before PS5A is complete. Preserve the five named assertions above.
+
+#### PS5A.1 completion record (2026-11-11)
+
+**Status:** complete for page ownership and geometry. PS5A remains partial until PS5A.2.
+The fork branch `feature/library-photo-stacking-PR3` starts at PR2 `4f3f0b8f`.
+
+The new `AlbumDisplayItem` holds only stable identity, actual File ID, counts, and stack flags.
+`AlbumDisplayRow` adds its photo values for a bounded query response. The GUI display model keeps
+only the item. Photo roles read AlbumThumbnailModel through a scoped const API. Photo updates
+notify every loaded display occurrence. The model owns page ranges and session expansion choices.
+AlbumSectionModel holds geometry and matching-photo captions; it owns no page map. Standalone
+section tests construct a display owner, while the application can inject its shared owner.
+Existing photo-ID page inputs remain transient operation inputs and algorithm outputs.
+
+**Success chain:** typed query item -> LibraryDisplayModel page -> scoped section read -> display
+geometry with the separate matching-photo caption. No SQL runs in the display or section model.
+**Failure chain:** invalid page range -> validation before mutation -> prior count and pages remain.
+Session reset releases pages and expansion; replacing a result preserves absent expansion keys.
+
+**Executed evidence:** five LibraryDisplayModelTest cases pass, including
+`SectionGeometryReadsDisplayCountsButReportsMatchingPhotoCounts`, live photo-role forwarding,
+sole page ownership/retention, expansion lifetime, and invalid-range retention.
+QAbstractItemModelTester accepts the display and section transitions. All 12 AlbumSectionModelTest
+cases and all 31 AlbumBackendLibraryQueryTest cases pass: **48/48**, no skip or failure.
+
+```powershell
+cmd /c scripts\msvc_env.cmd --build --preset win_release --target LibraryDisplayModelTest AlbumSectionModelTest AlbumBackendLibraryQueryTest --parallel 4
+ctest --test-dir build/release -R '^(LibraryDisplayModelTest\.|AlbumSectionModelTest\.|AlbumBackendLibraryQueryTest\.)' --output-on-failure
+```
+
+This uses the same MSVC 14.44, Qt 6.12, release preset, and vcpkg runtime PATH as PR2.
+New files are formatted; touched existing C++ uses changed-line formatting and LF.
+The new display implementation is 249 lines, its header 89, and its focused tests 152.
+The section implementation shrinks after its page storage moves. This internal step stays below
+2000 changed lines. No command, package-save, selection policy, or QML work was added.
+
+**PS5A remaining:** integrate complete worker publication, shared host registration, eliminate the
+legacy duplicate photo values, and execute the remaining named publication/pin/failure assertions.
+Full-suite, macOS, and manual GUI checks were not run.
+
 
 ### PS5B - Command tasks and save outcomes
 
