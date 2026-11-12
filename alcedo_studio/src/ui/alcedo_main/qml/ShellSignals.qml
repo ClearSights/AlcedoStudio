@@ -72,9 +72,7 @@ Item {
         target: appModules.folders
         ignoreUnknownSignals: true
         function onFolderSelectionChanged() {
-            if (root.selectionState) {
-                root.selectionState.clearSelectedImages()
-            }
+            // The C++ selection owner intersects with the newly accepted matching result.
             if (root.host) {
                 root.host.pendingDeleteTargets = []
                 root.host.pendingRatingTarget = ({})

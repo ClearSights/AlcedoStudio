@@ -27,19 +27,19 @@
 #include "ui/alcedo_main/album_backend/album_section_model.hpp"
 #include "ui/alcedo_main/album_backend/album_thumbnail_model.hpp"
 #include "ui/alcedo_main/album_backend/album_types.hpp"
+#include "ui/alcedo_main/album_backend/folder_controller.hpp"
 #include "ui/alcedo_main/album_backend/library_display_model.hpp"
 #include "ui/alcedo_main/album_backend/library_selection.hpp"
 #include "ui/alcedo_main/album_backend/library_selection_marks.hpp"
+#include "ui/alcedo_main/album_backend/library_selection_operations.hpp"
+#include "ui/alcedo_main/album_backend/project_module.hpp"
 #include "ui/alcedo_main/album_backend/search_controller.hpp"
 #include "ui/alcedo_main/album_backend/search_request_worker.hpp"
+#include "ui/alcedo_main/album_backend/stats_engine.hpp"
 #include "ui/alcedo_main/album_backend/thumbnail_manager.hpp"
 #include "ui/alcedo_main/i18n.hpp"
 
 namespace alcedo::ui {
-
-class FolderController;
-class ProjectModule;
-class StatsEngine;
 
 /**
  * @brief Immutable input of one library read on the query worker.
@@ -160,6 +160,8 @@ class LibraryModule final : public QObject, public IAlbumCatalog {
   /// C++ composition setting only. Production keeps photo mode until every layout supports
   /// stacks. Changing it requests a replacement through the existing query worker.
   void               SetStackDisplayEnabled(bool enabled);
+  /// Use raw photo reads while the editor filmstrip owns the thumbnail surface. GUI thread.
+  void               SetEditorPhotoView(bool active);
   /// Project-close owner operation: invalidate reads and release photos, pages, and choices.
   void               ClearProjectPresentation();
   [[nodiscard]] auto accepted_options() const -> const AlbumQueryOptions& {
@@ -235,8 +237,13 @@ class LibraryModule final : public QObject, public IAlbumCatalog {
   /// They arrive with OrderedFileIdsReady as selection items `{elementId, fileId, imageId,
   /// fileName}`. Reads ids and typed columns only, no thumbnail metadata.
   Q_INVOKABLE qulonglong RequestOrderedFileIds(const QVariantList& ranges);
-  /// Find @p fileId in the accepted result with SQL ranking on the worker and load its page.
-  /// The occurrence arrives with FocusPositionReady (-1 when the file no longer matches).
+  /// Replace selection with this fragment's matching Files on the worker. GUI entry; failure
+  /// keeps selection and reports the diagnostic through the query owner.
+  void                   SelectMatchingStackPhotos(const AlbumStackFragmentKey& fragment);
+  /// Explicitly select all saved members, including Files outside the result. GUI entry.
+  void                   SelectEntireStack(const std::string& stack_id);
+  /// Find @p fileId on the worker; expand its hidden fragment before loading its display page.
+  /// FocusPositionReady reports -1 for a nonmatch, preserving the current filter and scope.
   Q_INVOKABLE void       RequestFocusPosition(uint fileId, const QString& preferredGroupTitle = {},
                                               bool preferredGroupUnknown = false);
   /**
@@ -263,10 +270,8 @@ class LibraryModule final : public QObject, public IAlbumCatalog {
    */
   void                   RevealLastEditedFile();
   /**
-   * @brief Find the pending reveal file in the accepted result (RequestFocusPosition). When
-   *        the current folder does not hold it, select the root folder (every project file,
-   *        filters and search cleared) once and find it there. The pending reveal ends when
-   *        the position is delivered or the file is not in the project.
+   * @brief Find the pending reveal in the accepted result. Expand its matching fragment when
+   *        collapsed. A nonmatching File reports an error and leaves scope and filters intact.
    */
   Q_INVOKABLE void       RequestPendingReveal();
   /**
@@ -402,6 +407,8 @@ class LibraryModule final : public QObject, public IAlbumCatalog {
   void               FailRefresh(const QString& error);
   /// Notify the fully installed accepted result, then run its deferred actions.
   void               FinishRefresh(bool search_changed);
+  /// Update selection counts on the existing worker; predicate replacements also intersect.
+  void               RefreshSelectionMembership(bool intersect = false);
   void SaveThumbnailDiskCacheSettings();
   /// Release the pins and empty the grid model, the sections, and the counts.
   void               ResetThumbnailWindow(bool close_session = false);
@@ -440,8 +447,8 @@ class LibraryModule final : public QObject, public IAlbumCatalog {
   /// Run request @p requestId of RequestEditorListPosition unless a newer one replaced it.
   void                SubmitEditorListPosition(qulonglong requestId, uint fileId, bool loadPage);
   void                SetPendingReveal(uint fileId);
-  /// Position read of @p fileId finished (@p found). Returns true when it started a second
-  /// read in the root folder, so the miss is not delivered.
+  /// Finish the pending reveal and report a miss without changing scope. Returns false so
+  /// the caller always delivers this position result.
   auto                SettlePendingReveal(uint fileId, bool found) -> bool;
 
   ProjectModule*     project_ = nullptr;
@@ -466,6 +473,8 @@ class LibraryModule final : public QObject, public IAlbumCatalog {
   LibraryDisplayModel                      display_model_{&thumbnail_model_};
   AlbumSectionModel                        section_model_{display_model_};
   bool                                     stack_display_enabled_ = false;
+  bool                                     editor_photo_view_              = false;
+  bool                                     intersect_selection_on_refresh_ = false;
   AlbumQueryOptions                        accepted_options_{};
   std::optional<AlbumQueryOptions>         pending_options_{};
   std::shared_ptr<const LibraryQueryInput> accepted_input_{};
@@ -488,12 +497,12 @@ class LibraryModule final : public QObject, public IAlbumCatalog {
   /// An edit was written while the library was hidden and the presentation reads edit state.
   bool                                     edit_order_stale_       = false;
   uint                                     pending_reveal_file_id_ = 0;
-  /// The pending reveal already selected the root folder after a miss.
-  bool                                     reveal_scope_widened_   = false;
+
   /// Id of the newest RequestEditorListPosition request.
   qulonglong                               editor_list_request_id_ = 0;
   /// Last member: destroyed first, so no job outlives the state it posts to.
   std::unique_ptr<SearchRequestWorker> query_worker_;
+  std::unique_ptr<LibrarySelectionOperations> selection_operations_;
 };
 
 }  // namespace alcedo::ui

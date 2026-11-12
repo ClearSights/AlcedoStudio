@@ -2,9 +2,10 @@
 
 Date: 2026-11-11
 
-Status: PS1, PS2A, PS2B, PS3, PS4, and PS5A complete (2026-11-11). All later phases remain planned.
-The latest Windows Release verification for PS5A has 148 passes, five skips, and no failures.
-See the PS5A.2 completion record. The earlier PR1 verification had 113 distinct passes, three
+Status: PS1 through PS6, including all PS2 and PS5 sub-phases, complete (2026-11-11).
+PS7, PS8, and PS9 remain planned. The latest Windows Release verification has 157 passes,
+no skips, and no failures. See the PS6 completion record. The prior PS5A run had
+148 passes and five skips; its evidence remains under PS5A.2. The earlier PR1 verification had 113 distinct passes, three
 skips, and no unresolved failures. Its records remain under PS1, PS2A, and PS2B.
 
 Feature request: [#486](https://github.com/zidage/AlcedoStudio/issues/486), stacking section only.
@@ -770,9 +771,9 @@ Do not place the complete implementation in one PR if its added diff can exceed 
 | PS3 | Filter-first fragments, covers, and collapsed display reads | PS1 | 1200-1800 | Isolate query semantics from expansion and UI. | complete |
 | PS4 | Expansion, bounded pages, positions, and matching-member reads | PS3 | 1100-1750 | Paging and three position spaces need dedicated tests. | complete |
 | PS5A | C++ display owner and complete query publication | PS4 | 2400-3750 in two internal steps | Separate page ownership from publication; see PS5A.1 and PS5A.2. | complete |
-| PS5B | Command controller, task policy, and save outcomes | PS2A, PS2B, PS5A | 700-1200 | Keep command task behavior independent from close decisions. | planned |
-| PS5C | Pending stack saves and application/project close | PS5B | 900-1500 | Add the lifecycle behavior that audited main does not provide. | planned |
-| PS6 | Selection, bulk actions, and editor navigation | PS5C | 1000-1600 | Verify target semantics through existing callers. | planned |
+| PS5B | Command controller, task policy, and save outcomes | PS2A, PS2B, PS5A | 700-1200 | Keep command task behavior independent from close decisions. | complete |
+| PS5C | Pending stack saves and application/project close | PS5B | 900-1500 | Add the lifecycle behavior that audited main does not provide. | complete |
+| PS6 | Selection, bulk actions, and editor navigation | PS5C | 1000-1600 | Verify target semantics through existing callers. | complete |
 | PS7 | Classic/grid and grouped QML presentation | PS6 | 1050-1700 | Keep the first visual integration below the line limit. | planned |
 | PS8 | Justified rows, localization, and complete visual specification | PS7 | 900-1550 | The second layout has separate geometry and anchor behavior. | planned |
 | PS9 | Integrated persistence, resource, and performance acceptance | PS8 | 800-1400 | Keep final evidence separate from feature construction. | planned |
@@ -2015,10 +2016,45 @@ and an explicit unsaved outcome for PS5C. Do not repeat a committed command.
 - `MetadataSaveFailureRetainsItsDiagnostic`: inject the error at the existing metadata save owner.
 
 **Build and run.** V5B: PhotoStackControllerTest, LibraryDisplayModelTest, and ProjectCompatibilityTest.
-**Exit criteria.** [ ] Command policy and task lifetimes have owner-level evidence.
-[ ] Save failure is distinguishable from mutation failure. [ ] No command outcome claims a save that failed.
+**Exit criteria.** [x] Command policy and task lifetimes have owner-level evidence.
+[x] Save failure is distinguishable from mutation failure. [x] No command outcome claims a save that failed.
 **Expected diff.** 700-1200 lines.
-**Completion record.** Not started. Fill the Section 12 template here after implementation.
+#### PS5B completion record (2026-11-11)
+
+**Status:** complete. Added the C++ PhotoStackController, host ownership, task kind,
+interaction capability, command validation, and distinct failed, unchanged, saved, and unsaved results.
+**Source:** PR3 `ae5cf951c08c5bc641b97f9e06155c9006fbc427`, implemented on
+`feature/library-photo-stacking-PR4`. These changes expose no stack commands or stack layouts in QML.
+
+**Selected details:** requests carry ordered File IDs and focused changes. An absent create cover
+uses the first supplied File. Storage validates live membership on the worker. The task holds global
+stack-edit, delete, and project-close locks until its GUI completion, including package save.
+The delete lock also protects source-stack repairs. No command result stores a membership cache.
+ProjectModule holds the pending condition and diagnostic; its close behavior is completed below.
+
+**Primary success chain:**
+
+```text
+PhotoStackController::Start -> interaction policy and background-task registry
+  -> worker -> PhotoStackService -> existing transactional store
+  -> ProjectHandler::MakeSaveAndPackageJob -> GUI result and Library content refresh
+```
+
+**Primary failure chain:** storage error -> failed result and unchanged accepted organization.
+Post-commit metadata/package error -> unsaved result, retained diagnostic and committed working rows,
+Library refresh, and ProjectModule pending state. An unchanged command does not attempt a save.
+
+**Executed evidence:** PhotoStackControllerTest 7/7, LibraryDisplayModelTest 15/15,
+and ProjectCompatibilityTest 6/6 passed in the final run recorded under PS6.
+The controller tests hold the real database lock to prove that Start returns before mutation,
+check task serialization and conflicting operations, and compare working rows with saved package bytes.
+Metadata write failure retains `Failed to open meta file for writing`.
+Saved packages are checked by the existing storage invariant support in fixture teardown.
+
+**Completion criteria:** all three criteria above are satisfied. Existing service/store operations
+supply membership behavior; no persisted schema, image-edit format, or rendering setting changed.
+**LOC:** new command owner and focused integration fixture; no new source or test file exceeds 1000 lines.
+**Coverage limits and commands:** see the shared final verification record under PS6.
 
 ### PS5C - Pending stack saves and close integration
 
@@ -2067,10 +2103,53 @@ Cancel changes no state. Explicit discard closes without saving the working proj
 
 **Build and run.** V5C: ProjectStackSaveTest, ApplicationCloseCoordinatorTest, PhotoStackControllerTest,
 and ProjectCompatibilityTest. Verify dialog bindings declaratively and through real application review.
-**Exit criteria.** [ ] Every close/save entry reads the same pending state.
-[ ] Save failure cannot report successful close. [ ] Discard never writes an old stack copy over live rows.
+**Exit criteria.** [x] Every close/save entry reads the same pending state.
+[x] Save failure cannot report successful close. [x] Discard never writes an old stack copy over live rows.
 **Expected diff.** 900-1500 lines.
-**Completion record.** Not started. Fill the Section 12 template here after implementation.
+#### PS5C completion record (2026-11-11)
+
+**Status:** complete. Pending stack saves now participate in save, application close,
+project close, and project replacement through the existing project lifecycle owner.
+**Source:** PR3 `ae5cf951c08c5bc641b97f9e06155c9006fbc427`, implemented on
+`feature/library-photo-stacking-PR4`. These changes expose no stack commands or stack layouts in QML.
+
+**Selected details:** ProjectModule owns only the pending condition and diagnostic. RetryStackSave
+saves the current working project and does not submit another command. Ordinary successful saves
+notify the same owner; an active stack command retains responsibility for its own terminal result.
+Replacement is refused while pending, until save or explicit project close with discard.
+Explicit application discard retires the working project, so shutdown cannot save its abandoned changes.
+The existing close dialog shows Retry Save, the diagnostic, and the scope of whole-project discard.
+The dialog has a separate QApplication test target; service tests keep the existing QCoreApplication runner.
+
+**Primary success chain:**
+
+```text
+committed-unsaved command -> ProjectModule pending state
+  -> RetryStackSave, or close with Save after editor finalization
+  -> existing metadata/package owner -> clear pending -> finish the requested close
+```
+
+**Primary failure chain:** metadata/package failure -> retain pending state and working membership
+-> report diagnostic -> abort close with the project loaded. Cancel changes no state.
+Explicit discard closes the working project without writing its last saved package.
+
+**Executed evidence:** ProjectStackSaveTest 6/6, ProjectStackSaveDialogTest 1/1,
+ApplicationCloseCoordinatorTest 6/6, PhotoStackControllerTest 7/7, and
+ProjectCompatibilityTest 6/6 passed in the final run. These subsets overlap other phase records.
+The retry test first moves a saved member, fails package save, retries, and reopens the exact
+member order. Replaying the move would produce a different order and fail that assertion.
+The discard test compares saved package bytes and reopens its original unstacked contents.
+Close tests assert editor completion before package save, no successful close after save failure,
+retained live rows, pending-state confirmation in a Library-only session, and blocked replacement.
+The existing `CloseWaitsForSaveAndFinishesOnNoImage` and
+`SaveFailureAbortsApplicationCloseWithSessionError` cases provide the planned editor-only behavior evidence.
+The production dialog is instantiated in Basic style and its text bindings are evaluated directly.
+
+**Completion criteria:** all three criteria above are satisfied. No old stack copy is written back.
+ProjectModule remains the existing project lifecycle, accelerator, and recent-project owner
+(1061 lines); this change adds only project save state and operations to that owner.
+No new storage representation or second close-dialog state owner was introduced.
+**Coverage limits and commands:** see the shared final verification record under PS6.
 
 ### PS6 - Selection, existing bulk actions, and editor navigation
 
@@ -2112,10 +2191,128 @@ Missing reveal target -> report outside-result state, without changing the filte
 
 **Build and run.** V6: LibraryStackActionsTest, LibrarySelectionTest, LibraryMutationOperationsTest,
 AlbumBackendLibraryQueryTest, and the direct automation library caller tests.
-**Exit criteria.** [ ] Every bulk action has exact-target evidence.
-[ ] No hidden member enters an action through cover selection. [ ] Filmstrip/photo APIs preserve raw counts.
+**Exit criteria.** [x] Every bulk action has exact-target evidence.
+[x] No hidden member enters an action through cover selection. [x] Filmstrip/photo APIs preserve raw counts.
 **Expected diff.** 1000-1600 lines.
-**Completion record.** Not started. Fill the Section 12 template here after implementation.
+#### PS6 completion record (2026-11-11)
+
+**Status:** complete. Display selection, explicit fragment/whole-stack selection, unique bulk targets,
+raw editor photo reads, and exact matching-member reveal are implemented and verified.
+**Source:** PR3 `ae5cf951c08c5bc641b97f9e06155c9006fbc427`, implemented on
+`feature/library-photo-stacking-PR4`. These changes expose no stack commands or stack layouts in QML.
+
+**Selected details:** LibrarySelectionOperations owns asynchronous selection operations on the existing
+Library worker. It receives the existing immutable query message, rather than copying live owner state.
+LibrarySelection owns unique File selections and separate hidden-by-stack and outside-result counts.
+An empty selection starts no membership SQL. Filter/scope replacement intersects selection;
+expansion, sorting, and grouping preserve explicit selection. Existing mutation, export, paste,
+and album-link owners already accept explicit targets and required no membership expansion logic.
+
+The editor filmstrip shares the existing photo-value owner. While that surface is active, LibraryModule
+uses the raw photo projection; returning to Library requests its display projection and retains its
+session expansion choices. Layout preferences and stack-display enablement are unchanged.
+Returning to a hidden match expands only the exact preferred fragment. An absent target reports -1
+and an error, with the current filter and album scope retained.
+
+The selection-read replacement test drives the actual queue: accept a new filter, pause its ID read,
+Ctrl-select the displayed cover, then release the worker. The pending intersection survives replacement
+of that read. No new generation or cancellation protocol was added.
+Verification also exposed a project-open ordering problem: ProjectOpened queued a global last-edited
+lookup before SubmitPendingRefresh invalidated query-specific ID reads. That invalidation canceled
+the lookup before it could publish PendingRevealFileId. The global lookup now has its own request
+category on the same worker and keeps the existing project-identity check. Project-open reveal is tested.
+The former root-widening test is now `PendingRevealOutsideAlbumReportsAbsenceAndKeepsTheAlbumScope`,
+which asserts the approved absence result, retained album, empty accepted rows, and diagnostic.
+
+**Primary success chain:**
+
+```text
+Library selection request -> accepted query input -> existing worker
+  -> AlbumBrowseService raw/display/fragment ID read -> LibrarySelection
+  -> existing rating/marks/delete/export/paste/album-link owner -> exact unique Files
+editor route -> raw photo projection -> all matching filmstrip photos
+return/reveal -> display position -> expand preferred fragment if hidden -> reveal actual File
+```
+
+**Primary failure chain:** ID read failure -> retain selection and publish the diagnostic.
+Nonmatching reveal -> retain filter and scope, return the requested File with position -1.
+No cover is substituted and no stack membership is changed by a read or expansion.
+
+**Executed phase evidence:** LibraryStackActionsTest 14/14, LibrarySelectionTest 8/8,
+LibraryMutationOperationsTest 5/5, AlbumBackendLibraryQueryTest 31/31, and
+AutomationLibraryCommandsTest 14/14 passed. Assertions include persisted cover-only ratings and marks,
+one export enqueue per File, real adjustment-paste targets and unchanged non-cover histories,
+cover-only album linking, filtered project deletion and saved-cover repair after reopen, hidden-member
+Select All, explicit outside-result selection, exact display ranges, raw filmstrip IDs/positions,
+preferred-fragment reveal, failure retention, and the real worker replacement interleaving.
+The current active-model schema has one label per File. Repeated occurrence maps exercise the real
+selection, mutation, and export owners without inventing unsupported multi-label storage rows.
+
+**Shared final Windows verification:** all 157 discovered cases passed; no failures or skips.
+The following table counts each final case once; earlier subset runs are not added again.
+
+| Target | Passed | Skipped | Failed |
+| --- | ---: | ---: | ---: |
+| PhotoStackControllerTest | 7 | 0 | 0 |
+| ProjectStackSaveTest | 6 | 0 | 0 |
+| ProjectStackSaveDialogTest | 1 | 0 | 0 |
+| ApplicationCloseCoordinatorTest | 6 | 0 | 0 |
+| LibraryStackActionsTest | 14 | 0 | 0 |
+| LibraryDisplayModelTest | 15 | 0 | 0 |
+| ProjectCompatibilityTest | 6 | 0 | 0 |
+| LibrarySelectionTest | 8 | 0 | 0 |
+| LibraryMutationOperationsTest | 5 | 0 | 0 |
+| AlbumBackendLibraryQueryTest | 31 | 0 | 0 |
+| AutomationLibraryCommandsTest | 14 | 0 | 0 |
+| ProjectModuleTest | 4 | 0 | 0 |
+| ApplicationModuleHostLifecycleTest | 2 | 0 | 0 |
+| AlbumBackendBackgroundTaskTest | 18 | 0 | 0 |
+| AlbumBackendInteractionPolicyTest | 15 | 0 | 0 |
+| UppercaseSignalQmlHandlersTest | 5 | 0 | 0 |
+
+The existing Release tree uses Qt 6.12.0 and MSVC 14.44. No Debug tree was created.
+The initial unpinned build used mismatched MSVC headers; pinning the existing toolset corrected it.
+An initial dialog test used the headless runner and failed; the dedicated QApplication target fixes
+that setup and executes the production component. The first caller run exposed the canceled global
+reveal above. Its old root-widening expectation was changed to the approved scope-preserving behavior.
+One compatibility case exceeded the Windows path limit under the sandbox's long default TEMP path;
+the same binary passed with the task's shorter TEMP/TMP directory. No product path was changed.
+
+Final setup, build, discovery, and run (PowerShell from the repository root; commands exit 0):
+
+```powershell
+$env:VCVARS_USER_VERSION = '14.44'
+$testTemp = Join-Path $PWD 'build/tmp/library_photo_stacking/runtime'
+New-Item -ItemType Directory -Force $testTemp | Out-Null
+$env:TEMP = $testTemp
+$env:TMP = $testTemp
+$env:PATH = "C:/Qt/6.12.0/msvc2022_64/bin;$PWD/build/dependencies/duckdb-v1.5.6;$PWD/vcpkg/installed/x64-windows/bin;$PWD/vcpkg/installed/x64-windows/debug/bin;$env:PATH"
+cmd /c scripts\msvc_env.cmd --build --preset win_release --target PhotoStackControllerTest ProjectStackSaveTest ProjectStackSaveDialogTest ApplicationCloseCoordinatorTest LibraryStackActionsTest LibraryDisplayModelTest ProjectCompatibilityTest LibrarySelectionTest LibraryMutationOperationsTest AlbumBackendLibraryQueryTest AutomationLibraryCommandsTest ProjectModuleTest ApplicationModuleHostLifecycleTest AlbumBackendBackgroundTaskTest AlbumBackendInteractionPolicyTest UppercaseSignalQmlHandlersTest --parallel 4
+ctest --test-dir build/release -N -R '^(PhotoStackControllerTest|ProjectStackSaveTest|ProjectStackSaveDialogTest|ApplicationCloseCoordinatorTest|LibraryStackActionsTest|LibraryDisplayModelTest|ProjectCompatibilityTest|LibrarySelectionTest|LibraryMutationOperationsTest|AlbumBackendLibraryQueryTest|AutomationLibraryCommandsTest|ProjectModuleTest|ApplicationModuleHostLifecycleTest|AlbumBackendBackgroundTaskTest|AlbumBackendInteractionPolicyTest|UppercaseSignalQmlHandlersTest)\.'
+ctest --test-dir build/release -j 1 -R '^(PhotoStackControllerTest|ProjectStackSaveTest|ProjectStackSaveDialogTest|ApplicationCloseCoordinatorTest|LibraryStackActionsTest|LibraryDisplayModelTest|ProjectCompatibilityTest|LibrarySelectionTest|LibraryMutationOperationsTest|AlbumBackendLibraryQueryTest|AutomationLibraryCommandsTest|ProjectModuleTest|ApplicationModuleHostLifecycleTest|AlbumBackendBackgroundTaskTest|AlbumBackendInteractionPolicyTest|UppercaseSignalQmlHandlersTest)\.' --output-on-failure --output-junit "$PWD/build/tmp/library_photo_stacking/commands/final.xml"
+```
+
+**Storage and resource evidence:** saved-package invariant checks run in the new integration fixture.
+The selection tests keep one loaded representative while selecting unloaded matching members through
+ID/name reads. Thumbnail ownership and page eviction caller tests pass. No 50,000-photo performance
+measurement, sanitizer run, macOS run, full suite, or manual full-application visual review was performed.
+The full suite was not requested. WorkspaceShell and synthetic key/focus tests were not run.
+PS7, PS8, and PS9 retain their layout, localization, manual input, and performance delivery scope.
+
+**Actual code/test diff:** 1503 added and 126 removed lines across 36 files.
+This plan records the scope and evidence separately. Each scoped commit is below 2000 changed lines.
+
+**Completion criteria:** all three criteria above are satisfied.
+LibraryModule remains the existing query/publication and thumbnail facade (1840 lines); the new
+selection-operation type owns its pending action and uses focused owner APIs. No physical method-file
+split or copied display/membership cache was introduced. The large CMake files contain registration
+changes only. The existing query caller test file has 1225 lines and keeps its shared query fixture;
+only its reveal expectations changed. New stack cases are in LibraryStackActionsTest, rather than
+adding another responsibility to that caller suite. First-party terminology, roadmap filenames, added data copies, forward declarations,
+changed-line formatting, and LF checks were reviewed.
+
+**Temporary evidence:** the task's commands, review, and runtime directories under
+`build/tmp/library_photo_stacking/` are removed after recording this evidence. No temporary output is committed.
 
 ### PS7 - Classic grid and grouped cells
 
@@ -2297,7 +2494,7 @@ ctest --test-dir build/debug -j 1 -R '<pattern from the table>' --output-on-fail
 | V4 | `AlbumStackPagingTest AlbumStackQueryTest AlbumQueryTest` | `^(AlbumStackPagingTest|AlbumStackQueryTest|AlbumQueryTest)\.` |
 | V5A | `LibraryDisplayModelTest AlbumSectionModelTest AlbumBackendLibraryQueryTest` | `^(LibraryDisplayModelTest|AlbumSectionModelTest|AlbumBackendLibraryQueryTest)\.` |
 | V5B | `PhotoStackControllerTest LibraryDisplayModelTest ProjectCompatibilityTest` | `^(PhotoStackControllerTest|LibraryDisplayModelTest|ProjectCompatibilityTest)\.` |
-| V5C | `ProjectStackSaveTest ApplicationCloseCoordinatorTest PhotoStackControllerTest ProjectCompatibilityTest` | `^(ProjectStackSaveTest|ApplicationCloseCoordinatorTest|PhotoStackControllerTest|ProjectCompatibilityTest)\.` |
+| V5C | `ProjectStackSaveTest ProjectStackSaveDialogTest ApplicationCloseCoordinatorTest PhotoStackControllerTest ProjectCompatibilityTest` | `^(ProjectStackSaveTest|ProjectStackSaveDialogTest|ApplicationCloseCoordinatorTest|PhotoStackControllerTest|ProjectCompatibilityTest)\.` |
 | V6 | `LibraryStackActionsTest LibrarySelectionTest LibraryMutationOperationsTest AlbumBackendLibraryQueryTest AutomationLibraryCommandsTest` | `^(LibraryStackActionsTest|LibrarySelectionTest|LibraryMutationOperationsTest|AlbumBackendLibraryQueryTest|AutomationLibraryCommandsTest)\.` |
 | V7 | `alcedo_main LibraryDisplayModelTest PhotoStackControllerTest LibraryStackActionsTest` | `^(LibraryDisplayModelTest|PhotoStackControllerTest|LibraryStackActionsTest)\.` |
 | V8 | `alcedo_main LibraryStackLayoutTest AlbumBackendI18nTest` | `^(LibraryStackLayoutTest|AlbumBackendI18nTest)\.` |

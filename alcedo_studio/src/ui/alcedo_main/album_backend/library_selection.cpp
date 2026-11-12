@@ -194,6 +194,32 @@ void LibrarySelection::Assign(std::map<sl_element_id_t, SelectedImage> next) {
   NotifyChanged();
 }
 
+void LibrarySelection::ApplyQueryMembership(std::span<const sl_element_id_t> matching,
+                                            std::span<const sl_element_id_t> displayed,
+                                            bool intersect, bool display_mode) {
+  const std::set<sl_element_id_t> matches(matching.begin(), matching.end());
+  const std::set<sl_element_id_t> visible(displayed.begin(), displayed.end());
+  bool                            changed = false;
+  int                             hidden = 0, outside = 0;
+  for (auto it = selected_.begin(); it != selected_.end();) {
+    const bool in_query = matches.contains(it->first);
+    if (intersect && !in_query) {
+      range_added_.erase(it->first);
+      it      = selected_.erase(it);
+      changed = true;
+    } else {
+      outside += !in_query;
+      hidden += in_query && display_mode && !visible.contains(it->first);
+      ++it;
+    }
+  }
+  const bool counts_changed = hidden_selected_count_ != hidden || outside_result_count_ != outside;
+  hidden_selected_count_    = hidden;
+  outside_result_count_     = outside;
+  if (changed) NotifyChanged();
+  if (counts_changed) emit QueryCountsChanged();
+}
+
 void LibrarySelection::NotifyChanged() {
   ++revision_;
   emit SelectionChanged();

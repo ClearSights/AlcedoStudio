@@ -499,6 +499,9 @@ ApplicationModuleHost::ApplicationModuleHost(QObject* parent, LifecycleObserver 
   connect(library_mutations_.get(), &LibraryMutationOperations::ElementsDeleted,
           export_queue_.get(), &ExportQueue::RemoveElements);
 
+  connect(workspace_router_.get(), &WorkspaceRouter::RouteChanged, library_.get(), [this] {
+    library_->SetEditorPhotoView(workspace_router_->workspace() == QStringLiteral("editor"));
+  });
   library_->BindCollaborators(folders_.get(), search_.get(), stats_.get());
   library_->SetSemanticLabelProvider(
       [semantic = semantic_generation_.get()](sl_element_id_t element_id) {

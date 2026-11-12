@@ -161,6 +161,7 @@ add_library(AlbumBackendLib STATIC
     "${ALCEDO_UI_SHELL_ROOT}/album_backend/project_launch_coordinator.cpp"
     "${ALCEDO_UI_SHELL_ROOT}/album_backend/application_close_coordinator.cpp"
     "${ALCEDO_UI_SHELL_ROOT}/album_backend/library_selection.cpp"
+    "${ALCEDO_UI_SHELL_ROOT}/album_backend/library_selection_operations.cpp"
     "${ALCEDO_UI_SHELL_ROOT}/album_backend/library_selection_marks.cpp"
     "${ALCEDO_UI_SHELL_ROOT}/album_backend/library_mutation_operations.cpp"
     "${ALCEDO_UI_SHELL_ROOT}/album_backend/export_queue.cpp"

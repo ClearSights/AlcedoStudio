@@ -45,6 +45,23 @@ constexpr size_t kSearchMetadataPageSize = 120;
 /// Occurrence pages that a grouped view keeps loaded near its viewport.
 constexpr size_t kMaxRetainedSectionPages = 3;
 
+/// Compare the active values of Inspector-owned bucket trees (inactive fields are uninitialized).
+auto             SameInspectorFilter(const FilterNode* left, const FilterNode* right) -> bool {
+  if (!left || !right) return left == right;
+  if (left->type_ != right->type_) return false;
+  if (left->type_ == FilterNode::Type::StatsBucket) {
+    const auto& a = left->stats_bucket_;
+    const auto& b = right->stats_bucket_;
+    return a && b && a->dimension == b->dimension && a->key == b->key &&
+           a->time_zone == b->time_zone && a->semantic_model_key == b->semantic_model_key;
+  }
+  if (left->type_ != FilterNode::Type::Logical) return false;
+  if (left->op_ != right->op_ || left->children_.size() != right->children_.size()) return false;
+  for (size_t i = 0; i < left->children_.size(); ++i)
+    if (!SameInspectorFilter(&left->children_[i], &right->children_[i])) return false;
+  return true;
+}
+
 auto FormatCacheSize(size_t bytes) -> QString {
   if (bytes == 0) {
     return QStringLiteral("0 KiB");
@@ -81,12 +98,16 @@ LibraryModule::LibraryModule(ProjectModule* project, QObject* parent)
       project_(project),
       thumbs_(*this),
       query_worker_(std::make_unique<SearchRequestWorker>()) {
+  selection_operations_ = std::make_unique<LibrarySelectionOperations>(
+      selection_, *query_worker_, [this](const QString& error) { SetQueryError(error); }, this);
   LoadThumbnailDiskCacheSettings();
   connect(&display_model_, &LibraryDisplayModel::ExpansionChanged, this, [this] {
     if (stack_display_enabled_) RequestLibraryRefresh();
   });
-  connect(&selection_, &LibrarySelection::SelectionChanged, this,
-          [this]() { ScheduleSelectionMarksRead(); });
+  connect(&selection_, &LibrarySelection::SelectionChanged, this, [this]() {
+    ScheduleSelectionMarksRead();
+    RefreshSelectionMembership();
+  });
 }
 
 void LibraryModule::SetStackDisplayEnabled(bool enabled) {
@@ -94,13 +115,22 @@ void LibraryModule::SetStackDisplayEnabled(bool enabled) {
   stack_display_enabled_ = enabled;
   RequestLibraryRefresh();
 }
+void LibraryModule::SetEditorPhotoView(bool active) {
+  if (editor_photo_view_ == active) return;
+  editor_photo_view_ = active;
+  if (stack_display_enabled_) RequestLibraryRefresh();
+}
 void LibraryModule::ClearProjectPresentation() {
-  for (auto kind : {SearchRequestKind::kApply, SearchRequestKind::kLibraryPage,
-                    SearchRequestKind::kLibraryIds, SearchRequestKind::kEditorList,
-                    SearchRequestKind::kSelectAll, SearchRequestKind::kStatistics}) {
+  for (auto kind :
+       {SearchRequestKind::kApply, SearchRequestKind::kLibraryPage, SearchRequestKind::kLibraryIds,
+        SearchRequestKind::kEditorList, SearchRequestKind::kSelectAll,
+        SearchRequestKind::kSelectionVisibility, SearchRequestKind::kStatistics}) {
     query_worker_->Invalidate(kind);
   }
   ResetThumbnailWindow(true);
+  intersect_selection_on_refresh_ = false;
+  selection_.Clear();
+  selection_.ApplyQueryMembership({}, {}, false, false);
 }
 
 LibraryModule::~LibraryModule() { query_worker_.reset(); }
@@ -219,6 +249,30 @@ bool LibraryModule::LoadThumbnailsThroughIndex(int index) {
     return false;
   }
   return LoadMoreThumbnails();
+}
+
+void LibraryModule::RefreshSelectionMembership(bool intersect) {
+  if (auto input = AcceptedReadInput({}); input && !refresh_in_flight_)
+    selection_operations_->RefreshMembership(std::move(input), intersect);
+}
+
+void LibraryModule::SelectMatchingStackPhotos(const AlbumStackFragmentKey& fragment) {
+  if (refresh_in_flight_) {
+    RunAfterRefresh([this, fragment] { SelectMatchingStackPhotos(fragment); });
+    return;
+  }
+  if (auto input = AcceptedReadInput({}))
+    selection_operations_->SelectFragment(std::move(input), fragment);
+}
+
+void LibraryModule::SelectEntireStack(const std::string& stack_id) {
+  if (refresh_in_flight_) {
+    RunAfterRefresh([this, stack_id] { SelectEntireStack(stack_id); });
+    return;
+  }
+  if (auto input = AcceptedReadInput({}))
+    selection_operations_->SelectEntireStack(
+        std::move(input), project_->handler().project()->GetPhotoStackService(), stack_id);
 }
 
 void LibraryModule::SelectAllInCurrentView() {
@@ -827,8 +881,9 @@ void LibraryModule::SubmitPendingRefresh() {
   const bool in_place =
       requested_kind == RefreshKind::kInPlace && !unpublished_replace_ && accepted_input_ &&
       !pending_options_.has_value() &&
-      accepted_input_->read_.mode ==
-          (stack_display_enabled_ ? AlbumReadMode::kDisplay : AlbumReadMode::kPhotos) &&
+      accepted_input_->read_.mode == (stack_display_enabled_ && !editor_photo_view_
+                                          ? AlbumReadMode::kDisplay
+                                          : AlbumReadMode::kPhotos) &&
       accepted_input_->folder_id_ == input->folder_id_ &&
       SamePresentation(accepted_input_->options_, input->options_) &&
       accepted_input_->options_.local_day_time_zone_ == input->options_.local_day_time_zone_ &&
@@ -847,8 +902,9 @@ void LibraryModule::SubmitPendingRefresh() {
     unpublished_replace_ = true;
   }
 
-  input->read_.mode = stack_display_enabled_ ? AlbumReadMode::kDisplay : AlbumReadMode::kPhotos;
-  if (stack_display_enabled_) {
+  input->read_.mode = stack_display_enabled_ && !editor_photo_view_ ? AlbumReadMode::kDisplay
+                                                                    : AlbumReadMode::kPhotos;
+  if (input->read_.mode == AlbumReadMode::kDisplay) {
     input->read_.read_display_items        = in_place;
     input->read_.read_occurrence_file_ids_ = false;
     input->read_.expanded_fragments =
@@ -857,6 +913,7 @@ void LibraryModule::SubmitPendingRefresh() {
 
   // A different scope must not show the previous scope's photos while the new read runs.
   if (accepted_input_ && accepted_input_->folder_id_ != input->folder_id_) {
+    intersect_selection_on_refresh_ = true;
     ResetThumbnailWindow();
     stats_->ClearStats();
   }
@@ -865,6 +922,9 @@ void LibraryModule::SubmitPendingRefresh() {
   // rows stay as they are until this refresh publishes: no page read runs meanwhile
   // (refresh_in_flight_), so an in-place change is planned against the state it changes.
   query_worker_->Invalidate(SearchRequestKind::kLibraryPage);
+  query_worker_->Invalidate(SearchRequestKind::kLibraryIds);
+  query_worker_->Invalidate(SearchRequestKind::kSelectAll);
+  query_worker_->Invalidate(SearchRequestKind::kSelectionVisibility);
   // An editor list check of the old result is dropped; the check asks again after this
   // refresh is accepted.
   query_worker_->Invalidate(SearchRequestKind::kEditorList);
@@ -963,6 +1023,18 @@ void LibraryModule::PublishRefresh(const LibraryQueryInput& input, LibraryQueryO
     FailRefresh(output.error_);
     return;
   }
+  const bool intersect_selection =
+      std::exchange(intersect_selection_on_refresh_, false) ||
+      (accepted_input_ &&
+       (accepted_input_->folder_id_ != input.folder_id_ ||
+        !SameInspectorFilter(
+            accepted_input_->stats_filter_ ? &*accepted_input_->stats_filter_ : nullptr,
+            input.stats_filter_ ? &*input.stats_filter_ : nullptr) ||
+        accepted_input_->search_.field_mask_ != input.search_.field_mask_ ||
+        accepted_input_->search_.display_query_ != input.search_.display_query_ ||
+        accepted_input_->active_model_key_ != input.active_model_key_ ||
+        accepted_input_->search_.semantic_query_.has_value() !=
+            output.semantic_query_.has_value()));
   auto&                  result        = output.result_;
   const bool             grouped       = input.options_.group_field_ != AlbumGroupField::kNone;
   const bool same_grouping = input.options_.group_field_ == accepted_options_.group_field_;
@@ -1021,6 +1093,7 @@ void LibraryModule::PublishRefresh(const LibraryQueryInput& input, LibraryQueryO
   section_model_.EndReplace();
   display_model_.EndReplace();
   FinishRefresh(search_changed);
+  RefreshSelectionMembership(intersect_selection);
 }
 
 auto LibraryModule::PlanInPlaceChange(const LibraryQueryInput& input,
@@ -1202,6 +1275,7 @@ void LibraryModule::ApplyInPlaceChange(const LibraryQueryInput& input, LibraryQu
   emit LibraryChangeApplied();
   emit libraryChangeApplied();
   FinishRefresh(false);
+  RefreshSelectionMembership();
   ContinuePaging();
 }
 
@@ -1362,9 +1436,15 @@ auto LibraryModule::RequestOrderedFileIds(const QVariantList& ranges) -> qulongl
           const auto filter = MergeFilterNodes(input->stats_filter_, input->search_.filter_);
           const auto relevance = input->search_.semantic_query_;
           for (const auto& [begin, end] : occurrence_ranges) {
-            for (const auto id : input->browse_->ReadAlbumFileIds(
-                     input->folder_id_, filter, input->options_, input->active_model_key_, begin,
-                     end, input->search_.semantic_query_)) {
+            const auto range_ids =
+                input->read_.mode == AlbumReadMode::kDisplay
+                    ? input->browse_->ReadAlbumDisplayFileIds(
+                          input->folder_id_, filter, input->options_, input->active_model_key_,
+                          input->read_.expanded_fragments, begin, end, relevance)
+                    : input->browse_->ReadAlbumFileIds(input->folder_id_, filter, input->options_,
+                                                       input->active_model_key_, begin, end,
+                                                       relevance);
+            for (const auto id : range_ids) {
               if (seen.insert(id).second) {
                 ordered.push_back(id);
               }
@@ -1416,44 +1496,61 @@ void LibraryModule::RequestFocusPosition(uint fileId, const QString& preferredGr
   }
   const auto preferred =
       GroupKeyFromTitle(input->options_.group_field_, preferredGroupTitle, preferredGroupUnknown);
-  query_worker_->Submit(SearchRequestKind::kLibraryIds, [this, input, fileId,
-                                                         preferred](std::uint64_t generation) {
-    std::optional<AlbumFilePosition> position;
-    QString                          error;
-    try {
-      position = input->browse_->ReadAlbumFilePosition(
-          input->folder_id_, MergeFilterNodes(input->stats_filter_, input->search_.filter_),
-          input->options_, input->active_model_key_, static_cast<sl_element_id_t>(fileId),
-          preferred, input->search_.semantic_query_);
-    } catch (const std::exception& e) {
-      error = QString::fromUtf8(e.what());
-    }
-    QMetaObject::invokeMethod(
-        this,
-        [this, generation, fileId, position, error]() {
-          if (!query_worker_->IsCurrent(SearchRequestKind::kLibraryIds, generation)) {
-            return;
-          }
-          if (!error.isEmpty()) {
-            SetQueryError(error);
-            return;
-          }
-          if (SettlePendingReveal(fileId, position.has_value())) {
-            return;
-          }
-          if (!position.has_value()) {
-            emit FocusPositionReady(fileId, -1, -1);
-            emit focusPositionReady(fileId, -1, -1);
-            return;
-          }
-          const auto occurrence = position->occurrence_index_;
-          LoadThumbnailsThroughIndex(static_cast<int>(occurrence));
-          const int row = section_model_.RowForOccurrence(occurrence);
-          emit      FocusPositionReady(fileId, occurrence, row);
-          emit      focusPositionReady(fileId, occurrence, row);
-        },
-        Qt::QueuedConnection);
-  });
+  query_worker_->Submit(
+      SearchRequestKind::kLibraryIds, [this, input, fileId, preferred, preferredGroupTitle,
+                                       preferredGroupUnknown](std::uint64_t generation) {
+        std::optional<AlbumFilePosition>    position;
+        std::optional<AlbumDisplayPosition> display_position;
+        QString                             error;
+        try {
+          if (input->read_.mode == AlbumReadMode::kDisplay) {
+            display_position = input->browse_->ReadAlbumDisplayPosition(
+                input->folder_id_, MergeFilterNodes(input->stats_filter_, input->search_.filter_),
+                input->options_, input->active_model_key_, input->read_.expanded_fragments, fileId,
+                preferred, input->search_.semantic_query_);
+            if (display_position) position = AlbumFilePosition{};
+          } else
+            position = input->browse_->ReadAlbumFilePosition(
+                input->folder_id_, MergeFilterNodes(input->stats_filter_, input->search_.filter_),
+                input->options_, input->active_model_key_, static_cast<sl_element_id_t>(fileId),
+                preferred, input->search_.semantic_query_);
+        } catch (const std::exception& e) {
+          error = QString::fromUtf8(e.what());
+        }
+        QMetaObject::invokeMethod(
+            this,
+            [this, generation, fileId, preferredGroupTitle, preferredGroupUnknown, position,
+             display_position, error]() {
+              if (!query_worker_->IsCurrent(SearchRequestKind::kLibraryIds, generation)) {
+                return;
+              }
+              if (!error.isEmpty()) {
+                SetQueryError(error);
+                return;
+              }
+              if (SettlePendingReveal(fileId, position.has_value())) {
+                return;
+              }
+              if (!position.has_value()) {
+                SetQueryError(tr("The photo is outside the current Library result."));
+                emit FocusPositionReady(fileId, -1, -1);
+                emit focusPositionReady(fileId, -1, -1);
+                return;
+              }
+              if (display_position && display_position->hidden_by_collapse) {
+                display_model_.SetStackExpanded(display_position->identity.fragment, true);
+                RequestFocusPosition(fileId, preferredGroupTitle, preferredGroupUnknown);
+                return;
+              }
+              const auto occurrence =
+                  display_position ? display_position->display_index : position->occurrence_index_;
+              LoadThumbnailsThroughIndex(static_cast<int>(occurrence));
+              const int row = section_model_.RowForOccurrence(occurrence);
+              emit      FocusPositionReady(fileId, occurrence, row);
+              emit      focusPositionReady(fileId, occurrence, row);
+            },
+            Qt::QueuedConnection);
+      });
 }
 
 auto LibraryModule::RequestEditorListPosition(uint fileId, bool loadPage) -> qulonglong {

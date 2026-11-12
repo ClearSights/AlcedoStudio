@@ -541,6 +541,9 @@ alcedo_register_test_target(AlbumBackendSearchWorkerTest ui)
 # Library sort, group, and import time (album_sort_group_and_import_time_plan.md, Phase 2):
 # section projection geometry, and the one library query path of LibraryModule.
 def_ui_test(AlbumSectionModelTest album_section_model_test.cpp)
+def_ui_test(LibraryStackActionsTest library_stack_actions_test.cpp)
+alcedo_register_test_target(LibraryStackActionsTest ui)
+
 # The production close dialog needs QApplication; the service tests use QCoreApplication.
 add_executable(ProjectStackSaveDialogTest
     ${ALCEDO_TEST_ROOT}/ui/project_stack_save_dialog_test.cpp
