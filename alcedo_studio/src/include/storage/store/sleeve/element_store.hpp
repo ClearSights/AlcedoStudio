@@ -141,6 +141,7 @@ struct AlbumDisplayRow {
   int64_t              query_match_count    = 1;
   int64_t              fragment_match_count = 1;
   bool                 temporary_cover      = false;
+  bool                 expanded             = false;
 };
 
 /// One group of an album query: its key, its photo count, and the position of its first
@@ -165,10 +166,12 @@ struct AlbumQueryRead {
   AlbumReadMode mode                      = AlbumReadMode::kPhotos;
   /// Display offsets never use the raw occurrence offset. limit_ bounds either page mode.
   int64_t       display_offset            = 0;
+  /// Immutable request values, captured with the query; no member metadata or owner state.
+  std::vector<AlbumStackFragmentKey> expanded_fragments;
 };
 
 /// Result of ElementStore::ReadAlbumQuery: counts, the requested groups and statistics, and one
-/// bounded page of the ordered occurrence stream.
+/// bounded photo-occurrence or display-item page, selected by the request mode.
 struct AlbumQueryResult {
   /// Matching unique files. The occurrence count can be larger in the label group.
   int64_t                           unique_file_count_ = 0;
@@ -190,6 +193,14 @@ struct AlbumQueryResult {
 struct AlbumFilePosition {
   int64_t       occurrence_index_ = 0;
   AlbumGroupKey group_key_{};
+};
+
+/// A display location, distinct from a raw occurrence or a layout's visual row. A matching
+/// collapsed member points to its representative; a nonmatching File has no location.
+struct AlbumDisplayPosition {
+  int64_t              display_index = 0;
+  AlbumDisplayIdentity identity;
+  bool                 hidden_by_collapse = false;
 };
 
 /// Whole-project counts that the welcome surface shows for a loaded project. A query result
@@ -363,7 +374,7 @@ class ElementStore {
   /**
    * @brief Read the matching files of a scope with the presentation @p options: counts, the
    *        groups and the Inspector statistics when @p read asks for them, and one bounded
-   *        page of the ordered occurrence stream.
+   *        page of photo occurrences or stack display items, selected by read.mode.
    *
    * @details The filter is evaluated once into a temporary match set inside one read
    * transaction; every count, group, statistic, and row of the call comes from that set. The
@@ -413,6 +424,37 @@ class ElementStore {
       sl_element_id_t folder_id, const std::optional<duckorm::SqlFragment>& extra_filter,
       const AlbumQueryOptions& options, const std::string& active_semantic_model_key,
       int64_t occurrence_begin, int64_t occurrence_end,
+      const std::optional<SemanticQueryEmbedding>& semantic_relevance = std::nullopt) const
+      -> std::vector<sl_element_id_t>;
+
+  /// Display position in the same stream as a display page. A preferred typed group wins
+  /// when present, otherwise use the first occurrence. A collapsed matching member returns
+  /// its representative with hidden_by_collapse; a nonmatching File returns nullopt.
+  /// Worker-safe, read-only, and throws like ReadAlbumQuery, including invalid fragment keys.
+  auto ReadAlbumDisplayPosition(
+      sl_element_id_t folder_id, const std::optional<duckorm::SqlFragment>& extra_filter,
+      const AlbumQueryOptions& options, const std::string& active_semantic_model_key,
+      std::span<const AlbumStackFragmentKey> expanded_fragments, sl_element_id_t file_id,
+      const std::optional<AlbumGroupKey>&          preferred_group,
+      const std::optional<SemanticQueryEmbedding>& semantic_relevance = std::nullopt) const
+      -> std::optional<AlbumDisplayPosition>;
+  /// Unique represented Files in [display_begin, display_end), in first-use order. Hidden
+  /// members are excluded; the raw ID API still selects all matches. Reads no metadata.
+  /// Worker-safe; throws like ReadAlbumQuery and rejects negative or reversed bounds.
+  auto ReadAlbumDisplayFileIds(
+      sl_element_id_t folder_id, const std::optional<duckorm::SqlFragment>& extra_filter,
+      const AlbumQueryOptions& options, const std::string& active_semantic_model_key,
+      std::span<const AlbumStackFragmentKey> expanded_fragments, int64_t display_begin,
+      int64_t                                      display_end,
+      const std::optional<SemanticQueryEmbedding>& semantic_relevance = std::nullopt) const
+      -> std::vector<sl_element_id_t>;
+  /// Every matching File in the exact scoped fragment, including unloaded members. Cover
+  /// first, then saved order. An absent valid key returns empty. Reads no metadata or writes.
+  /// Worker-safe; invalid scope/group/type throws invalid_argument; SQL failure throws.
+  auto ReadAlbumMatchingFragmentIds(
+      sl_element_id_t folder_id, const std::optional<duckorm::SqlFragment>& extra_filter,
+      const AlbumQueryOptions& options, const std::string& active_semantic_model_key,
+      const AlbumStackFragmentKey&                 fragment,
       const std::optional<SemanticQueryEmbedding>& semantic_relevance = std::nullopt) const
       -> std::vector<sl_element_id_t>;
 

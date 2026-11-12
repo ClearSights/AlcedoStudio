@@ -236,6 +236,26 @@ class MatchSetTable {
   duckorm::Connection conn_;
 };
 
+/// Run one focused projection against one evaluated predicate. The match table dies before
+/// commit and connection release, including on exceptions. Results hold no live references.
+template <typename Read>
+auto WithAlbumMatchSet(Database& database, sl_element_id_t folder_id,
+                       const std::optional<duckorm::SqlFragment>&   filter,
+                       const AlbumQueryOptions&                     options,
+                       const std::optional<SemanticQueryEmbedding>& semantic, Read&& read) {
+  auto                 guard = database.GetConnectionGuard();
+  auto                 lock  = guard.Lock();
+  duckorm::Transaction transaction(guard.conn_);
+  auto                 result = [&] {
+    const auto scope = BuildScopedFileQuery(folder_id, filter,
+                                            RelevanceSelectOf(guard.conn_, folder_id, semantic));
+    const MatchSetTable match_set(guard.conn_, scope, options.local_day_time_zone_);
+    return read(guard.conn_, scope.joins_relevance_);
+  }();
+  transaction.commit();
+  return result;
+}
+
 // GROUPING(d, m, l, r, im) of each grouping set in ReadMatchSetBuckets: the bit of a column is
 // 1 when the set does not group by it (first argument is the highest bit).
 constexpr int64_t kDateGroup       = 0b01111;
@@ -613,7 +633,8 @@ void ValidateAlbumQueryRead(const AlbumQueryOptions& options, const AlbumQueryRe
     throw std::invalid_argument("Album query: unknown read mode");
   }
   if (read.display_offset < 0 ||
-      (read.mode == AlbumReadMode::kPhotos && read.display_offset != 0) ||
+      (read.mode == AlbumReadMode::kPhotos &&
+       (read.display_offset != 0 || !read.expanded_fragments.empty())) ||
       (read.mode == AlbumReadMode::kDisplay && read.offset_ != 0)) {
     throw std::invalid_argument("Album query: use the offset of the selected read mode");
   }
@@ -1004,25 +1025,69 @@ auto ElementStore::ReadAlbumQuery(
     const AlbumQueryRead&                        read,
     const std::optional<SemanticQueryEmbedding>& semantic_relevance) const -> AlbumQueryResult {
   ValidateAlbumQueryRead(options, read);
-  auto                 guard   = database_.GetConnectionGuard();
-  auto                 db_lock = guard.Lock();
-  duckorm::Transaction transaction(guard.conn_);
-  AlbumQueryResult     out;
-  {
-    // The only statement that evaluates the filter and the relevance select; every read below
-    // uses its rows.
-    const auto scope = BuildScopedFileQuery(
-        folder_id, extra_filter, RelevanceSelectOf(guard.conn_, folder_id, semantic_relevance));
-    const MatchSetTable match_set(guard.conn_, scope, options.local_day_time_zone_);
-    out = ReadAlbumQueryFromMatchSet(guard.conn_, options, active_semantic_model_key, read,
-                                     scope.joins_relevance_);
-    if (read.mode == AlbumReadMode::kDisplay) {
-      album_stack_query::ReadDisplay(guard.conn_, folder_id, options, active_semantic_model_key,
-                                     read, scope.joins_relevance_, out);
-    }
+  album_stack_query::ValidateExpansion(folder_id, options, read.expanded_fragments);
+  return WithAlbumMatchSet(database_, folder_id, extra_filter, options, semantic_relevance,
+                           [&](duckorm::Connection connection, bool relevance) {
+                             auto result = ReadAlbumQueryFromMatchSet(
+                                 connection, options, active_semantic_model_key, read, relevance);
+                             if (read.mode == AlbumReadMode::kDisplay) {
+                               album_stack_query::ReadDisplay(connection, folder_id, options,
+                                                              active_semantic_model_key, read,
+                                                              relevance, result);
+                             }
+                             return result;
+                           });
+}
+
+auto ElementStore::ReadAlbumDisplayPosition(
+    sl_element_id_t folder_id, const std::optional<duckorm::SqlFragment>& extra_filter,
+    const AlbumQueryOptions& options, const std::string& active_semantic_model_key,
+    std::span<const AlbumStackFragmentKey> expanded_fragments, sl_element_id_t file_id,
+    const std::optional<AlbumGroupKey>&          preferred_group,
+    const std::optional<SemanticQueryEmbedding>& semantic_relevance) const
+    -> std::optional<AlbumDisplayPosition> {
+  album_stack_query::ValidateExpansion(folder_id, options, expanded_fragments);
+  album_stack_query::ValidatePreferredGroup(options.group_field_, preferred_group);
+  return WithAlbumMatchSet(database_, folder_id, extra_filter, options, semantic_relevance,
+                           [&](duckorm::Connection connection, bool relevance) {
+                             return album_stack_query::ReadPosition(
+                                 connection, folder_id, options, active_semantic_model_key,
+                                 expanded_fragments, relevance, file_id, preferred_group);
+                           });
+}
+
+auto ElementStore::ReadAlbumDisplayFileIds(
+    sl_element_id_t folder_id, const std::optional<duckorm::SqlFragment>& extra_filter,
+    const AlbumQueryOptions& options, const std::string& active_semantic_model_key,
+    std::span<const AlbumStackFragmentKey> expanded_fragments, int64_t display_begin,
+    int64_t display_end, const std::optional<SemanticQueryEmbedding>& semantic_relevance) const
+    -> std::vector<sl_element_id_t> {
+  album_stack_query::ValidateExpansion(folder_id, options, expanded_fragments);
+  if (display_begin < 0 || display_end < display_begin) {
+    throw std::invalid_argument("Album display: the display range is invalid");
   }
-  transaction.commit();
-  return out;
+  if (display_begin == display_end) return {};
+  return WithAlbumMatchSet(database_, folder_id, extra_filter, options, semantic_relevance,
+                           [&](duckorm::Connection connection, bool relevance) {
+                             return album_stack_query::ReadFileIds(
+                                 connection, options, active_semantic_model_key, expanded_fragments,
+                                 relevance, display_begin, display_end);
+                           });
+}
+
+auto ElementStore::ReadAlbumMatchingFragmentIds(
+    sl_element_id_t folder_id, const std::optional<duckorm::SqlFragment>& extra_filter,
+    const AlbumQueryOptions& options, const std::string& active_semantic_model_key,
+    const AlbumStackFragmentKey&                 fragment,
+    const std::optional<SemanticQueryEmbedding>& semantic_relevance) const
+    -> std::vector<sl_element_id_t> {
+  album_stack_query::ValidateExpansion(folder_id, options, {&fragment, 1});
+  return WithAlbumMatchSet(database_, folder_id, extra_filter, options, semantic_relevance,
+                           [&](duckorm::Connection connection, bool relevance) {
+                             return album_stack_query::ReadFragmentIds(connection, options,
+                                                                       active_semantic_model_key,
+                                                                       relevance, fragment);
+                           });
 }
 
 auto ElementStore::ReadAlbumFilePosition(

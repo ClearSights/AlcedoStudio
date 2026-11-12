@@ -223,6 +223,42 @@ auto AlbumBrowseService::ReadAlbumFileIds(
                                 active_semantic_model_key, begin, end, semantic_relevance);
 }
 
+auto AlbumBrowseService::ReadAlbumDisplayPosition(
+    sl_element_id_t folder_id, const std::optional<FilterNode>& filter,
+    const AlbumQueryOptions& options, const std::string& active_semantic_model_key,
+    std::span<const AlbumStackFragmentKey> expanded_fragments, sl_element_id_t file_id,
+    const std::optional<AlbumGroupKey>&          preferred_group,
+    const std::optional<SemanticQueryEmbedding>& semantic_relevance) const
+    -> std::optional<AlbumDisplayPosition> {
+  return ElementStoreForRead("ReadAlbumDisplayPosition")
+      .ReadAlbumDisplayPosition(folder_id, CompileFilterPredicate(filter), options,
+                                active_semantic_model_key, expanded_fragments, file_id,
+                                preferred_group, semantic_relevance);
+}
+
+auto AlbumBrowseService::ReadAlbumDisplayFileIds(
+    sl_element_id_t folder_id, const std::optional<FilterNode>& filter,
+    const AlbumQueryOptions& options, const std::string& active_semantic_model_key,
+    std::span<const AlbumStackFragmentKey> expanded_fragments, int64_t display_begin,
+    int64_t display_end, const std::optional<SemanticQueryEmbedding>& semantic_relevance) const
+    -> std::vector<sl_element_id_t> {
+  return ElementStoreForRead("ReadAlbumDisplayFileIds")
+      .ReadAlbumDisplayFileIds(folder_id, CompileFilterPredicate(filter), options,
+                               active_semantic_model_key, expanded_fragments, display_begin,
+                               display_end, semantic_relevance);
+}
+
+auto AlbumBrowseService::ReadAlbumMatchingFragmentIds(
+    sl_element_id_t folder_id, const std::optional<FilterNode>& filter,
+    const AlbumQueryOptions& options, const std::string& active_semantic_model_key,
+    const AlbumStackFragmentKey&                 fragment,
+    const std::optional<SemanticQueryEmbedding>& semantic_relevance) const
+    -> std::vector<sl_element_id_t> {
+  return ElementStoreForRead("ReadAlbumMatchingFragmentIds")
+      .ReadAlbumMatchingFragmentIds(folder_id, CompileFilterPredicate(filter), options,
+                                    active_semantic_model_key, fragment, semantic_relevance);
+}
+
 auto AlbumBrowseService::ReadAlbumFileRows(std::span<const sl_element_id_t> file_ids) const
     -> std::vector<SearchResultRow> {
   auto& store = ElementStoreForRead("ReadAlbumFileRows");

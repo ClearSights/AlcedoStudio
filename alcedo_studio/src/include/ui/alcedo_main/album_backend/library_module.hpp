@@ -57,6 +57,8 @@ struct LibraryQueryInput {
   LibrarySearchInput                   search_{};
   AlbumQueryOptions                    options_{};
   std::string                          active_model_key_{};
+  /// Includes minimal expansion keys when display mode is requested. They travel with the
+  /// immutable query message, and never retain an owner reference or member metadata.
   AlbumQueryRead                       read_{};
   int64_t                              page_size_ = 0;
   std::shared_ptr<AlbumBrowseService>  browse_{};

@@ -2,7 +2,7 @@
 
 Date: 2026-11-11
 
-Status: PS1, PS2A, PS2B, and PS3 complete (2026-11-11). All other phases remain planned.
+Status: PS1, PS2A, PS2B, PS3, and PS4 complete (2026-11-11). All other phases remain planned.
 The latest Windows Release verification has 113 distinct passes, three skips, and no unresolved
 test failures after fixture preparation and reruns. One GPU rendering comparison was excluded.
 See the PS1 and PS2A review-fix records and the original PS2B completion record.
@@ -487,7 +487,7 @@ Compute the global stack total from PhotoStackMember.
 Compute the query match count from unique matching Files before label expansion.
 Compute the fragment count after label expansion, grouped by stack ID and typed group key.
 Use the same SQL comparison for display pages, display positions, and display range IDs.
-Rank the existing photo occurrence stream once with its current comparator. A fragment uses its
+Define the photo occurrence rank with the existing comparator. A fragment uses its
 displayed cover's occurrence rank as its unit position. The shared display projection then orders
 that unit and its visible members. This keeps sort and semantic relevance definitions in one owner.
 
@@ -598,7 +598,7 @@ API parameters carry IDs or focused changes. Services do not expose mutable stor
 | `AlbumBrowseService::ReadAlbumQuery` extension | Existing query input plus display mode and expansion choices -> extended existing result | Read-only; one match-set interpretation and explicit failure. |
 | `AlbumBrowseService::ReadAlbumDisplayPosition` | Existing query input, File ID, preferred group -> display location and hidden-by-collapse flag | Read-only; distinguish absent File from collapsed member. |
 | `AlbumBrowseService::ReadAlbumDisplayFileIds` | Existing query input and display ranges -> ordered unique File IDs | Read-only; return represented photos, not an implicit stack expansion. |
-| `AlbumBrowseService::ReadMatchingStackFileIds` | Existing query input and typed fragment key -> ordered unique matching IDs | Read-only; use complete filter and exact group membership. |
+| `AlbumBrowseService::ReadAlbumMatchingFragmentIds` | Existing query input and typed fragment key -> ordered unique matching IDs | Read-only; use complete filter and exact group membership. |
 | `LibraryDisplayModel::SetStackExpanded` | Typed fragment key and bool | GUI presentation mutation only; request display refresh. |
 | `PhotoStackController` command methods | User targets and explicit command -> started/task result, then completion | Apply interaction policy; dispatch to application service and existing save owner. |
 | `ProjectModule::RetryStackSave` and `hasUnsavedStackChanges` | No mutation request -> save outcome and pending-state notification | Proposed additions. Retry only persistence; do not repeat the stack command. Clear pending state on successful save or explicit discard. |
@@ -767,7 +767,7 @@ Do not place the complete implementation in one PR if its added diff can exceed 
 | PS2A | Atomic element sync and stack-aware project deletion | PS1 | 1200-1850 | Main needs a complete sync transaction and focused owner restore. | complete |
 | PS2B | Migration, package preservation, and diagnostics | PS1 | 750-1250 | Keep format and package evidence separate from deletion changes. | complete |
 | PS3 | Filter-first fragments, covers, and collapsed display reads | PS1 | 1200-1800 | Isolate query semantics from expansion and UI. | complete |
-| PS4 | Expansion, bounded pages, positions, and matching-member reads | PS3 | 1100-1750 | Paging and three position spaces need dedicated tests. | planned |
+| PS4 | Expansion, bounded pages, positions, and matching-member reads | PS3 | 1100-1750 | Paging and three position spaces need dedicated tests. | complete |
 | PS5A | C++ display owner and complete query publication | PS4 | 800-1300 | Separate display state from command and save state. | planned |
 | PS5B | Command controller, task policy, and save outcomes | PS2A, PS2B, PS5A | 700-1200 | Keep command task behavior independent from close decisions. | planned |
 | PS5C | Pending stack saves and application/project close | PS5B | 900-1500 | Add the lifecycle behavior that audited main does not provide. | planned |
@@ -787,7 +787,7 @@ The user selected five pull requests on 2026-11-11. The later branch decision be
 the original merge-before-next-branch workflow.
 The twelve phases remain the implementation and verification units. They do not require twelve PRs.
 Keep a focused, tested commit for each phase. Use functional commit and PR titles without phase IDs.
-Put the phase IDs and this plan link in the PR body's Plan section.
+Put the phase IDs and this plan link under Changes in the PR body.
 
 | PR | Phases | Review scope | Estimated changed lines |
 | --- | --- | --- | ---: |
@@ -808,8 +808,9 @@ so the complete UI can provide real screenshots before upstream review finishes.
 Create PR 2 as `feature/library-photo-stacking-PR2` from that PR 1 head. Use
 `feature/library-photo-stacking-PRn` for subsequent branches, each based on the preceding PR branch.
 Keep this dependency chain in the fork. The current request implements PS3 and PS4 only.
-Search for competing work before opening a PR.
-Use the current alcedo-create-pr skill and its Plan, Why, Changes, and Verification sections.
+Search for competing work before opening a PR. Upstream submissions must follow CONTRIBUTING.md:
+wait for overlapping open work to close. The fork branch chain does not change that submission rule.
+Use the current alcedo-create-pr skill and its fixed Why, Changes, and Verification sections.
 Report the targeted test evidence collected during implementation.
 Each PR must stay within CONTRIBUTING.md's limit of 10,000 added lines.
 The 2000 changed-line phase limit still applies separately to each phase.
@@ -1586,10 +1587,122 @@ Display ID ranges select represented photos; Ctrl+A continues to use the raw mat
 - `RawSelectionAndStatisticsDoNotDependOnExpansion`: compare collapse, expand, and partial expansion.
 
 **Build and run.** V4: AlbumStackPagingTest, AlbumStackQueryTest, and AlbumQueryTest.
-**Exit criteria.** [ ] All pages concatenate without omission or duplication.
-[ ] No expansion requires all member metadata. [ ] All three position spaces have explicit names.
+**Exit criteria.** [x] All pages concatenate without omission or duplication.
+[x] No expansion requires all member metadata. [x] All three position spaces have explicit names.
 **Expected diff.** 1100-1750 lines.
-**Completion record.** Not started. Fill the Section 12 template here after implementation.
+#### PS4 completion record (2026-11-11)
+
+**Status:** complete. Expanded display pages and read-only navigation are available through
+AlbumBrowseService. Production UI callers still use photo mode until PS5A.
+
+**Implementation decisions.** `AlbumQueryRead::expanded_fragments` carries only the current
+scope's immutable fragment keys inside the existing `LibraryQueryInput::read_`. The request
+owns these values until completion. No member list, photo metadata copy, cache, generation,
+or second worker was added. Duplicate keys do not duplicate rows. Valid absent keys match no
+fragment. Invalid scope, grouping, typed key, page mode, or range reports an explicit error.
+
+The shared SQL projection emits the representative first, then other matching members in saved
+order. All members retain the representative's unit rank. Page bounds apply after expansion.
+The display-position and display-range APIs use that same definition. The exact fragment-ID
+read is named `ReadAlbumMatchingFragmentIds` to match the existing album-read API names and
+state that its scope is one fragment. It reads every matching ID independently of loaded pages.
+
+Raw positions remain `AlbumFilePosition::occurrence_index_`. Display positions use the new
+`AlbumDisplayPosition::display_index`. Existing `AlbumSectionModel` logical/model rows remain
+a layout concern. PS5A will map display positions into that layout; this phase does not change
+its raw-photo interpretation. A hidden matching member returns its representative identity
+with `hidden_by_collapse`. A filtered-out File returns no position.
+
+**Primary success call chain:**
+
+```text
+Captured query + exact fragment expansion keys
+  -> AlbumBrowseService: compile the complete predicate
+  -> ElementStore::WithAlbumMatchSet: one connection, lock, transaction, and predicate evaluation
+  -> album_stack_query shared display projection
+  -> bounded metadata page / display position / unique display-range IDs / matching fragment IDs
+```
+
+**Primary failure call chain:**
+
+```text
+Invalid bounds/key, damaged cover, or SQL preparation failure after match-table creation
+  -> explicit exception + match-table cleanup + transaction rollback + connection release
+  -> no partial result or saved-row changes; a later valid read succeeds
+```
+
+**Executed evidence:** all 11 `AlbumStackPagingTest` cases pass. The seven required names above
+are unchanged. Four additional cases verify duplicate/absent/unknown and invalid typed keys,
+semantic kept-set and calling-worker behavior, damaged-cover recovery, and SQL-failure cleanup.
+`DisplayPositionAndDisplayRangeIdsAgreeWithPagedRows` checks every grouping field, including
+import and edit days, using a typed preferred group for each row. The exact page-crossing case
+uses a saved cover in the middle of saved order and compares the independently authored sequence.
+
+The 10,000-member integration case uses the real project, stack service, synthetic File builder,
+and folder owner. A collapsed page returns exactly one metadata row. An expanded page at display
+offset 9000 returns exactly the last 1000 members. Neither read requests all raw IDs or any source
+decode. A limit of 1001 is rejected. Full matching IDs are read only by their explicit ID API.
+
+Commands (same release toolchain and runtime PATH as PS3):
+
+```powershell
+cmd /c scripts\msvc_env.cmd --build --preset win_release --target AlbumStackPagingTest AlbumStackQueryTest AlbumQueryTest AlbumBackendLibraryQueryTest --parallel 4
+ctest --test-dir build/release -R '^(AlbumStackPagingTest\.|AlbumStackQueryTest\.|AlbumQueryTest\.|AlbumBackendLibraryQueryTest\.)' --output-on-failure
+cmd /c scripts\msvc_env.cmd --build --preset win_release --target AlbumStackPagingTest --parallel 4
+& build/release/alcedo_studio/tests/app/AlbumStackPagingTest_runtime/AlbumStackPagingTest.exe
+ctest --test-dir build/release -R '^AlbumStackPagingTest\.' --output-on-failure
+```
+
+The combined run passed 31 C++ library-owner cases, 10 stack-query cases, 34 regular album-query
+cases, and 10 paging cases. Its added SQL-failure case stopped in setup: DuckDB rejects renaming
+the indexed membership table. The corrected fixture renames the unindexed stack header, reaches
+the intended SQL-read failures, restores the relation, and compares all saved rows. Both the
+direct 11-case run and the final 11-case CTest run pass. Thus 86 regular distinct cases pass across
+the accepted runs. The album-query opt-in measurement is skipped by normal CTest and passed
+separately in PS3. No implementation failure was hidden and no assertion was weakened.
+
+**Measured large-stack reads:** first sample followed by 10 warm samples in the direct 11-case
+run. These measure one 10,000-member stack, without statistics. They are not a comparison against
+the different unstacked fixture in PS3. No-stack and many-small-stack comparisons remain PS9 work.
+
+| Operation | First ms | Warm median ms | Warm p95 ms |
+| --- | ---: | ---: | ---: |
+| Collapsed metadata page | 55.559 | 51.411 | 59.019 |
+| Expanded metadata page at 9000 | 56.137 | 56.784 | 68.837 |
+| Collapsed member reveal | 34.137 | 35.019 | 45.998 |
+| Complete matching fragment IDs | 35.813 | 36.277 | 43.190 |
+
+**Review and size:** the display SQL module is 335 lines and its header is 50. The new paging
+suite is 407 lines. AlbumBrowseService remains a 589-line routing facade with a 215-line header.
+ElementStore is 1412 lines with a 469-line header. It retains the database reference, transaction,
+and predicate-table lifetime; new display rules stay in the focused SQL module. The common
+transaction helper removes repeated operation setup rather than creating a new state owner.
+The existing 497-line library header changes only its request documentation. The 1062-line app
+CMake file still only registers targets. Each phase remains below 2000 changed lines.
+
+| File | Total lines | Added / removed |
+| --- | ---: | ---: |
+| `alcedo_studio/src/app/album_browse_service.cpp` | 589 | 36 / 0 |
+| `alcedo_studio/src/include/app/album_browse_service.hpp` | 215 | 33 / 1 |
+| `alcedo_studio/src/include/storage/store/sleeve/album_stack_query.hpp` | 50 | 29 / 0 |
+| `alcedo_studio/src/include/storage/store/sleeve/element_store.hpp` | 469 | 44 / 2 |
+| `alcedo_studio/src/include/ui/alcedo_main/album_backend/library_module.hpp` | 497 | 2 / 0 |
+| `alcedo_studio/src/storage/store/sleeve/album_stack_query.cpp` | 335 | 172 / 14 |
+| `alcedo_studio/src/storage/store/sleeve/element_store.cpp` | 1412 | 84 / 19 |
+| `alcedo_studio/tests/app/CMakeLists.txt` | 1062 | 8 / 0 |
+| `alcedo_studio/tests/app/album_stack_paging_test.cpp` | 407 | 407 / 0 |
+
+New and changed APIs document ownership, bounds, result meaning, worker use, and failures.
+Changed C++ lines and the new test file are formatted. LF, terminology, data-copy, and defining
+include checks pass for touched files. The full first-party and roadmap scans retain unrelated
+existing matches; ordinary `aggregate`, `delegate`, and `investigate` are not the prohibited term.
+No new forward declarations or independent owner-state copies were added.
+
+**Completion criteria:** all checked. Full-suite, macOS, and GUI/screenshot checks were not run.
+The C++ owner suite exercises real worker and publication behavior without synthetic QML input.
+No stack command or stack presentation is exposed in production UI before PS7/PS8. PS5A is next
+in the approved dependency chain; no later phase was started.
+
 
 ### PS5A - Presentation owner and complete query publication
 
