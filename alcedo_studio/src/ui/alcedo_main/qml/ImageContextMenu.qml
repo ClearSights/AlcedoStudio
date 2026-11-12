@@ -236,6 +236,8 @@ AppContextMenu {
                         : ""
             text: actionData && actionData.label ? actionData.label : ""
             enabled: !(actionData && actionData.enabled === false)
+            ToolTip.visible: hovered && ToolTip.text.length > 0
+            ToolTip.text: actionData && actionData.tooltip ? actionData.tooltip : ""
             onTriggered: root.actionRequested(actionData && actionData.id ? actionData.id : "")
         }
         onObjectAdded: function(index, object) {

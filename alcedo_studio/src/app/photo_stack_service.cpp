@@ -51,4 +51,15 @@ auto PhotoStackService::ReadMemberIds(const std::string& stack_id) -> std::vecto
   return storage_->GetPhotoStackStore().ReadMemberIds(stack_id);
 }
 
+auto PhotoStackService::ReadActionOptions(std::span<const sl_element_id_t> ids,
+                                          const std::string& stack, sl_element_id_t clicked)
+    -> PhotoStackActionOptions {
+  return storage_->GetPhotoStackStore().ReadActionOptions(ids, stack, clicked);
+}
+
+auto PhotoStackService::OrderCommandFiles(std::span<const sl_element_id_t> ids)
+    -> std::vector<sl_element_id_t> {
+  return storage_->GetPhotoStackStore().OrderCommandFiles(ids);
+}
+
 }  // namespace alcedo

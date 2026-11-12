@@ -40,6 +40,11 @@ class PhotoStackService {
   auto SetCover(const std::string& stack_id, sl_element_id_t file_id) -> PhotoStackChange;
   /// Move relative to saved order; an endpoint or unstacked File returns a no-op.
   auto MoveMember(sl_element_id_t file_id, PhotoStackMove direction) -> PhotoStackChange;
+  /// Validate explicit targets and compute menu availability without exposing stored rows.
+  auto ReadActionOptions(std::span<const sl_element_id_t> ids, const std::string& stack,
+                         sl_element_id_t clicked) -> PhotoStackActionOptions;
+  /// Order validated explicit targets by stack UUID, saved position, then unstacked File ID.
+  auto OrderCommandFiles(std::span<const sl_element_id_t> ids) -> std::vector<sl_element_id_t>;
   /// Return the caller-owned, validated member IDs in saved order.
   auto ReadMemberIds(const std::string& stack_id) -> std::vector<sl_element_id_t>;
 

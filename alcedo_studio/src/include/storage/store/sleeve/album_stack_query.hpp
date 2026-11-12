@@ -13,6 +13,9 @@
 
 namespace alcedo::album_stack_query {
 
+/// Read the exact no-membership precondition on the caller's locked transaction connection.
+bool HasMemberships(duckorm::Connection connection);
+
 /// Reject mismatched scope/group and incorrectly typed keys before SQL. Unknown keys use
 /// monostate. Valid absent keys are retained by the presentation owner and match no fragment.
 void ValidateExpansion(sl_element_id_t folder_id, const AlbumQueryOptions& options,
@@ -27,6 +30,10 @@ void ValidatePreferredGroup(AlbumGroupField field, const std::optional<AlbumGrou
 void ReadDisplay(duckorm::Connection connection, sl_element_id_t folder_id,
                  const AlbumQueryOptions& options, const std::string& model,
                  const AlbumQueryRead& read, bool has_relevance, AlbumQueryResult& result);
+/// Move a bounded photo query output into ordinary display occurrences after the transaction
+/// proves no memberships exist. Retains photo/group counts and metadata without a second read.
+void ProjectUnstackedPage(sl_element_id_t folder, const AlbumQueryOptions& options, int64_t offset,
+                          AlbumQueryResult& result);
 
 /// Read only the requested display location from the same projection as ReadDisplay.
 /// Caller owns SearchMatchSet, lock, and transaction; throws on damaged data or SQL failure.
@@ -46,5 +53,10 @@ auto ReadFileIds(duckorm::Connection connection, const AlbumQueryOptions& option
 auto ReadFragmentIds(duckorm::Connection connection, const AlbumQueryOptions& options,
                      const std::string& model, bool has_relevance,
                      const AlbumStackFragmentKey& fragment) -> std::vector<sl_element_id_t>;
+
+/// Read typed matching fragment keys only, under the caller's read transaction; throws on failure.
+auto ReadFragmentKeys(duckorm::Connection connection, sl_element_id_t folder,
+                      const AlbumQueryOptions& options, const std::string& model, bool relevance)
+    -> std::vector<AlbumStackFragmentKey>;
 
 }  // namespace alcedo::album_stack_query

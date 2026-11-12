@@ -3,9 +3,13 @@
 // Additional permission under GPLv3 section 7 applies; see the LICENSE file.
 #include "ui/alcedo_main/album_backend/library_display_model.hpp"
 
+#include <QJsonArray>
+#include <QJsonDocument>
 #include <algorithm>
+#include <cstdlib>
 #include <iterator>
 #include <limits>
+#include <set>
 #include <stdexcept>
 #include <tuple>
 #include <unordered_set>
@@ -34,6 +38,43 @@ void ValidatePages(int64_t total, const LibraryDisplayModel::PageMap& pages) {
       throw std::invalid_argument("Invalid display page range");
     }
     end = first + static_cast<int64_t>(items.size());
+  }
+}
+/// Typed loading roles for an accepted occurrence whose bounded page has not arrived yet.
+/// Zero IDs prevent thumbnail pins and photo actions; no substitute photo is displayed.
+auto LoadingValue(int role) -> QVariant {
+  switch (role) {
+    case AlbumThumbnailModel::ElementId:
+    case AlbumThumbnailModel::FileId:
+    case AlbumThumbnailModel::ImageId:
+    case AlbumThumbnailModel::FolderId:
+    case AlbumThumbnailModel::Iso:
+    case AlbumThumbnailModel::Rating:
+    case AlbumThumbnailModel::ColorLabels:
+    case AlbumThumbnailModel::AspectRatio:
+    case LibraryDisplayModel::SavedCoverId:
+    case LibraryDisplayModel::StackTotal:
+    case LibraryDisplayModel::QueryMatchCount:
+    case LibraryDisplayModel::FragmentMatchCount:
+    case LibraryDisplayModel::DisplayKind:
+      return 0;
+    case AlbumThumbnailModel::ThumbLoading:
+      return true;
+    case AlbumThumbnailModel::IsHdr:
+    case AlbumThumbnailModel::IsEdited:
+    case AlbumThumbnailModel::ThumbMissingSource:
+    case AlbumThumbnailModel::DeleteMark:
+    case LibraryDisplayModel::TemporaryCover:
+    case LibraryDisplayModel::StackExpanded:
+      return false;
+    case AlbumThumbnailModel::EditedAt:
+      return {};
+    default:
+      return AlbumThumbnailModel::RoleNameTable().contains(role) ||
+                     role == LibraryDisplayModel::StackId ||
+                     role == LibraryDisplayModel::OccurrenceKey
+                 ? QVariant{QString{}}
+                 : QVariant{};
   }
 }
 }  // namespace
@@ -68,13 +109,16 @@ QHash<int, QByteArray> LibraryDisplayModel::roleNames() const {
   roles.insert(TemporaryCover, "temporaryCover");
   roles.insert(StackExpanded, "stackExpanded");
   roles.insert(DisplayKind, "displayKind");
+  roles.insert(OccurrenceKey, "occurrenceKey");
   return roles;
 }
 QVariant LibraryDisplayModel::data(const QModelIndex& index, int role) const {
   if (!index.isValid() || index.row() < 0 || index.row() >= rowCount()) return {};
   const auto* item = ItemAt(index.row());
-  if (!item) return role == AlbumThumbnailModel::FileId ? QVariant(0U) : QVariant{};
+  if (!item) return LoadingValue(role);
   switch (role) {
+    case OccurrenceKey:
+      return Key(item->identity);
     case StackId:
       return QString::fromStdString(item->identity.fragment.stack_id);
     case SavedCoverId:
@@ -97,6 +141,59 @@ QVariant LibraryDisplayModel::data(const QModelIndex& index, int role) const {
       const int row = photos_ ? photos_->rowByElementId(item->file_id) : -1;
       return row < 0 ? QVariant{} : photos_->data(photos_->index(row), role);
   }
+}
+QString LibraryDisplayModel::Key(const AlbumDisplayIdentity& identity) {
+  const auto& fragment = identity.fragment;
+  QJsonArray  parts{static_cast<qint64>(fragment.folder_id), static_cast<int>(fragment.group_field),
+                    static_cast<int>(fragment.group_key.index())};
+  if (const auto* text = std::get_if<std::string>(&fragment.group_key))
+    parts.append(QString::fromStdString(*text));
+  else if (const auto* number = std::get_if<int64_t>(&fragment.group_key))
+    parts.append(QString::number(*number));
+  else
+    parts.append(QJsonValue::Null);
+  parts.append(QString::fromStdString(fragment.stack_id));
+  parts.append(static_cast<int>(identity.kind));
+  parts.append(static_cast<qint64>(identity.file_id));
+  return QString::fromUtf8(QJsonDocument(parts).toJson(QJsonDocument::Compact));
+}
+QVariantMap LibraryDisplayModel::getItemAt(int position) const {
+  if (!ItemAt(position)) return {};
+  QVariantMap result;
+  for (auto roles = roleNames(); auto role : roles.keys())
+    result.insert(QString::fromUtf8(roles.value(role)), data(index(position), role));
+  // Existing input owners use elementId for the actual displayed File.
+  result.insert(QStringLiteral("elementId"), FileIdAt(position));
+  return result;
+}
+QVariantMap LibraryDisplayModel::getStackAt(int position) const {
+  if (!ItemAt(position)) return {};
+  QVariantMap result{{QStringLiteral("fileId"), FileIdAt(position)}};
+  const auto  names = roleNames();
+  for (int role = StackId; role <= OccurrenceKey; ++role)
+    result.insert(QString::fromUtf8(names.value(role)), data(index(position), role));
+  return result;
+}
+QVariantList LibraryDisplayModel::getItemsInRange(int first, int last) const {
+  QVariantList result;
+  for (int position = std::max(0, std::min(first, last));
+       position <= std::min(rowCount() - 1, std::max(first, last)); ++position) {
+    auto item = getItemAt(position);
+    if (!item.isEmpty()) result.append(std::move(item));
+  }
+  return result;
+}
+int LibraryDisplayModel::rowByElementId(uint file) const {
+  for (const auto& [first, items] : pages_)
+    for (size_t i = 0; i < items.size(); ++i)
+      if (items[i].file_id == file) return static_cast<int>(first + i);
+  return -1;
+}
+int LibraryDisplayModel::rowByKey(const QString& key) const {
+  for (const auto& [first, items] : pages_)
+    for (size_t i = 0; i < items.size(); ++i)
+      if (Key(items[i].identity) == key) return static_cast<int>(first + i);
+  return -1;
 }
 void LibraryDisplayModel::BeginReplace() {
   if (!replacing_) {
@@ -163,7 +260,9 @@ void LibraryDisplayModel::InstallPhotoPages(int64_t total, PhotoPageMap pages, b
   Install(total, std::move(converted));
   if (notify) EndReplace();
 }
-auto LibraryDisplayModel::RetainedPages(std::vector<AlbumDisplayItem>& result) const -> PageMap {
+auto LibraryDisplayModel::RetainedPages(std::vector<AlbumDisplayItem>& result,
+                                        int64_t anchor_position, int64_t page_size,
+                                        size_t max_pages) const -> PageMap {
   const auto less = [](const AlbumDisplayIdentity& a, const AlbumDisplayIdentity& b) {
     const auto parts = [](const AlbumDisplayIdentity& id) {
       return std::tie(id.fragment.folder_id, id.fragment.group_field, id.fragment.group_key,
@@ -172,25 +271,66 @@ auto LibraryDisplayModel::RetainedPages(std::vector<AlbumDisplayItem>& result) c
     return parts(a) < parts(b);
   };
   std::map<AlbumDisplayIdentity, int64_t, decltype(less)> positions(less);
-  for (const auto& [start, items] : pages_)
-    for (const auto& item : items) positions.try_emplace(item.identity, -1);
-  for (size_t i = 0; i < result.size(); ++i) {
-    auto found = positions.find(result[i].identity);
-    if (found != positions.end()) found->second = static_cast<int64_t>(i);
-  }
-  std::vector<std::pair<int64_t, int64_t>> ranges;
+  // A create/remove operation can change a loaded File's occurrence kind or stack UUID.
+  // This scoped index maps that same displayed File in its typed group to its old position.
+  // Only scalar identity/position inputs leave this loop; no photo metadata is copied.
+  using FileOccurrence =
+      std::tuple<sl_element_id_t, AlbumGroupField, AlbumGroupKey, sl_element_id_t>;
+  const auto file_key = [](const AlbumDisplayItem& item) -> FileOccurrence {
+    const auto& fragment = item.identity.fragment;
+    return {fragment.folder_id, fragment.group_field, fragment.group_key, item.file_id};
+  };
+  std::map<FileOccurrence, int64_t> file_positions;
+  std::set<int64_t>                 photo_pages;
   for (const auto& [start, items] : pages_) {
-    int64_t begin = -1, end = -1;
-    for (const auto& item : items) {
-      const auto at = positions.find(item.identity)->second;
-      if (at >= 0) {
-        begin = begin < 0 ? at : std::min(begin, at);
-        end   = std::max(end, at + 1);
-      }
+    if (std::all_of(items.begin(), items.end(), [](const auto& item) {
+          return item.identity.kind == AlbumDisplayKind::kPhoto;
+        }))
+      photo_pages.insert(start);
+    for (size_t i = 0; i < items.size(); ++i) {
+      positions.try_emplace(items[i].identity, start + static_cast<int64_t>(i));
+      file_positions.try_emplace(file_key(items[i]), start + static_cast<int64_t>(i));
     }
-    if (begin >= 0) ranges.emplace_back(begin, end);
   }
-  std::sort(ranges.begin(), ranges.end());
+  std::vector<std::pair<int64_t, int64_t>> retained;
+  for (size_t i = 0; i < result.size(); ++i) {
+    const auto exact = positions.find(result[i].identity);
+    const auto file  = file_positions.find(file_key(result[i]));
+    if (exact != positions.end()) retained.emplace_back(exact->second, static_cast<int64_t>(i));
+    if (file != file_positions.end()) retained.emplace_back(file->second, static_cast<int64_t>(i));
+  }
+  // Ordinary content shifts keep their existing page offsets and already-loaded metadata.
+  // Stack pages, or an ordinary page spread by more than one page, use bounded aligned windows.
+  std::map<int64_t, std::pair<int64_t, int64_t>> shifted_pages;
+  for (const auto& [old_position, position] : retained) {
+    const auto old_page = std::prev(pages_.upper_bound(old_position))->first;
+    auto [at, inserted] = shifted_pages.try_emplace(old_page, position, position + 1);
+    if (!inserted) {
+      at->second.first  = std::min(at->second.first, position);
+      at->second.second = std::max(at->second.second, position + 1);
+    }
+  }
+  // Preserve the real viewport's nearest old occurrences. Separate bounded windows prevent a
+  // large expansion or ungroup operation from loading every photo between two old cards.
+  std::sort(retained.begin(), retained.end(), [anchor_position](const auto& a, const auto& b) {
+    return std::tuple{std::abs(a.first - anchor_position), a.first, a.second} <
+           std::tuple{std::abs(b.first - anchor_position), b.first, b.second};
+  });
+  page_size = std::clamp<int64_t>(page_size, 1, kMaxAlbumQueryPageRows);
+  std::map<int64_t, int64_t> windows;
+  for (const auto& [old_position, position] : retained) {
+    const auto  old_page = std::prev(pages_.upper_bound(old_position))->first;
+    const auto& shifted  = shifted_pages.at(old_page);
+    const bool  keep_offset =
+        photo_pages.contains(old_page) && shifted.second - shifted.first <= page_size;
+    const auto begin = keep_offset ? shifted.first : (position / page_size) * page_size;
+    const auto end =
+        keep_offset ? shifted.second : std::min<int64_t>(result.size(), begin + page_size);
+    auto [at, inserted] = windows.try_emplace(begin, end);
+    if (!inserted) at->second = std::max(at->second, end);
+    if (windows.size() >= std::max<size_t>(1, max_pages)) break;
+  }
+  const std::vector<std::pair<int64_t, int64_t>> ranges(windows.begin(), windows.end());
   PageMap pages;
   for (size_t i = 0; i < ranges.size();) {
     auto [begin, end] = ranges[i++];

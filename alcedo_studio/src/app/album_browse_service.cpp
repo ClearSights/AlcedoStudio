@@ -248,6 +248,16 @@ auto AlbumBrowseService::ReadAlbumDisplayFileIds(
                                display_end, semantic_relevance);
 }
 
+auto AlbumBrowseService::ReadAlbumStackFragmentKeys(
+    sl_element_id_t folder_id, const std::optional<FilterNode>& filter,
+    const AlbumQueryOptions& options, const std::string& model,
+    const std::optional<SemanticQueryEmbedding>& relevance) const
+    -> std::vector<AlbumStackFragmentKey> {
+  return ElementStoreForRead("ReadAlbumStackFragmentKeys")
+      .ReadAlbumStackFragmentKeys(folder_id, CompileFilterPredicate(filter), options, model,
+                                  relevance);
+}
+
 auto AlbumBrowseService::ReadAlbumMatchingFragmentIds(
     sl_element_id_t folder_id, const std::optional<FilterNode>& filter,
     const AlbumQueryOptions& options, const std::string& active_semantic_model_key,

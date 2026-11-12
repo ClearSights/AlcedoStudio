@@ -133,4 +133,83 @@ TEST_F(PhotoStackControllerTest, UnchangedCommandDoesNotAttemptPackageSave) {
   std::filesystem::remove(blocked);
 }
 }  // namespace
+TEST_F(PhotoStackControllerTest, LaterContextClickAndSelectionOwnAvailabilityAfterQueuedReads) {
+  host->library()->SetStackDisplayEnabled(true);
+  ASSERT_TRUE(WaitForLibraryQuery(*host));
+  ASSERT_TRUE(host->photo_stacks()->Start(Create()).isEmpty());
+  Wait();
+  ASSERT_TRUE(WaitForLibraryQuery(*host));
+  const auto stack = result->change.stack_id;
+  host->library()->ToggleStack(
+      host->library_display()->getItemAt(0).value("occurrenceKey").toString());
+  ASSERT_TRUE(WaitForLibraryQuery(*host));
+  ASSERT_EQ(host->library_display()->DisplayCount(), 4);
+  const auto first = host->library_display()->getItemAt(0);
+  const auto last  = host->library_display()->getItemAt(2);
+  ASSERT_EQ(first.value("fileId").toUInt(), files[0]);
+  ASSERT_EQ(last.value("fileId").toUInt(), files[2]);
+  auto* selection  = host->library()->selection();
+  auto* controller = host->photo_stacks();
+  selection->Replace(QVariantList{first});
+  controller->PrepareMenu(first.value("occurrenceKey").toString());
+  // Real production interleaving: another right click/selection before the first worker
+  // completion is delivered by the GUI event queue. No injected revision values are used.
+  selection->Replace(QVariantList{last});
+  bool       wrong_availability = false;
+  const auto connection =
+      QObject::connect(controller, &PhotoStackController::MenuOptionsChanged, host.get(), [&] {
+        if (controller->MenuOptions().value("later").toBool()) wrong_availability = true;
+      });
+  controller->PrepareMenu(last.value("occurrenceKey").toString());
+  for (int i = 0; i < 200 && !controller->MenuOptions().value("ready").toBool(); ++i)
+    ProcessEvents(10);
+  ASSERT_TRUE(controller->MenuOptions().value("ready").toBool())
+      << controller->Error().toStdString();
+  EXPECT_FALSE(wrong_availability);
+  EXPECT_TRUE(controller->MenuOptions().value("earlier").toBool());
+  EXPECT_FALSE(controller->MenuOptions().value("later").toBool());
+  QObject::disconnect(connection);
+}
+
+TEST_F(PhotoStackControllerTest, MenuActionNamesApplyEverySavedOrganizationCommandToExplicitFiles) {
+  auto* library    = host->library();
+  auto* controller = host->photo_stacks();
+  library->SetStackDisplayEnabled(true);
+  ASSERT_TRUE(WaitForLibraryQuery(*host));
+  const auto item = [&](sl_element_id_t file) {
+    return host->library_display()->getItemAt(host->library_display()->rowByElementId(file));
+  };
+  const auto run = [&](const QString& action, sl_element_id_t file) {
+    result.reset();
+    controller->RunAction(action, item(file).value("occurrenceKey").toString());
+    if (!controller->Busy()) return false;
+    Wait();
+    return result && result->outcome == PhotoStackCommandResult::Outcome::kSaved &&
+           WaitForLibraryQuery(*host);
+  };
+  library->selection()->Replace(QVariantList{item(files[0]), item(files[1]), item(files[2])});
+  ASSERT_TRUE(run("stack-group", files[0])) << controller->Error().toStdString();
+  const auto stack   = result->change.stack_id;
+  const auto service = host->project()->handler().project()->GetPhotoStackService();
+  EXPECT_EQ(service->ReadMemberIds(stack), (std::vector{files[0], files[1], files[2]}));
+  library->ToggleStack(item(files[0]).value("occurrenceKey").toString());
+  ASSERT_TRUE(WaitForLibraryQuery(*host));
+  library->selection()->Replace(QVariantList{item(files[3])});
+  ASSERT_TRUE(run("stack-add", files[0])) << controller->Error().toStdString();
+  EXPECT_EQ(service->ReadMemberIds(stack), files);
+  ASSERT_TRUE(run("stack-earlier", files[3])) << controller->Error().toStdString();
+  EXPECT_EQ(service->ReadMemberIds(stack), (std::vector{files[0], files[1], files[3], files[2]}));
+  ASSERT_TRUE(run("stack-later", files[3])) << controller->Error().toStdString();
+  EXPECT_EQ(service->ReadMemberIds(stack), files);
+  ASSERT_TRUE(run("stack-cover", files[3])) << controller->Error().toStdString();
+  EXPECT_EQ(item(files[3]).value("savedCoverId").toUInt(), files[3]);
+  EXPECT_EQ(service->ReadMemberIds(stack), files);
+  ASSERT_TRUE(run("stack-remove", files[3])) << controller->Error().toStdString();
+  EXPECT_EQ(service->ReadMemberIds(stack), (std::vector{files[0], files[1], files[2]}));
+  EXPECT_EQ(item(files[0]).value("savedCoverId").toUInt(), files[0]);
+  ASSERT_TRUE(run("stack-ungroup", files[0])) << controller->Error().toStdString();
+  EXPECT_EQ(host->library_display()->DisplayCount(), 4);
+  for (const auto file : files) EXPECT_TRUE(item(file).value("stackId").toString().isEmpty());
+}
+
 }  // namespace alcedo::ui::test

@@ -160,5 +160,56 @@ TEST(LibraryDisplayModelTest, InvalidRetainedPhotoOrderDoesNotMoveTheAcceptedThu
   EXPECT_EQ(photos.itemByFile(1)->thumb_url, "image://accepted");
   EXPECT_EQ(photos.count(), 1);
 }
+TEST(LibraryDisplayModelTest, StackCreationAndCoverRemovalKeepTheDisplayedFilesInTheirLoadedPage) {
+  LibraryDisplayModel display;
+  display.BeginReplace();
+  display.Install(4, {{0, {Item(1), Item(2), Item(3), Item(4)}}});
+  display.EndReplace();
+  std::vector created{Item(1, "new-stack"), Item(4)};
+  auto        pages = display.RetainedPages(created);
+  ASSERT_EQ(pages.size(), 1);
+  EXPECT_EQ(pages.begin()->first, 0);
+  ASSERT_EQ(pages.begin()->second.size(), 2);
+  EXPECT_EQ(pages.begin()->second[0].identity.fragment.stack_id, "new-stack");
+  display.BeginReplace();
+  display.Install(2, std::move(pages));
+  display.EndReplace();
+  std::vector removed{Item(1), Item(2, "new-stack"), Item(4)};
+  pages = display.RetainedPages(removed);
+  ASSERT_EQ(pages.size(), 1);
+  EXPECT_EQ(pages.begin()->first, 0);
+  EXPECT_EQ(pages.begin()->second.size(), 3);
+}
+
+TEST(LibraryDisplayModelTest, DissolvingLargeStackDoesNotRetainEveryInsertedPhotoBetweenOldCards) {
+  LibraryDisplayModel display;
+  display.BeginReplace();
+  display.Install(2, {{0, {Item(1, "stack"), Item(10001)}}});
+  display.EndReplace();
+  std::vector<AlbumDisplayItem> dissolved;
+  for (uint file = 1; file <= 10001; ++file) dissolved.push_back(Item(file));
+  const auto pages = display.RetainedPages(dissolved);
+  ASSERT_EQ(pages.size(), 2);
+  EXPECT_EQ(pages.begin()->first, 0);
+  EXPECT_EQ(pages.begin()->second.size(), kMaxAlbumQueryPageRows);
+  EXPECT_EQ(pages.rbegin()->first, 10000);
+  EXPECT_EQ(pages.rbegin()->second.size(), 1);
+}
+TEST(LibraryDisplayModelTest,
+     UnloadedOccurrenceShowsLoadingWithoutFileActionsOrMissingSourceError) {
+  LibraryDisplayModel display;
+  display.BeginReplace();
+  display.Install(10, {{0, {Item(1)}}});
+  display.EndReplace();
+  EXPECT_EQ(display.data(display.index(5), AlbumThumbnailModel::FileId).toUInt(), 0);
+  EXPECT_EQ(display.data(display.index(5), AlbumThumbnailModel::ElementId).toUInt(), 0);
+  EXPECT_TRUE(display.data(display.index(5), AlbumThumbnailModel::ThumbLoading).toBool());
+  EXPECT_FALSE(display.data(display.index(5), AlbumThumbnailModel::ThumbMissingSource).toBool());
+  EXPECT_TRUE(
+      display.data(display.index(5), AlbumThumbnailModel::ThumbErrorText).toString().isEmpty());
+  EXPECT_TRUE(display.getItemAt(5).isEmpty());
+  EXPECT_FALSE(display.data(display.index(5), Qt::SizeHintRole).isValid());
+  EXPECT_FALSE(display.data(display.index(5), Qt::CheckStateRole).isValid());
+}
 }  // namespace
 }  // namespace alcedo::ui::test

@@ -426,4 +426,74 @@ TEST_F(AlbumStackPagingTest,
   EXPECT_THROW((void)browse->ReadAlbumQuery(0, {}, {}, model, read), std::invalid_argument);
 }
 }  // namespace
+TEST_F(AlbumStackPagingTest,
+       FiftyThousandPhotosWithLargeAndSmallStacksKeepEveryMetadataPageBounded) {
+  ASSERT_TRUE(Stacks().UngroupStack(stack).Changed());
+  std::vector<library_search_test::SyntheticImageSpec> specs;
+  for (int i = 0; i < 49994; ++i)
+    specs.push_back({.file_name_   = std::format(L"resource{}.jpg", i),
+                     .image_path_  = std::format(L"D:/resource/resource{}.jpg", i),
+                     .is_raw_file_ = false});
+  auto added = library_search_test::SyntheticLibraryBuilder(*project).AddFiles(specs);
+  std::vector<sl_element_id_t> all = files;
+  all.insert(all.end(), added.begin(), added.end());
+  std::sort(all.begin(), all.end());
+  ASSERT_EQ(all.size(), 50000);
+  const std::span<const sl_element_id_t> large(all.data(), 10000);
+  const auto large_stack = Stacks().CreateStack(large, all.front()).stack_id;
+  // Bulk performance fixture input for 20,000 independent two-photo stacks. Command
+  // integration tests separately exercise every organization write through its production owner.
+  const auto remaining   = std::format(
+      "SELECT id, (ROW_NUMBER() OVER (ORDER BY id)-1) AS n FROM Element WHERE type = 0 AND id > {}",
+      all[9999]);
+  Execute("INSERT INTO PhotoStack (stack_id, cover_file_id) WITH ordered AS (" + remaining +
+          ") SELECT printf('00000000-0000-4000-8000-%012d', (n//2)::BIGINT), MIN(id) FROM ordered "
+          "GROUP BY n//2");
+  Execute("INSERT INTO PhotoStackMember (file_id, stack_id, member_order) WITH ordered AS (" +
+          remaining +
+          ") SELECT id, printf('00000000-0000-4000-8000-%012d', (n//2)::BIGINT), n%2 FROM ordered");
+  project->GetStorage()->GetPhotoStackStore().ValidateAll();
+  const auto browse  = project->GetAlbumBrowseService();
+  const auto measure = [&](const char* name, auto operation) {
+    std::vector<double> times;
+    for (int i = 0; i < 11; ++i) {
+      const auto start = std::chrono::steady_clock::now();
+      operation();
+      const auto ms =
+          std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start)
+              .count();
+      if (i)
+        times.push_back(ms);
+      else
+        std::cout << name << " first_ms=" << ms << "\n";
+    }
+    std::sort(times.begin(), times.end());
+    std::cout << name << " median_ms=" << times[5] << " p95_ms=" << times[9] << "\n";
+  };
+  measure("50k mixed collapsed first page", [&] {
+    const auto result =
+        browse->ReadAlbumQuery(0, {}, {}, model, {.limit_ = 1000, .mode = AlbumReadMode::kDisplay});
+    EXPECT_EQ(result.unique_file_count_, 50000);
+    EXPECT_EQ(result.display_count, 20001);
+    ASSERT_EQ(result.display_rows.size(), 1000);
+    EXPECT_EQ(result.display_rows.front().stack_total, 10000);
+    EXPECT_TRUE(result.rows_.empty());
+    EXPECT_TRUE(result.occurrence_file_ids_.empty());
+  });
+  EXPECT_EQ(browse->ReadAlbumStackFragmentKeys(0, {}, {}, model).size(), 20001);
+  const AlbumStackFragmentKey large_key{0, AlbumGroupField::kNone, {}, large_stack};
+  measure("50k mixed large expanded deep page", [&] {
+    const auto result = browse->ReadAlbumQuery(0, {}, {}, model,
+                                               {.limit_             = 1000,
+                                                .mode               = AlbumReadMode::kDisplay,
+                                                .display_offset     = 9000,
+                                                .expanded_fragments = {large_key}});
+    EXPECT_EQ(result.display_count, 30000);
+    ASSERT_EQ(result.display_rows.size(), 1000);
+    EXPECT_EQ(result.display_rows.front().file_id, all[9000]);
+    EXPECT_EQ(result.display_rows.back().file_id, all[9999]);
+    EXPECT_TRUE(result.display_items.empty());
+    EXPECT_TRUE(result.rows_.empty());
+  });
+}
 }  // namespace alcedo

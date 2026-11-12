@@ -50,12 +50,12 @@ QVariant JustifiedLayoutModel::data(const QModelIndex& index, int role) const {
         return tile->height;
     }
   }
-  auto* model = thumbnailModel();
+  auto* model = sourceModel();
   return model ? model->data(model->index(source_row, 0), role) : QVariant{};
 }
 
 QHash<int, QByteArray> JustifiedLayoutModel::roleNames() const {
-  auto names = AlbumThumbnailModel::RoleNameTable();
+  auto names = source_ ? source_->roleNames() : AlbumThumbnailModel::RoleNameTable();
   names.insert(PhotoIndex, "photoIndex");
   names.insert(TileX, "tileX");
   names.insert(TileY, "tileY");
@@ -64,10 +64,10 @@ QHash<int, QByteArray> JustifiedLayoutModel::roleNames() const {
   return names;
 }
 
-auto JustifiedLayoutModel::thumbnailModel() const -> AlbumThumbnailModel* { return source_.data(); }
+auto JustifiedLayoutModel::sourceModel() const -> QAbstractListModel* { return source_.data(); }
 
 void JustifiedLayoutModel::setSource(QObject* source) {
-  auto* model = qobject_cast<AlbumThumbnailModel*>(source);
+  auto* model = qobject_cast<QAbstractListModel*>(source);
   if (model == source_.data()) {
     return;
   }
@@ -88,14 +88,15 @@ void JustifiedLayoutModel::setSource(QObject* source) {
                 &JustifiedLayoutModel::OnSourceRowsRemoved),
         connect(model, &QAbstractItemModel::dataChanged, this,
                 &JustifiedLayoutModel::OnSourceDataChanged),
-        connect(model, &AlbumThumbnailModel::totalCountChanged, this,
-                [this]() {
-                  ++tiles_revision_;
-                  emit tilesChanged();
-                }),
     };
   }
-  layout_.Reset(model ? AspectRatios(0, model->count() - 1) : std::vector<double>{});
+  if (auto* photos = qobject_cast<AlbumThumbnailModel*>(model))
+    source_connections_.push_back(
+        connect(photos, &AlbumThumbnailModel::totalCountChanged, this, [this] {
+          ++tiles_revision_;
+          emit tilesChanged();
+        }));
+  layout_.Reset(model ? AspectRatios(0, SourceCount() - 1) : std::vector<double>{});
   const auto wanted = WantedWindow();
   first_            = wanted.first;
   window_count_     = std::max(0, wanted.last - wanted.first + 1);
@@ -106,12 +107,18 @@ void JustifiedLayoutModel::setSource(QObject* source) {
   emit windowChanged();
 }
 
+int JustifiedLayoutModel::SourceCount() const {
+  if (const auto* display = qobject_cast<LibraryDisplayModel*>(source_.data()))
+    return static_cast<int>(display->LoadedEnd());
+  return source_ ? source_->rowCount() : 0;
+}
+
 auto JustifiedLayoutModel::AspectRatioAt(int source_row) const -> double {
-  auto* model = thumbnailModel();
-  if (!model || source_row < 0 || source_row >= model->count()) {
+  auto* model = sourceModel();
+  if (!model || source_row < 0 || source_row >= SourceCount()) {
     return 0.0;
   }
-  return model->items()[static_cast<size_t>(source_row)].aspect_ratio;
+  return model->data(model->index(source_row), AlbumThumbnailModel::AspectRatio).toDouble();
 }
 
 auto JustifiedLayoutModel::AspectRatios(int first, int last) const -> std::vector<double> {
@@ -222,11 +229,12 @@ void JustifiedLayoutModel::setOverscan(qreal value) {
 }
 
 auto JustifiedLayoutModel::contentHeight() const -> qreal {
-  auto* model = thumbnailModel();
+  auto* model = sourceModel();
   if (!model) {
     return 0.0;
   }
-  return layout_.EstimatedHeight(std::max(model->count(), static_cast<int>(model->totalCount())));
+  return layout_.EstimatedHeight(
+      std::max(model->rowCount(), model->property("totalCount").toInt()));
 }
 
 auto JustifiedLayoutModel::WantedWindow() const -> JustifiedRowLayout::IndexRange {
@@ -301,8 +309,8 @@ void JustifiedLayoutModel::UpdateWindow(bool tiles_changed) {
 }
 
 void JustifiedLayoutModel::OnSourceReset() {
-  auto* model = thumbnailModel();
-  layout_.Reset(model ? AspectRatios(0, model->count() - 1) : std::vector<double>{});
+  auto* model = sourceModel();
+  layout_.Reset(model ? AspectRatios(0, SourceCount() - 1) : std::vector<double>{});
   const auto wanted = WantedWindow();
   first_            = wanted.first;
   window_count_     = std::max(0, wanted.last - wanted.first + 1);
@@ -362,8 +370,18 @@ void JustifiedLayoutModel::OnSourceDataChanged(const QModelIndex& top_left,
   const int first         = top_left.row();
   const int last          = bottom_right.row();
   bool      tiles_changed = false;
+  // Display pages change within a model whose row count already includes unloaded rows.
+  // Grow only the scalar geometry buffer when its loaded extent advances.
+  const int loaded        = SourceCount();
+  if (loaded > layout_.ItemCount()) {
+    layout_.Append(AspectRatios(layout_.ItemCount(), loaded - 1));
+    tiles_changed = true;
+  } else if (loaded < layout_.ItemCount()) {
+    layout_.Remove(loaded, layout_.ItemCount() - loaded);
+    tiles_changed = true;
+  }
   if (roles.isEmpty() || roles.contains(AlbumThumbnailModel::AspectRatio)) {
-    for (int row = first; row <= last; ++row) {
+    for (int row = first; row <= std::min(last, loaded - 1); ++row) {
       tiles_changed = layout_.SetAspectRatio(row, AspectRatioAt(row)) || tiles_changed;
     }
   }

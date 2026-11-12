@@ -463,6 +463,12 @@ class ElementStore {
   /// Every matching File in the exact scoped fragment, including unloaded members. Cover
   /// first, then saved order. An absent valid key returns empty. Reads no metadata or writes.
   /// Worker-safe; invalid scope/group/type throws invalid_argument; SQL failure throws.
+  /// Read typed keys of every matching stack fragment, without photo metadata. Worker-safe.
+  auto ReadAlbumStackFragmentKeys(
+      sl_element_id_t folder_id, const std::optional<duckorm::SqlFragment>& filter,
+      const AlbumQueryOptions& options, const std::string& model,
+      const std::optional<SemanticQueryEmbedding>& relevance = std::nullopt) const
+      -> std::vector<AlbumStackFragmentKey>;
   auto ReadAlbumMatchingFragmentIds(
       sl_element_id_t folder_id, const std::optional<duckorm::SqlFragment>& extra_filter,
       const AlbumQueryOptions& options, const std::string& active_semantic_model_key,

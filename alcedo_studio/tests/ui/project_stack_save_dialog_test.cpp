@@ -33,7 +33,9 @@ TEST(ProjectStackSaveDialogTest, PendingStackSaveShowsRetryDiagnosticAndWholePro
   ASSERT_TRUE(save);
   EXPECT_TRUE(
       body->property("text").toString().contains("all changes since the last project save"));
-  EXPECT_TRUE(body->property("text").toString().contains("Package disk is full"));
+  auto* error = dialog->findChild<QObject*>("editorCloseStackSaveError");
+  ASSERT_TRUE(error);
+  EXPECT_EQ(error->property("text").toString(), "Package disk is full");
   EXPECT_EQ(save->property("text").toString(), "Retry Save");
   dialog->setProperty("pendingStackSave", false);
   EXPECT_EQ(save->property("text").toString(), "Save");

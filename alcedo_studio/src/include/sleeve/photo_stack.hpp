@@ -14,6 +14,15 @@ namespace alcedo {
 /// Direction in persisted member order, independent of Library filters.
 enum class PhotoStackMove { kEarlier, kLater };
 
+/// Read-only command availability, computed under a storage read transaction. No membership cache.
+struct PhotoStackActionOptions {
+  bool group   = false;
+  bool add     = false;
+  bool remove  = false;
+  bool earlier = false;
+  bool later   = false;
+};
+
 /// Committed change facts, owned by the caller. No membership cache or editable stack state.
 struct PhotoStackChange {
   std::string stack_id;  ///< Created, existing, or targeted stack; empty for bulk removal.

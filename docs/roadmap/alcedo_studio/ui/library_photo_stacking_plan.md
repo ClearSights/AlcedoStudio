@@ -2,17 +2,19 @@
 
 Date: 2026-11-11
 
-Status: PS1 through PS6, including all PS2 and PS5 sub-phases, complete (2026-11-11).
-PS7, PS8, and PS9 remain planned. The latest Windows Release verification has 157 passes,
-no skips, and no failures. See the PS6 completion record. The prior PS5A run had
-148 passes and five skips; its evidence remains under PS5A.2. The earlier PR1 verification had 113 distinct passes, three
-skips, and no unresolved failures. Its records remain under PS1, PS2A, and PS2B.
+Status: PS1 through PS9, including all PS2 and PS5 sub-phases, complete (2026-11-12).
+PS7 through PS9 are implemented on `feature/library-photo-stacking-PR5`, based on PR4.
+Windows Release targeted verification has 344 passes, 15 skips, and one existing private-fixture
+failure linked to #826. The final six-suite recheck passed 90/90. Native UI review is complete.
+The final EXE linked and runs; its post-build PowerShell icon check still exits -1 without output.
+See the PS9 completion record for this local build limitation and the complete evidence.
+Prior-phase verification records remain under their respective phase headings.
 
 Feature request: [#486](https://github.com/zidage/AlcedoStudio/issues/486), stacking section only.
 
 Parent plan: none. This file is the master plan and the detailed phase plan.
 
-Last source review: 2026-11-11.
+Last source review: 2026-11-12.
 
 Source audit: upstream `main` at `e59529c66d2d0bfdc53c5c5cf2d88e6e68d9138d`.
 A fresh upstream fetch confirmed this revision. Local `main` and the planning branch
@@ -774,9 +776,9 @@ Do not place the complete implementation in one PR if its added diff can exceed 
 | PS5B | Command controller, task policy, and save outcomes | PS2A, PS2B, PS5A | 700-1200 | Keep command task behavior independent from close decisions. | complete |
 | PS5C | Pending stack saves and application/project close | PS5B | 900-1500 | Add the lifecycle behavior that audited main does not provide. | complete |
 | PS6 | Selection, bulk actions, and editor navigation | PS5C | 1000-1600 | Verify target semantics through existing callers. | complete |
-| PS7 | Classic/grid and grouped QML presentation | PS6 | 1050-1700 | Keep the first visual integration below the line limit. | planned |
-| PS8 | Justified rows, localization, and complete visual specification | PS7 | 900-1550 | The second layout has separate geometry and anchor behavior. | planned |
-| PS9 | Integrated persistence, resource, and performance acceptance | PS8 | 800-1400 | Keep final evidence separate from feature construction. | planned |
+| PS7 | Classic/grid and grouped QML presentation | PS6 | 1050-1700 | Keep the first visual integration below the line limit. | complete |
+| PS8 | Justified rows, localization, and complete visual specification | PS7 | 900-1550 | The second layout has separate geometry and anchor behavior. | complete |
+| PS9 | Integrated persistence, resource, and performance acceptance | PS8 | 800-1400 | Keep final evidence separate from feature construction. | complete |
 
 No phase is complete because a type compiles or a constructor succeeds.
 PS1 through PS6, including all PS2 and PS5 sub-phases, must not expose an incomplete stack feature
@@ -2350,10 +2352,81 @@ Group-header disclosure and stack disclosure remain independent.
 
 **Build and run.** V7: alcedo_main, LibraryDisplayModelTest, PhotoStackControllerTest,
 and LibraryStackActionsTest. Run focused declarative tests only if they are reliable on the host.
-**Exit criteria.** [ ] Real application matches Section 2.7.
-[ ] Every action reaches its intended C++ owner. [ ] QML and new tokens are registered and documented.
+**Exit criteria.** [x] Real application matches Section 2.7.
+[x] Every action reaches its intended C++ owner. [x] QML and new tokens are registered and documented.
 **Expected diff.** 1050-1700 lines.
-**Completion record.** Not started. Fill the Section 12 template here after implementation.
+#### PS7 completion record (2026-11-12)
+
+**Status:** complete. Classic and grouped cards use the accepted display owner.
+
+**Implemented behavior.** Production `main` enables stack display. Generic application-host
+callers retain their existing photo-mode default. `PhotoStackDisclosure.qml` reads only the
+opaque occurrence key and scalar counts. It reserves a 24-pixel pointer and keyboard target,
+keeps count roles separate, and describes temporary covers. Group disclosure stays independent.
+`PhotoStackActions.qml` owns confirmation presentation; C++ owns explicit targets, availability,
+ordering, mutation, and package save. Whole-stack selection always asks for confirmation;
+ungroup asks when the current fragment excludes members. Saved-cover and saved-order tooltips
+state their project scope. Command and package errors use AlertBadge and the project Retry Save API.
+
+**Primary success call chains:**
+
+```text
+Classic/grouped disclosure -> LibraryModule::ToggleStack -> LibraryDisplayModel expansion choice
+  -> query worker -> bounded occurrence publication -> same File selection and restored real anchor
+Context menu -> PhotoStackController::PrepareMenu / RunAction -> PhotoStackService
+  -> PhotoStackStore transaction -> package save -> content refresh and task completion
+```
+
+**Primary failure call chains:**
+
+```text
+Invalid command -> owner refusal or storage rollback -> same saved rows and visible command error
+Committed change + package failure -> retained working change -> AlertBadge -> RetryStackSave
+  -> package saved without repeating the mutation -> pending-save and error state clear
+```
+
+**Executed evidence.** `DisclosureTogglesOnlyTheClickedFragmentAndKeepsPhotoSelection`,
+`TemporaryCoverOpensItsOwnFileAndReportsMatchingCounts`, and
+`GroupHeaderCollapseDoesNotChangeStackExpansionChoices` use production owners.
+`CountAndDisclosureRemainAccessibleAtEveryClassicZoomLevel` loads the production component
+with QApplication. The queued context-menu test exercises a second click and changed selection
+while the first worker read is pending. Storage tests verify complete-stack no-op availability,
+saved neighbors, explicit add/remove targets, and ordering.
+
+**Real application review.** Opened the compiled Windows Release EXE and a temporary package
+made by importing two ARW and two DNG repository fixtures. Reviewed a 1214-by-793 window and the
+initial wide window. Native pointer disclosure, Space, and Enter expanded/collapsed without
+selecting or opening photos; the export selection stayed zero. Capture-date groups showed
+fragments of 2, 1, and 1 with exact accessible query/total counts. Expanding the two-photo
+fragment, collapsing its group header, and reopening the header retained stack expansion.
+Camera and label groups each showed two fragments of two. Context-menu disabled states and
+the four-photo whole-stack confirmation were visible; confirmation selected exactly four.
+All eight zoom values (0 through 7), including caption-free cards, retained disclosure/counts.
+A real saved-cover change with a deliberately blocked temporary package file displayed the
+Chinese AlertBadge and Retry Save button. Removing the test blocker and pressing Retry Save
+cleared the error and preserved the changed cover. The final linked application also passed
+native Tab navigation from the first to the second disclosure, followed by Space to collapse
+four cards to one with zero selected export targets. Only the temporary fixture package was edited.
+
+**Review corrections.** Stack creation must retain a loaded representative even when another
+ordinary card survives. Retention now matches exact occurrences and the same File in its typed
+group, chooses at most three bounded windows nearest the old viewport, and moves minimal
+result items. It does not retain all metadata between distant old cards. Unloaded rows return
+explicit loading roles and invalid values for unsupported Qt roles; the latter corrected an
+observed Qt model-checker failure during page eviction. The regression tests include stack
+creation, dissolution of a large stack, viewport anchoring, and eviction under the model checker.
+Two existing import/delete caller tests exposed unnecessary page realignment. Ordinary-photo
+pages now keep their shifted offsets when their retained span fits one page; stack pages and
+larger spans use bounded aligned windows. Overlaps merge without increasing the selected
+metadata bound. The existing caller assertions for offsets, real anchors, and unloaded gaps
+remain unchanged. `MenuActionNamesApplyEverySavedOrganizationCommandToExplicitFiles` also
+executes group, add, both moves, set-cover, remove, and ungroup through the actual menu entry
+point and asserts persisted order, cover repair, and final ungrouped cards.
+
+**Scope and ownership.** No member list is cached in QML, no per-card SQL is added, and no render
+quality policy changes. Shared control tokens and input boundaries are documented in DESIGN.md
+and `docs/VI/README.md`. Final targeted verification totals are recorded under PS9.
+
 
 ### PS8 - Justified layout, localization, and complete visual delivery
 
@@ -2388,10 +2461,70 @@ Do not select a different cover because thumbnail loading fails.
 - Manual: classic, justified, grouped classic; both themes; English and Chinese; narrow view; reduceMotion.
 
 **Build and run.** V8: alcedo_main, LibraryStackLayoutTest, and AlbumBackendI18nTest.
-**Exit criteria.** [ ] Every Library layout implements the same matching policy.
-[ ] Every new string translates. [ ] Manual review records actual states and unresolved defects honestly.
+**Exit criteria.** [x] Every Library layout implements the same matching policy.
+[x] Every new string translates. [x] Manual review records actual states and unresolved defects honestly.
 **Expected diff.** 900-1550 lines.
-**Completion record.** Not started. Fill the Section 12 template here after implementation.
+#### PS8 completion record (2026-11-12)
+
+**Status:** complete. Justified tiles use the same display identities and policy.
+
+**Implemented behavior.** `JustifiedLayoutModel` accepts either the display model or the legacy
+photo model and reads the displayed File's oriented aspect ratio through model roles. Its
+viewport contains scalar geometry; photo metadata stays in `AlbumThumbnailModel`. Appended or
+sparse retained windows update geometry without loading intervening metadata. QML preserves
+opaque typed keys and actual delegate rectangles through expansion, cover changes, zoom, and
+language changes. The same shared disclosure and context actions serve justified tiles.
+English and Chinese catalogs include controls, confirmations, tooltips, errors, pending-save
+messages, and close refusal text. No new visual token or icon asset was required.
+
+**Primary success call chain:**
+
+```text
+Accepted display occurrence -> JustifiedLayoutModel aspect-ratio roles and actual tile rectangles
+  -> JustifiedThumbnailTile / shared disclosure -> LibraryModule -> accepted publication
+  -> restore occurrence anchor and disclosure focus
+```
+
+**Primary failure call chain:**
+
+```text
+Unloaded occurrence -> explicit loading values and zero File ID -> no photo action or pin
+Query failure -> keep accepted display -> owner error and Retry
+Package failure -> keep committed organization -> shared AlertBadge and project Retry Save
+```
+
+**Executed evidence.** `JustifiedTemporaryCoverChangeUsesItsAspectRatioAndKeepsFragmentIdentity`,
+`JustifiedExpansionPreservesTopFragmentAndShowsOnlyMatchingMembers`,
+`AppendedDisplayPageAddsJustifiedTilesWithoutChangingTheAcceptedCount`, and
+`ExpansionAboveViewportKeepsTheActualTopTileAndBoundedMetadataWindows` assert exact geometry,
+identity, member IDs, and the metadata bound. The viewport fixture has a following tile so the
+anchor is not constrained by the normal bottom scroll limit.
+`LanguageChangeKeepsTypedFragmentKeysAndSelection` checks owner state;
+`ChineseTranslationUpdatesAccessibleCountsWithoutChangingOccurrenceIdentity` loads the compiled
+catalog and checks translated control text with the same key and expansion.
+
+**Real application review.** The same imported RAW package was reviewed in classic, justified,
+and grouped classic layouts, Alcedo and Classic themes, and English and Simplified Chinese.
+The narrow justified view kept oriented photos, visible compact counts, and disclosure targets;
+collapse reduced four tiles to the saved-cover tile. Grouped layouts retained independent
+stack and header state. Chinese accessible text reported matching-here, query, total, and
+temporary-cover status. Restored Follow System language, Alcedo theme, classic layout, and the
+original zoom after review. `reduceMotion` has no exposed settings control on this build;
+native review used its existing value. The declarative zoom test exercises both reduceMotion
+values through AppTheme and restores the original value. The control uses no animation; existing layout
+animation duration remains zero when that property is enabled. This native coverage limit
+is recorded rather than claiming a configuration that was not exercised.
+
+**Review correction.** Native review found a stale hidden-selection count after expanding a
+fragment in place. Both replacement and in-place publication now accept the new minimal query
+input, including expansion choices, before later selection or paging reads. No project service
+is retained in that accepted input. `ExpandedFragmentUpdatesHiddenSelectionAndSubsequentDisplayReads`
+checks zero hidden selections after expansion, all four explicit display IDs from a subsequent
+ordered read, another whole-stack selection, and the restored hidden count after collapse.
+The rebuilt native application showed four selected photos, three hidden while collapsed,
+and no hidden-selection message after expansion, with four export targets retained.
+Final targeted verification totals are recorded under PS9.
+
 
 ### PS9 - Integrated acceptance and resource evidence
 
@@ -2427,11 +2560,297 @@ Do not compute expected covers by calling the production fragment helper.
 - `UnstackedLibraryReadsStayWithinTheMeasuredQueryCostTarget`.
 
 **Build and run.** V9: the proposed integration target and the directly affected suites in Section 10.
-**Exit criteria.** [ ] Every acceptance row in Section 9 has evidence.
-[ ] Targeted caller suites pass or have linked existing issues. [ ] No layout silently ignores stacks.
-[ ] No phase is marked complete with missing required product behavior.
+**Exit criteria.** [x] Every acceptance row in Section 9 has evidence.
+[x] Targeted caller suites pass or have linked existing issues. [x] No layout silently ignores stacks.
+[x] No phase is marked complete with missing required product behavior.
 **Expected diff.** 800-1400 lines.
-**Completion record.** Not started. Fill the Section 12 template here after implementation.
+#### PS9 completion record (2026-11-12)
+
+**Status:** complete. Integration and resource acceptance use production owners. The local
+application post-build check limitation is recorded under Artifacts; required product behavior
+has executed owner and native UI evidence.
+
+**Primary success call chain:**
+
+```text
+ApplicationModuleHost -> real import / public stack command / filter and selection owners
+  -> query worker and application services -> DuckDB transactions -> package save
+  -> close and reopen -> exact saved membership, cover, and photo metadata
+```
+
+**Primary failure call chain:**
+
+```text
+Invalid transaction -> rollback -> unchanged saved membership
+Package write failure after commit -> retained changed order and pending save
+  -> explicit retry -> saved package -> reopen without replaying the mutation
+```
+
+**Executed integration assertions.** `LibraryPhotoStackIntegrationTest` adds:
+
+| Case | Assertion |
+| --- | --- |
+| `FilterGroupSaveAndReopenPreserveSavedCoverAndExactStackMembership` | Independent camera/set evaluator; filtered expansion and reopened saved cover/order. |
+| `TemporaryCoverAndExpansionNeverWriteStackRows` | Same package bytes and persisted cover/member rows after read-only presentation changes. |
+| `DateCameraLensRatingMarksLabelsAndSemanticSearchUseIndividualMatchingPhotos` | Production filter, stats, marks, label, storage, and query owners; deterministic text-vector provider only. |
+| `MultipleGroupFragmentsSharePhotoSelectionWithoutDuplicatingActions` | Unique export targets and one rating change for each explicit selected File. |
+| `StackCommandsAndDeletionLeaveStorageInvariantsValidAfterEveryOperation` | Create/add/remove/reorder/cover/ungroup, album unlink, another import, deletion, and saved-store validation. |
+| `InvalidCommandRollsBackAndPackageFailureRetainsCommittedOrderUntilRetry` | Defined failure, retained committed state, exact retry, and saved package. |
+| `LargeCollapsedStackKeepsMetadataPagesAndThumbnailPinsBounded` | 10,000 members; one representative's metadata while collapsed, bounded deep page, and released pins. |
+| `ImportedRawPhotosCanBeGroupedSavedAndReopened` | Real import of two ARW and two DNG fixtures, public group command, package save and reopen. |
+
+Large storage fixtures use bulk synthetic File insertion and required persisted image roots.
+Expected sets and covers come from fixture inputs, not the production fragment evaluator.
+The real RAW import case also supplied the temporary package used for native UI review.
+
+**Measured resource and performance results.** Windows Release, MSVC 14.44, Qt 6.12.0;
+existing `build/release`, same machine and 10,000-photo no-stack fixture as PS3.
+Each row records first read, median, and p95 in milliseconds; warm samples number ten.
+These values are from the initial integrated Release profiling run. The final targeted run
+also executes the no-stack cost assertion with the 10,000-photo fixture.
+
+| Fixture / operation | First | Median | p95 |
+| --- | ---: | ---: | ---: |
+| No stack, camera initial display | 56.251 | 29.326 | 51.302 |
+| No stack, camera deep display | 33.432 | 18.110 | 22.658 |
+| No stack, label initial display | 64.479 | 41.539 | 54.866 |
+| No stack, label deep display | 38.589 | 27.855 | 37.575 |
+| No stack, edit-day initial display | 58.061 | 39.541 | 47.755 |
+| No stack, edit-day deep display | 29.305 | 21.514 | 24.477 |
+| One 10,000-member stack, collapsed first page | 69.582 | 51.868 | 56.173 |
+| One 10,000-member stack, expanded page at 9000 | 60.595 | 56.936 | 69.823 |
+| One 10,000-member stack, collapsed reveal | 34.743 | 35.074 | 44.852 |
+| One 10,000-member stack, matching IDs | 32.859 | 33.610 | 43.129 |
+| 50,000 photos: one 10,000-member stack plus 20,000 pairs, collapsed first page | 253.023 | 259.034 | 325.684 |
+| Same 50,000-photo fixture, expanded deep page | 296.251 | 317.652 | 354.693 |
+
+The no-stack medians also stay within 25% of the historical PS3 medians. The largest page
+comparison is label-deep, 27.855 ms versus 24.873 ms. An initial measurement exceeded the
+cost target; the query now checks the exact no-membership precondition within its transaction
+and uses the existing photo query or an equivalent unstacked projection. This is the exact
+same result, not a substitute behavior after failure. Stack validation and errors remain
+explicit. `UnstackedLibraryReadsStayWithinTheMeasuredQueryCostTarget` asserts the ratio against
+photo-mode reads of the same fixture in the same run.
+
+Every display page returns at most 1,000 photo rows; retained GUI metadata stays within three
+bounded windows. Deep expansion does not load all earlier members. Model-checker eviction and
+integration pin assertions verify release. No source decode or SQL was added to per-card GUI
+bindings. The existing processing resolution and rendering policy are unchanged.
+
+**Verification commands and totals.** Final evidence covers **360 distinct cases: 344 passed,
+15 skipped, and one existing private-fixture failure linked to #826**. The initial broad run
+selected 359 cases in 583.14 seconds. It exposed two retained-page regressions, which were
+corrected without changing their assertions. The final six-suite recheck passed **90/90** in
+256.77 seconds and includes the additional complete menu-entry case. The three immediate
+regression checks also passed 3/3. Counts below use the latest result of each case; repeated
+runs are not added to the distinct total.
+
+| Target | Passed | Skipped | Existing fixture failure |
+| --- | ---: | ---: | ---: |
+| `AlbumBackendBackgroundTaskTest` | 18 | 0 | 0 |
+| `AlbumBackendFolderTest` | 16 | 0 | 0 |
+| `AlbumBackendI18nTest` | 2 | 0 | 0 |
+| `AlbumBackendImageDeleteTest` | 9 | 3 | 0 |
+| `AlbumBackendImportTest` | 15 | 12 | 1 |
+| `AlbumBackendInteractionPolicyTest` | 15 | 0 | 0 |
+| `AlbumBackendLibraryMarksTest` | 6 | 0 | 0 |
+| `AlbumBackendLibraryQueryTest` | 31 | 0 | 0 |
+| `AlbumBackendRatingTest` | 10 | 0 | 0 |
+| `AlbumQueryTest` | 1 | 0 | 0 |
+| `AlbumSectionModelTest` | 12 | 0 | 0 |
+| `AlbumStackPagingTest` | 13 | 0 | 0 |
+| `AlbumStackQueryTest` | 10 | 0 | 0 |
+| `ApplicationCloseCoordinatorTest` | 6 | 0 | 0 |
+| `ApplicationModuleHostLifecycleTest` | 2 | 0 | 0 |
+| `AutomationLibraryCommandsTest` | 14 | 0 | 0 |
+| `JustifiedLayoutTest` | 22 | 0 | 0 |
+| `LibraryDisplayModelTest` | 18 | 0 | 0 |
+| `LibraryMutationOperationsTest` | 5 | 0 | 0 |
+| `LibraryPhotoStackIntegrationTest` | 8 | 0 | 0 |
+| `LibrarySelectionTest` | 8 | 0 | 0 |
+| `LibraryStackActionsTest` | 14 | 0 | 0 |
+| `LibraryStackLayoutTest` | 10 | 0 | 0 |
+| `PhotoStackControllerTest` | 9 | 0 | 0 |
+| `PhotoStackDisclosureTest` | 2 | 0 | 0 |
+| `PhotoStackLifecycleTest` | 20 | 0 | 0 |
+| `PhotoStackStoreTest` | 16 | 0 | 0 |
+| `ProjectCompatibilityTest` | 6 | 0 | 0 |
+| `ProjectModuleTest` | 4 | 0 | 0 |
+| `ProjectStackSaveDialogTest` | 1 | 0 | 0 |
+| `ProjectStackSaveTest` | 6 | 0 | 0 |
+| `SimplifiedChineseCatalogTest` | 10 | 0 | 0 |
+| `UppercaseSignalQmlHandlersTest` | 5 | 0 | 0 |
+
+All tests use explicit CTest name prefixes, `--test-dir build/release -j 1
+--output-on-failure`, the Qt/vcpkg/DuckDB runtime PATH, and short TEMP/TMP paths under
+`build/tmp/`. All selected targets were built and discovered. No full-suite run was authorized
+or performed. WorkspaceShellTest synthetic focus/pointer coverage is excluded per AGENTS.md;
+native application checks are recorded under PS7 and PS8. macOS and sanitizer builds were not
+run on this Windows host.
+
+Skipped cases (absent private RAW/JPEG/TIFF folders):
+
+- `AlbumBackendImageDeleteTest.DeleteTests.DeleteImages_BestEffortPartialFailure`.
+- `AlbumBackendImageDeleteTest.DeleteTests.DeleteImages_RemovesImageAndRelatedRows`.
+- `AlbumBackendImageDeleteTest.DeleteTests.DeleteTargetsRejectsUnacknowledgedImportAtDirectEntryPoint`.
+- `AlbumBackendImportTest.ImportTests.CancelImportShowsStoppingStateUntilTheImportEnds`.
+- `AlbumBackendImportTest.ImportTests.ImportIntoSubfolder_PersistsAcrossFreshProjectLoad`.
+- `AlbumBackendImportTest.ImportTests.Import_BatchDng_Succeeds`.
+- `AlbumBackendImportTest.ImportTests.Import_CancelImmediate_NoCrash`.
+- `AlbumBackendImportTest.ImportTests.Import_DuplicateFiles_Deduplication`.
+- `AlbumBackendImportTest.ImportTests.Import_JpegOnly_NoCrash`.
+- `AlbumBackendImportTest.ImportTests.Import_MixedRawAndJpeg_NoCrash`.
+- `AlbumBackendImportTest.ImportTests.Import_NoProjectLoaded_NoCrash`.
+- `AlbumBackendImportTest.ImportTests.Import_SingleRawFile_Succeeds`.
+- `AlbumBackendImportTest.ImportTests.Import_TiffOnly_NoCrash`.
+- `AlbumBackendImportTest.ImportTests.SearchPreviewThumbnail_LoadsForPagedVisibleResult`.
+- `AlbumBackendImportTest.ImportTests.SearchPreview_ReturnsPagedResultsAndTotalCount`.
+
+**Reproduction commands (PowerShell, repository root):**
+
+```powershell
+$env:VCVARS_USER_VERSION = '14.44'
+$env:TEMP = Join-Path $PWD 'build/tmp/library_photo_stacking_ui/runtime'
+$env:TMP = $env:TEMP
+$env:PATH = "C:/Qt/6.12.0/msvc2022_64/bin;$PWD/build/dependencies/duckdb-v1.5.6;$PWD/vcpkg/installed/x64-windows/bin;$PWD/vcpkg/installed/x64-windows/debug/bin;$env:PATH"
+$testTargets = @(
+  'AlbumBackendBackgroundTaskTest',
+  'AlbumBackendFolderTest',
+  'AlbumBackendI18nTest',
+  'AlbumBackendImageDeleteTest',
+  'AlbumBackendImportTest',
+  'AlbumBackendInteractionPolicyTest',
+  'AlbumBackendLibraryMarksTest',
+  'AlbumBackendLibraryQueryTest',
+  'AlbumBackendRatingTest',
+  'AlbumSectionModelTest',
+  'AlbumStackPagingTest',
+  'AlbumStackQueryTest',
+  'ApplicationCloseCoordinatorTest',
+  'ApplicationModuleHostLifecycleTest',
+  'AutomationLibraryCommandsTest',
+  'JustifiedLayoutTest',
+  'LibraryDisplayModelTest',
+  'LibraryMutationOperationsTest',
+  'LibraryPhotoStackIntegrationTest',
+  'LibrarySelectionTest',
+  'LibraryStackActionsTest',
+  'LibraryStackLayoutTest',
+  'PhotoStackControllerTest',
+  'PhotoStackDisclosureTest',
+  'PhotoStackLifecycleTest',
+  'PhotoStackStoreTest',
+  'ProjectCompatibilityTest',
+  'ProjectModuleTest',
+  'ProjectStackSaveDialogTest',
+  'ProjectStackSaveTest',
+  'SimplifiedChineseCatalogTest',
+  'UppercaseSignalQmlHandlersTest'
+)
+cmd /c scripts\msvc_env.cmd --build --preset win_release --target $testTargets --parallel 4
+$testPattern = '^(' + ($testTargets -join '|') + ')\.|^AlbumQueryTest\.AlbumQueryTest\.UnstackedLibraryReadsStayWithinTheMeasuredQueryCostTarget$'
+$env:ALCEDO_ALBUM_QUERY_PROFILE = '10000'
+ctest --test-dir build/release -N -R $testPattern
+ctest --test-dir build/release -R $testPattern -j 1 --output-on-failure
+# Focused verification after the retained-page correction:
+cmd /c scripts\msvc_env.cmd --build --preset win_release --target LibraryDisplayModelTest AlbumBackendLibraryQueryTest LibraryStackLayoutTest LibraryPhotoStackIntegrationTest PhotoStackControllerTest LibraryStackActionsTest --parallel 4
+ctest --test-dir build/release -R '^(LibraryDisplayModelTest|AlbumBackendLibraryQueryTest|LibraryStackLayoutTest|LibraryPhotoStackIntegrationTest|PhotoStackControllerTest|LibraryStackActionsTest)\.' -j 1 --output-on-failure
+cmd /c scripts\msvc_env.cmd --build --preset win_release --target alcedo_main --parallel 4
+```
+
+**Existing fixture limitation.** The targeted import caller case
+`ImportTests.FolderScanListsNestedFilesAndFolderImportTakesOnlySelectedTypes` fails because
+`tests/resources/sample_images/raw/airplane/` is absent. It collects zero RAW files, then
+expects `ImportRunning()` and a nonempty phase list. The test file has the same Git blob as
+PR4 (`46d219cbdc3b9052b70d443eb85da770edeefc8f`); this change does not edit it or its import
+implementation. The missing private airplane data is already tracked by
+[#826](https://github.com/zidage/AlcedoStudio/issues/826). Related fixture-dependent import and
+deletion cases skip on this checkout. No duplicate issue or automated follow-up comment was
+posted: CONTRIBUTING.md requires later issue communication to come from a human. The new
+RAW import/save/reopen integration uses four committed CI files and runs independently of
+those absent private fixtures.
+
+**Maintainability review.** The new menu component owns confirmation, the shared disclosure
+owns its input/accessible text, the display model owns occurrence pages/expansion, the query
+worker owns asynchronous reads, and the stack store owns validation and transactions. Existing
+large files keep their established responsibilities: LibraryModule orchestrates accepted
+query publication; ThumbnailGridView and AlbumSectionView own separate flat/grouped geometry;
+ElementStore owns query entry points; catalogs, build manifests, and DESIGN.md remain centralized
+registries. No method-only file split or parallel membership/photo-state cache was introduced.
+New focused test files stay below 600 lines. Public owner APIs document thread/lifetime and
+failure behavior. This review does not claim to decompose pre-existing large UI modules.
+
+**Changed-file size review.** Final source, test, and VI counts; roadmap records are excluded.
+Existing files over 1,000 lines are assessed by responsibility above.
+
+| File | Total lines | Added | Deleted |
+| --- | ---: | ---: | ---: |
+| `alcedo_studio/src/app/album_browse_service.cpp` | 599 | 10 | 0 |
+| `alcedo_studio/src/app/photo_stack_service.cpp` | 65 | 11 | 0 |
+| `alcedo_studio/src/include/app/album_browse_service.hpp` | 221 | 6 | 0 |
+| `alcedo_studio/src/include/app/photo_stack_service.hpp` | 55 | 5 | 0 |
+| `alcedo_studio/src/include/sleeve/photo_stack.hpp` | 36 | 9 | 0 |
+| `alcedo_studio/src/include/storage/store/sleeve/album_stack_query.hpp` | 62 | 12 | 0 |
+| `alcedo_studio/src/include/storage/store/sleeve/element_store.hpp` | 487 | 6 | 0 |
+| `alcedo_studio/src/include/storage/store/sleeve/photo_stack_store.hpp` | 70 | 5 | 0 |
+| `alcedo_studio/src/include/ui/alcedo_main/album_backend/application_module_host.hpp` | 284 | 1 | 0 |
+| `alcedo_studio/src/include/ui/alcedo_main/album_backend/interaction_policy_controller.hpp` | 182 | 4 | 1 |
+| `alcedo_studio/src/include/ui/alcedo_main/album_backend/justified_layout_model.hpp` | 185 | 8 | 5 |
+| `alcedo_studio/src/include/ui/alcedo_main/album_backend/library_display_model.hpp` | 116 | 22 | 2 |
+| `alcedo_studio/src/include/ui/alcedo_main/album_backend/library_module.hpp` | 524 | 16 | 0 |
+| `alcedo_studio/src/include/ui/alcedo_main/album_backend/photo_stack_controller.hpp` | 83 | 19 | 0 |
+| `alcedo_studio/src/storage/store/sleeve/album_stack_query.cpp` | 441 | 96 | 15 |
+| `alcedo_studio/src/storage/store/sleeve/element_store.cpp` | 1445 | 30 | 0 |
+| `alcedo_studio/src/storage/store/sleeve/photo_stack_store.cpp` | 519 | 53 | 0 |
+| `alcedo_studio/src/ui/alcedo_main/CMakeLists.txt` | 1295 | 2 | 0 |
+| `alcedo_studio/src/ui/alcedo_main/DESIGN.md` | 1523 | 29 | 1 |
+| `alcedo_studio/src/ui/alcedo_main/album_backend/justified_layout_model.cpp` | 433 | 36 | 18 |
+| `alcedo_studio/src/ui/alcedo_main/album_backend/library_display_model.cpp` | 433 | 157 | 17 |
+| `alcedo_studio/src/ui/alcedo_main/album_backend/library_module.cpp` | 1924 | 99 | 15 |
+| `alcedo_studio/src/ui/alcedo_main/album_backend/photo_stack_controller.cpp` | 217 | 96 | 4 |
+| `alcedo_studio/src/ui/alcedo_main/application_module_qml_types.cpp` | 79 | 6 | 0 |
+| `alcedo_studio/src/ui/alcedo_main/i18n/alcedo_main_en.ts` | 6884 | 65 | 1 |
+| `alcedo_studio/src/ui/alcedo_main/i18n/alcedo_main_zh_CN.ts` | 9368 | 64 | 0 |
+| `alcedo_studio/src/ui/alcedo_main/main.cpp` | 441 | 1 | 0 |
+| `alcedo_studio/src/ui/alcedo_main/qml/AlbumSectionView.qml` | 1484 | 54 | 10 |
+| `alcedo_studio/src/ui/alcedo_main/qml/AppDialogs.qml` | 423 | 11 | 2 |
+| `alcedo_studio/src/ui/alcedo_main/qml/EditorCloseConfirmDialog.qml` | 173 | 6 | 1 |
+| `alcedo_studio/src/ui/alcedo_main/qml/ImageActionsController.qml` | 714 | 3 | 0 |
+| `alcedo_studio/src/ui/alcedo_main/qml/ImageContextMenu.qml` | 250 | 2 | 0 |
+| `alcedo_studio/src/ui/alcedo_main/qml/JustifiedThumbnailTile.qml` | 399 | 22 | 0 |
+| `alcedo_studio/src/ui/alcedo_main/qml/LibraryWorkspace.qml` | 762 | 37 | 10 |
+| `alcedo_studio/src/ui/alcedo_main/qml/PhotoStackActions.qml` | 96 | 96 | 0 |
+| `alcedo_studio/src/ui/alcedo_main/qml/PhotoStackDisclosure.qml` | 115 | 115 | 0 |
+| `alcedo_studio/src/ui/alcedo_main/qml/ThumbnailGridView.qml` | 2181 | 109 | 35 |
+| `alcedo_studio/tests/app/album_query_test.cpp` | 1888 | 29 | 1 |
+| `alcedo_studio/tests/app/album_stack_paging_test.cpp` | 499 | 70 | 0 |
+| `alcedo_studio/tests/app/photo_stack_store_test.cpp` | 494 | 22 | 0 |
+| `alcedo_studio/tests/ui/CMakeLists.txt` | 3174 | 17 | 0 |
+| `alcedo_studio/tests/ui/library_display_model_test.cpp` | 215 | 51 | 0 |
+| `alcedo_studio/tests/ui/library_photo_stack_integration_test.cpp` | 464 | 464 | 0 |
+| `alcedo_studio/tests/ui/library_stack_layout_test.cpp` | 312 | 312 | 0 |
+| `alcedo_studio/tests/ui/photo_stack_controller_test.cpp` | 215 | 79 | 0 |
+| `alcedo_studio/tests/ui/photo_stack_disclosure_test.cpp` | 94 | 94 | 0 |
+| `alcedo_studio/tests/ui/project_stack_save_dialog_test.cpp` | 46 | 3 | 1 |
+| `docs/VI/README.md` | 688 | 18 | 0 |
+
+**Artifacts and local build limitation.** Final GUI executable is
+`build/release/alcedo_studio/src/alcedo_main.exe` (55,129,088 bytes, linked 2026-11-12 at
+02:29:27 local time). Native UI verification exercised the same final production sources.
+The existing `scripts/verify_windows_exe_icon.ps1` compares the EXE and ICO; the user allowed
+this repository check after earlier antivirus blocks. A prior direct check and application
+build passed all six icon images. After the final retained-page correction, both the build
+hook and its exact absolute-path direct invocation returned -1 without verifier output.
+The final application-only retry linked successfully, then failed at post-build.bat line 5
+with the same result. The user reported no antivirus alert. No matching Windows PowerShell
+startup or Application crash event was found. The cause remains unconfirmed, and this record
+does not claim a successful final post-build step. Further verifier attempts are stopped.
+No antivirus settings, interpreter, or build checks were changed to avoid the failure.
+The completed sample package is available at `build/review/library_photo_stacks_review.alcd`;
+open it from this Release EXE because the machine's file association can select another build.
+Transient test packages, logs, and debugger output under
+`build/tmp/library_photo_stacking_ui/` are removed after evidence is recorded.
+
 
 ## 9. Cross-phase acceptance matrix
 

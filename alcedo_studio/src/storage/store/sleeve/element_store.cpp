@@ -1031,6 +1031,24 @@ auto ElementStore::ReadAlbumQuery(
   album_stack_query::ValidateExpansion(folder_id, options, read.expanded_fragments);
   return WithAlbumMatchSet(database_, folder_id, extra_filter, options, semantic_relevance,
                            [&](duckorm::Connection connection, bool relevance) {
+                             // With no saved memberships, each photo is exactly one display
+                             // occurrence. Use the existing indexed photo ordering under this
+                             // same read transaction; full identity reads retain their SQL path.
+                             if (read.mode == AlbumReadMode::kDisplay && !read.read_display_items &&
+                                 !album_stack_query::HasMemberships(connection)) {
+                               const AlbumQueryRead photos{
+                                   .offset_                   = read.display_offset,
+                                   .limit_                    = read.limit_,
+                                   .read_groups_              = read.read_groups_,
+                                   .read_statistics_          = read.read_statistics_,
+                                   .read_occurrence_file_ids_ = read.read_occurrence_file_ids_};
+                               auto result = ReadAlbumQueryFromMatchSet(connection, options,
+                                                                        active_semantic_model_key,
+                                                                        photos, relevance);
+                               album_stack_query::ProjectUnstackedPage(folder_id, options,
+                                                                       read.display_offset, result);
+                               return result;
+                             }
                              auto result = ReadAlbumQueryFromMatchSet(
                                  connection, options, active_semantic_model_key, read, relevance);
                              if (read.mode == AlbumReadMode::kDisplay) {
@@ -1075,6 +1093,18 @@ auto ElementStore::ReadAlbumDisplayFileIds(
                              return album_stack_query::ReadFileIds(
                                  connection, options, active_semantic_model_key, expanded_fragments,
                                  relevance, display_begin, display_end);
+                           });
+}
+
+auto ElementStore::ReadAlbumStackFragmentKeys(
+    sl_element_id_t folder_id, const std::optional<duckorm::SqlFragment>& filter,
+    const AlbumQueryOptions& options, const std::string& model,
+    const std::optional<SemanticQueryEmbedding>& relevance) const
+    -> std::vector<AlbumStackFragmentKey> {
+  return WithAlbumMatchSet(database_, folder_id, filter, options, relevance,
+                           [&](duckorm::Connection connection, bool has_relevance) {
+                             return album_stack_query::ReadFragmentKeys(
+                                 connection, folder_id, options, model, has_relevance);
                            });
 }
 

@@ -20,6 +20,8 @@ namespace alcedo::ui {
 class LibraryDisplayModel final : public QAbstractListModel {
   Q_OBJECT
   Q_PROPERTY(qint64 displayCount READ DisplayCount NOTIFY PagesChanged)
+  Q_PROPERTY(qint64 count READ LoadedEnd NOTIFY PagesChanged)
+  Q_PROPERTY(qint64 totalCount READ DisplayCount NOTIFY PagesChanged)
  public:
   using PageMap      = std::map<int64_t, std::vector<AlbumDisplayItem>>;
   using PhotoPageMap = std::map<int64_t, std::vector<sl_element_id_t>>;
@@ -31,13 +33,26 @@ class LibraryDisplayModel final : public QAbstractListModel {
     FragmentMatchCount,
     TemporaryCover,
     StackExpanded,
-    DisplayKind
+    DisplayKind,
+    OccurrenceKey
   };
   explicit LibraryDisplayModel(const AlbumThumbnailModel* photos = nullptr,
                                QObject*                   parent = nullptr);
   int                    rowCount(const QModelIndex& parent = {}) const override;
   QVariant               data(const QModelIndex& index, int role = Qt::DisplayRole) const override;
   QHash<int, QByteArray> roleNames() const override;
+  /// Read one loaded occurrence's scalar roles. Empty for an unloaded position; no SQL.
+  Q_INVOKABLE QVariantMap  getItemAt(int position) const;
+  /// Only occurrence identity, stack counts, and displayed File ID for disclosure/menu bindings.
+  Q_INVOKABLE QVariantMap  getStackAt(int position) const;
+  /// Read loaded occurrence roles in an inclusive range; no member lists are constructed.
+  Q_INVOKABLE QVariantList getItemsInRange(int first, int last) const;
+  /// First loaded occurrence of a File, or -1. Prefer rowByKey for scroll anchors.
+  Q_INVOKABLE int          rowByElementId(uint file) const;
+  /// Resolve the opaque, typed occurrence identity within accepted loaded pages.
+  Q_INVOKABLE int          rowByKey(const QString& key) const;
+  /// Serialize only an occurrence identity; the displayed cover is deliberately excluded.
+  static QString           Key(const AlbumDisplayIdentity& identity);
   /// Begin while all accepted owners still expose the previous result.
   void                   BeginReplace();
   /// Move one validated result into the owner without notification. Page ranges must be
@@ -57,7 +72,12 @@ class LibraryDisplayModel final : public QAbstractListModel {
   /// Relocate loaded ranges by stable identity, consuming only the selected new result items.
   /// The input is independent SQL algorithm output, not a live owner copy. Unselected entries
   /// are released with the result. The accepted pages remain unchanged until Install.
-  [[nodiscard]] auto RetainedPages(std::vector<AlbumDisplayItem>& result) const -> PageMap;
+  /// Keep at most max_pages bounded windows nearest the old viewport's anchor_position;
+  /// creating or dissolving a stack can change occurrence identity while retaining its File.
+  [[nodiscard]] auto RetainedPages(std::vector<AlbumDisplayItem>& result,
+                                   int64_t                        anchor_position = 0,
+                                   int64_t page_size = kMaxAlbumQueryPageRows,
+                                   size_t  max_pages = 3) const -> PageMap;
   /// Release accepted pages and expansion choices when the project session ends.
   void               ResetSession(bool notify = true);
   /// Change only a session choice. Absent keys stay recorded across filters. Returns whether

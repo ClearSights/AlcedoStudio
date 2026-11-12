@@ -1,6 +1,5 @@
 import QtQuick
 import QtQuick.Controls
-import QtQuick.Controls.Material
 import QtQuick.Layouts
 import QtQuick.Dialogs
 
@@ -177,6 +176,12 @@ Item {
         }]
     }
 
+    PhotoStackActions {
+        id: stackActions
+        active: root.imageActionsController.menuOrigin === "library"
+        occurrenceKey: root.imageActionsController.stackOccurrenceKey
+    }
+
     ImageContextMenu {
         id: imageContextMenuObj
         ratingEnabled: Number(host.pendingRatingTarget.imageId) > 0
@@ -184,7 +189,7 @@ Item {
         collectionRows: appModules.folders.folders ? appModules.folders.folders : []
         currentCollectionId: Number(appModules.folders.currentFolderId)
         addToEnabled: host.pendingDeleteTargets.length > 0
-        actions: root.filmstripDiscardActions().concat([
+        actions: root.filmstripDiscardActions().concat(stackActions.actions).concat([
             {
                 id: "copy-adjustments",
                 label: qsTr("Copy Adjustments"),
@@ -212,6 +217,10 @@ Item {
         }
         onActionRequested: function(actionId) {
             imageContextMenuObj.close()
+            if (actionId.indexOf("stack-") === 0) {
+                stackActions.request(actionId)
+                return
+            }
             if (actionId === "discard-edit") {
                 if (appModules.editorSession
                         && appModules.editorSession.canDiscardCurrentCommit === true) {

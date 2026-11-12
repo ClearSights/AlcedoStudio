@@ -541,6 +541,23 @@ alcedo_register_test_target(AlbumBackendSearchWorkerTest ui)
 # Library sort, group, and import time (album_sort_group_and_import_time_plan.md, Phase 2):
 # section projection geometry, and the one library query path of LibraryModule.
 def_ui_test(AlbumSectionModelTest album_section_model_test.cpp)
+def_ui_test(LibraryStackLayoutTest library_stack_layout_test.cpp)
+alcedo_register_test_target(LibraryStackLayoutTest ui)
+def_ui_test(LibraryPhotoStackIntegrationTest library_photo_stack_integration_test.cpp)
+alcedo_register_test_target(LibraryPhotoStackIntegrationTest ui)
+
+add_executable(PhotoStackDisclosureTest
+    ${ALCEDO_TEST_ROOT}/ui/photo_stack_disclosure_test.cpp
+    ${ALCEDO_TEST_ROOT}/ui/widget_test_main.cpp)
+target_include_directories(PhotoStackDisclosureTest PRIVATE ${ALCEDO_INCLUDE_DIR} ${ALCEDO_TEST_DIR})
+target_link_libraries(PhotoStackDisclosureTest PRIVATE AppTheme GTest::gtest
+    Qt6::Test Qt6::Core Qt6::Qml Qt6::Quick Qt6::QuickControls2 Qt6::QuickEffects Qt6::Widgets)
+target_compile_definitions(PhotoStackDisclosureTest PRIVATE
+    ALCEDO_STACK_ZH_CN_QM_FILE="${CMAKE_BINARY_DIR}/alcedo_studio/src/alcedo_main_zh_CN.qm")
+add_dependencies(PhotoStackDisclosureTest alcedo_main_lrelease)
+alcedo_ui_gtest_discover_tests(PhotoStackDisclosureTest TEST_PREFIX "PhotoStackDisclosureTest.")
+alcedo_register_test_target(PhotoStackDisclosureTest ui)
+
 def_ui_test(LibraryStackActionsTest library_stack_actions_test.cpp)
 alcedo_register_test_target(LibraryStackActionsTest ui)
 

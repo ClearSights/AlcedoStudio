@@ -81,6 +81,7 @@ class InteractionPolicyController final : public QObject {
   // Automation agent control: false while an agent holds control of the GUI session. Only the
   // user-facing adapters read it; editor session admission does not.
   Q_PROPERTY(bool canChangeStateAsUser READ CanChangeStateAsUser NOTIFY PolicyChanged)
+  Q_PROPERTY(bool canEditPhotoStacks READ CanEditPhotoStacks NOTIFY PolicyChanged)
   Q_PROPERTY(QString changeStateAsUserReason READ ChangeStateAsUserReason NOTIFY PolicyChanged)
 
  public:
@@ -116,6 +117,8 @@ class InteractionPolicyController final : public QObject {
   bool    CanPasteAdjustments() const;
   QString PasteAdjustmentsReason() const;
   bool    CanChangeStateAsUser() const;
+  /// Current user ownership and project-write locks for stack organization, on the GUI thread.
+  bool    CanEditPhotoStacks() const { return EvaluateEditPhotoStacks().value("allowed").toBool(); }
   QString ChangeStateAsUserReason() const;
 
   // ── Q_INVOKABLE one-shot queries (return {allowed, reason, blockingTaskIds}) ─

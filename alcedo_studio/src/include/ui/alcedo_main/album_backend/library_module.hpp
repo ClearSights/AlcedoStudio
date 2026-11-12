@@ -233,10 +233,23 @@ class LibraryModule final : public QObject, public IAlbumCatalog {
   /// Load the occurrence pages that the section rows [@p firstRow, @p lastRow] show, with a
   /// margin; pages far from them are released (bounded retention).
   Q_INVOKABLE void       RequestSectionRows(int firstRow, int lastRow);
+  /// Request a flat viewport's half-open display range, including holes in retained pages.
+  /// GUI thread; query worker reads bounded pages and retains at most three nearby windows.
+  Q_INVOKABLE void       RequestDisplayRange(qint64 begin, qint64 end);
   /// Read the ordered unique files of the occurrence ranges (`[{begin, end}]`) on the worker.
   /// They arrive with OrderedFileIdsReady as selection items `{elementId, fileId, imageId,
   /// fileName}`. Reads ids and typed columns only, no thumbnail metadata.
   Q_INVOKABLE qulonglong RequestOrderedFileIds(const QVariantList& ranges);
+  /// Toggle exactly the loaded occurrence's fragment; refuse absent keys without changing
+  /// selection.
+  Q_INVOKABLE void       ToggleStack(const QString& occurrence_key);
+  /// Read all matching fragment keys on the worker and change only their session choices.
+  Q_INVOKABLE void       SetAllStacksExpanded(bool expanded);
+  /// Select exact fragment or entire saved stack from a loaded occurrence; no implicit selection.
+  Q_INVOKABLE void       SelectStack(const QString& occurrence_key, bool entire);
+  /// Capture minimal query input and explicit IDs for command ordering on a worker. No GUI SQL.
+  auto                   StackCommandOrder(std::vector<sl_element_id_t> ids) const
+      -> std::function<std::vector<sl_element_id_t>()>;
   /// Replace selection with this fragment's matching Files on the worker. GUI entry; failure
   /// keeps selection and reports the diagnostic through the query owner.
   void                   SelectMatchingStackPhotos(const AlbumStackFragmentKey& fragment);
@@ -394,6 +407,9 @@ class LibraryModule final : public QObject, public IAlbumCatalog {
   };
 
   void               ScheduleRefresh(RefreshKind kind);
+  /// Store the published query and expansion choices without retaining project services.
+  /// GUI thread only, during publication, before subsequent paging or selection reads.
+  void AcceptQueryInput(const LibraryQueryInput& input, const LibraryQueryOutput& output);
   /// Consume the minimal display stream to plan retained ranges and unread photo positions.
   [[nodiscard]] auto PlanInPlaceChange(const LibraryQueryInput& input,
                                        LibraryQueryOutput&      output) const -> InPlaceChange;

@@ -28,6 +28,7 @@ Item {
     // Where the shared image menu was last opened from ("library" |
     // "editor-filmstrip"). The editor filmstrip shows the shared Library
     // selection, but its menu always targets exactly the clicked image.
+    property string stackOccurrenceKey: ""
     property string menuOrigin: "library"
     property bool _pendingEditorLibraryListSync: false
     property bool _pendingEditorLibraryListReveal: false
@@ -159,6 +160,8 @@ Item {
         if (!targets || targets.length === 0) {
             return
         }
+        root.stackOccurrenceKey = fromFilmstrip ? "" : String(clickedItem.occurrenceKey || "")
+        appModules.photoStacks.PrepareMenu(root.stackOccurrenceKey)
         root.setFocusedImage(clickedItem)
         root.pendingDeleteTargets = targets
         const ratingResult = appModules.images.GetImageRating(

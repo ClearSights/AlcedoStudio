@@ -468,5 +468,27 @@ TEST_F(PhotoStackStoreTest, StackSchemaRejectsDuplicateMembershipAndInvalidPosit
   EXPECT_EQ(StackRows(), rows);
 }
 
+TEST_F(PhotoStackStoreTest, ActionAvailabilityUsesSavedNeighborsAndExactExplicitMembership) {
+  const auto stack  = Create({0, 1, 2}, 0);
+  const auto before = StackRows();
+  const auto first  = Stacks().ReadActionOptions(Files({0}), stack, files[0]);
+  EXPECT_FALSE(first.earlier);
+  EXPECT_TRUE(first.later);
+  EXPECT_TRUE(first.remove);
+  EXPECT_FALSE(first.add);
+  const auto last = Stacks().ReadActionOptions(Files({2}), stack, files[2]);
+  EXPECT_TRUE(last.earlier);
+  EXPECT_FALSE(last.later);
+  const auto all = Stacks().ReadActionOptions(Files({0, 1, 2}), stack, files[0]);
+  EXPECT_FALSE(all.group);
+  EXPECT_FALSE(all.earlier);
+  const auto outside = Stacks().ReadActionOptions(Files({3, 4}), stack, files[0]);
+  EXPECT_TRUE(outside.group);
+  EXPECT_TRUE(outside.add);
+  EXPECT_FALSE(outside.remove);
+  EXPECT_EQ(Stacks().OrderCommandFiles(Files({4, 2, 0, 3})), Files({0, 2, 3, 4}));
+  EXPECT_EQ(StackRows(), before);
+}
+
 }  // namespace
 }  // namespace alcedo

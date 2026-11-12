@@ -1,6 +1,5 @@
 import QtQuick
 import QtQuick.Controls
-import QtQuick.Controls.Material
 import QtQuick.Layouts
 import QtQuick.Effects
 
@@ -382,6 +381,19 @@ RowLayout {
                 Item { Layout.preferredWidth: 10 }
             }
 
+            Label {
+                Layout.fillWidth: true
+                visible: appModules.library.selection.hiddenSelectedCount > 0
+                         || appModules.library.selection.outsideResultCount > 0
+                text: qsTr("%1 selected photos hidden by collapsed stacks or groups. %2 outside the current result.")
+                    .arg(appModules.library.selection.hiddenSelectedCount)
+                    .arg(appModules.library.selection.outsideResultCount)
+                wrapMode: Text.Wrap
+                color: appTheme.textMutedColor
+                font.family: appTheme.uiFontFamily
+                font.pixelSize: appTheme.fontSizeCaption
+            }
+
             Item {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
@@ -397,22 +409,37 @@ RowLayout {
                     z: 2
                     visible: appModules.library.queryError.length > 0
                              || appModules.library.queryUpdating
+                             || appModules.project.hasUnsavedStackChanges
+                             || appModules.photoStacks.error.length > 0
                     spacing: appTheme.spaceSm
 
-                    Label {
+                    AlertBadge {
                         Layout.fillWidth: true
+                        visible: text.length > 0
                         text: appModules.library.queryError.length > 0
-                              ? qsTr("Library query failed: %1").arg(appModules.library.queryError)
-                              : qsTr("Updating")
-                        color: appModules.library.queryError.length > 0
-                               ? appTheme.dangerColor : appTheme.textMutedColor
+                            ? qsTr("Library query failed: %1").arg(appModules.library.queryError)
+                            : appModules.project.hasUnsavedStackChanges
+                              ? qsTr("Stack changed, but project save failed: %1").arg(appModules.project.stackSaveError)
+                              : appModules.photoStacks.error
+                    }
+                    Label {
+                        visible: appModules.library.queryUpdating
+                        text: qsTr("Updating library…")
+                        color: appTheme.textMutedColor
                         font.family: appTheme.uiFontFamily
                         font.pixelSize: appTheme.fontSizeCaption
-                        wrapMode: Text.Wrap
-                        Accessible.role: Accessible.StaticText
-                        Accessible.name: text
                     }
-
+                    DialogActionButton {
+                        visible: appModules.project.hasUnsavedStackChanges
+                        enabled: !appModules.photoStacks.busy
+                        text: qsTr("Retry Save")
+                        onClicked: appModules.project.RetryStackSave()
+                    }
+                    DialogActionButton {
+                        visible: appModules.photoStacks.error.length > 0 && !appModules.project.hasUnsavedStackChanges
+                        text: qsTr("Dismiss")
+                        onClicked: appModules.photoStacks.ClearError()
+                    }
                     DialogActionButton {
                         id: libraryQueryRetryButton
                         objectName: "libraryQueryRetryButton"

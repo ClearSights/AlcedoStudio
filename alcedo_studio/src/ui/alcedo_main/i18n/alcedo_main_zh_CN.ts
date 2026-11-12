@@ -1099,6 +1099,9 @@
 </context>
 <context>
     <name>Alcedo</name>
+    <message><source>Stack changed, but project save failed: %1</source><translation>堆叠已更改，但项目保存失败：%1</translation></message>
+    <message><source>A photo stack command is running.</source><translation>正在执行照片堆叠操作。</translation></message>
+    <message><source>Save pending photo stack changes or explicitly close the project with Discard before replacing it.</source><translation>替换项目前，请保存待保存的照片堆叠更改，或明确选择放弃更改并关闭项目。</translation></message>
     <message>
         <location filename="../album_backend/image_controller.cpp" line="+51"/>
         <source>Capture</source>
@@ -2599,6 +2602,9 @@ Original source files on disk will be kept.</source>
 </context>
 <context>
     <name>EditorCloseConfirmDialog</name>
+    <message><source>Unsaved Project Changes</source><translation>项目有未保存的更改</translation></message>
+    <message><source>Save the project before quitting, or discard all changes since the last project save.</source><translation>退出前保存项目，或放弃自上次保存以来的全部项目更改。</translation></message>
+    <message><source>Retry Save</source><translation>重试保存</translation></message>
     <message>
         <location filename="../qml/EditorCloseConfirmDialog.qml" line="+86"/>
         <source>Unsaved Edits</source>
@@ -6207,6 +6213,14 @@ Refresh the library afterwards; they are listed under the User category. Import 
 <context>
     <name>LibraryWorkspace</name>
     <message>
+        <source>Updating library…</source>
+        <translation>正在更新图库…</translation>
+    </message>
+    <message><source>Stack changed, but project save failed: %1</source><translation>堆叠已更改，但项目保存失败：%1</translation></message>
+    <message><source>Retry Save</source><translation>重试保存</translation></message>
+    <message><source>Dismiss</source><translation>关闭提示</translation></message>
+    <message><source>%1 selected photos hidden by collapsed stacks or groups. %2 outside the current result.</source><translation>已选照片中有 %1 张隐藏在收起的堆叠或分组中。另有 %2 张不在当前结果中。</translation></message>
+    <message>
         <location filename="../qml/LibraryWorkspace.qml" line="+255"/>
         <source>Browser</source>
         <translation>浏览</translation>
@@ -8666,6 +8680,10 @@ CLIP / SigLIP 这类视觉语言模型会把图像和文字映射到同一语义
 <context>
     <name>alcedo::ui::ApplicationCloseCoordinator</name>
     <message>
+        <source>A photo stack command is running.</source>
+        <translation>照片堆叠操作正在进行。</translation>
+    </message>
+    <message>
         <source>Another close is in progress.</source>
         <translation>另一个关闭操作正在进行。</translation>
     </message>
@@ -9300,5 +9318,51 @@ CLIP / SigLIP 这类视觉语言模型会把图像和文字映射到同一语义
         <source>About %1 h %2 min remaining</source>
         <translation>剩余约 %1 小时 %2 分钟</translation>
     </message>
+</context>
+<context>
+    <name>PhotoStackDisclosure</name>
+    <message><source>Collapse stack, %1 matching photos</source><translation>收起堆叠，%1 张匹配照片</translation></message>
+    <message><source>Expand stack, %1 matching photos</source><translation>展开堆叠，%1 张匹配照片</translation></message>
+    <message><source>%1 matching here. %2 matching the query. %3 in stack.</source><translation>此处分组匹配 %1 张。当前查询匹配 %2 张。堆叠共 %3 张。</translation></message>
+    <message><source>Temporary cover. The saved cover is outside this group or filter.</source><translation>临时封面。保存的封面不在当前分组或筛选结果中。</translation></message>
+    <message><source>%1 matching here</source><translation>此处匹配 %1 张</translation></message>
+    <message><source>%1 in stack</source><translation>堆叠共 %1 张</translation></message>
+    <message><source>%1K</source><translation>%1千</translation></message>
+</context>
+<context>
+    <name>PhotoStackActions</name>
+    <message><source>Group selected photos</source><translation>将选中照片组成堆叠</translation></message>
+    <message><source>Add selected photos to this stack</source><translation>将选中照片加入此堆叠</translation></message>
+    <message><source>Remove selected photos from stacks</source><translation>将选中照片移出堆叠</translation></message>
+    <message><source>Ungroup entire stack</source><translation>解散整个堆叠</translation></message>
+    <message><source>Set as stack cover</source><translation>设为堆叠封面</translation></message>
+    <message><source>Changes the saved cover throughout this project.</source><translation>更改整个项目中保存的堆叠封面。</translation></message>
+    <message><source>Moves this photo in saved stack order throughout this project.</source><translation>在整个项目的已保存堆叠顺序中移动此照片。</translation></message>
+    <message><source>Move earlier in stack</source><translation>在堆叠中前移</translation></message>
+    <message><source>Move later in stack</source><translation>在堆叠中后移</translation></message>
+    <message><source>Select matching photos in this stack</source><translation>选择此堆叠中匹配的照片</translation></message>
+    <message><source>Select entire stack (%1 photos)</source><translation>选择整个堆叠（%1 张照片）</translation></message>
+    <message><source>Collapse this stack</source><translation>收起此堆叠</translation></message>
+    <message><source>Expand this stack</source><translation>展开此堆叠</translation></message>
+    <message><source>Expand all matching stacks</source><translation>展开所有匹配堆叠</translation></message>
+    <message><source>Collapse all matching stacks</source><translation>收起所有匹配堆叠</translation></message>
+    <message><source>Select entire stack</source><translation>选择整个堆叠</translation></message>
+    <message><source>Ungroup all %1 photos? This changes every group and album. Photos outside the current filter are included.</source><translation>解散共 %1 张照片的整个堆叠？此操作影响所有分组和相册，也包括当前筛选结果之外的照片。</translation></message>
+    <message><source>Select all %1 photos in this stack? Photos outside the current filter or album are included.</source><translation>选择此堆叠的全部 %1 张照片？也包括当前筛选结果或相册之外的照片。</translation></message>
+    <message><source>Cancel</source><translation>取消</translation></message>
+    <message><source>Confirm</source><translation>确认</translation></message>
+</context>
+<context>
+    <name>alcedo::ui::PhotoStackController</name>
+    <message><source>A photo stack command is running.</source><translation>正在执行照片堆叠操作。</translation></message>
+    <message><source>No project is available.</source><translation>没有可用的项目。</translation></message>
+    <message><source>A photo File ID is invalid.</source><translation>照片文件 ID 无效。</translation></message>
+    <message><source>Select at least two photos.</source><translation>请至少选择两张照片。</translation></message>
+    <message><source>The stack cover must be selected.</source><translation>堆叠封面必须是选中的照片。</translation></message>
+    <message><source>Select at least one photo.</source><translation>请至少选择一张照片。</translation></message>
+    <message><source>A photo stack ID is required.</source><translation>需要指定照片堆叠 ID。</translation></message>
+    <message><source>Updating photo stacks</source><translation>正在更新照片堆叠</translation></message>
+    <message><source>This photo occurrence is no longer available.</source><translation>此位置的照片已不可用。</translation></message>
+    <message><source>Unknown photo stack action.</source><translation>未知的照片堆叠操作。</translation></message>
 </context>
 </TS>

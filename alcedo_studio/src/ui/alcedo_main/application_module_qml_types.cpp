@@ -11,6 +11,8 @@
 #include "ui/alcedo_main/album_backend/application_module_host.hpp"
 #include "ui/alcedo_main/album_backend/editor_ai_mask_tool.hpp"
 #include "ui/alcedo_main/album_backend/editor_mask_creation_adapter.hpp"
+#include "ui/alcedo_main/album_backend/library_display_model.hpp"
+#include "ui/alcedo_main/album_backend/photo_stack_controller.hpp"
 #include "ui/alcedo_main/shortcut_registry.hpp"
 
 namespace alcedo::ui {
@@ -27,6 +29,10 @@ void RegisterApplicationModuleTypes() {
                                               "Owned by ApplicationModuleHost");
   qmlRegisterUncreatableType<StatsEngine>("Alcedo.Main", 1, 0, "StatsEngine",
                                           "Owned by ApplicationModuleHost");
+  qmlRegisterUncreatableType<LibraryDisplayModel>("Alcedo.Main", 1, 0, "LibraryDisplayModel",
+                                                  "Owned by LibraryModule");
+  qmlRegisterUncreatableType<PhotoStackController>("Alcedo.Main", 1, 0, "PhotoStackController",
+                                                   "Owned by ApplicationModuleHost");
   qmlRegisterUncreatableType<SearchController>("Alcedo.Main", 1, 0, "SearchController",
                                                "Owned by ApplicationModuleHost");
   qmlRegisterUncreatableType<ImportExportHandler>("Alcedo.Main", 1, 0, "ImportExportHandler",

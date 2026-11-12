@@ -8,6 +8,7 @@
 #include <QDateTime>
 #include <QInputDialog>
 #include <QSettings>
+#include <QSignalBlocker>
 #include <QTimeZone>
 #include <algorithm>
 #include <cstddef>
@@ -102,7 +103,7 @@ LibraryModule::LibraryModule(ProjectModule* project, QObject* parent)
       selection_, *query_worker_, [this](const QString& error) { SetQueryError(error); }, this);
   LoadThumbnailDiskCacheSettings();
   connect(&display_model_, &LibraryDisplayModel::ExpansionChanged, this, [this] {
-    if (stack_display_enabled_) RequestLibraryRefresh();
+    if (stack_display_enabled_) RequestLibraryContentRefresh();
   });
   connect(&selection_, &LibrarySelection::SelectionChanged, this, [this]() {
     ScheduleSelectionMarksRead();
@@ -254,6 +255,73 @@ bool LibraryModule::LoadThumbnailsThroughIndex(int index) {
 void LibraryModule::RefreshSelectionMembership(bool intersect) {
   if (auto input = AcceptedReadInput({}); input && !refresh_in_flight_)
     selection_operations_->RefreshMembership(std::move(input), intersect);
+}
+
+void LibraryModule::ToggleStack(const QString& key) {
+  const auto* item = display_model_.ItemAt(display_model_.rowByKey(key));
+  if (!item || item->identity.fragment.stack_id.empty()) return;
+  display_model_.SetStackExpanded(item->identity.fragment, !item->expanded);
+}
+void LibraryModule::SelectStack(const QString& key, bool entire) {
+  const auto* item = display_model_.ItemAt(display_model_.rowByKey(key));
+  if (!item || item->identity.fragment.stack_id.empty()) return;
+  if (entire)
+    SelectEntireStack(item->identity.fragment.stack_id);
+  else
+    SelectMatchingStackPhotos(item->identity.fragment);
+}
+void LibraryModule::SetAllStacksExpanded(bool expanded) {
+  if (refresh_in_flight_) {
+    RunAfterRefresh([this, expanded] { SetAllStacksExpanded(expanded); });
+    return;
+  }
+  auto input = AcceptedReadInput({});
+  if (!input) return;
+  query_worker_->Submit(SearchRequestKind::kLibraryIds, [this, input, expanded](auto generation) {
+    std::vector<AlbumStackFragmentKey> keys;
+    QString                            error;
+    try {
+      keys = input->browse_->ReadAlbumStackFragmentKeys(
+          input->folder_id_, MergeFilterNodes(input->stats_filter_, input->search_.filter_),
+          input->options_, input->active_model_key_, input->search_.semantic_query_);
+    } catch (const std::exception& failure) {
+      error = QString::fromUtf8(failure.what());
+    }
+    QMetaObject::invokeMethod(
+        this,
+        [this, generation, keys = std::move(keys), expanded, error] {
+          if (!query_worker_->IsCurrent(SearchRequestKind::kLibraryIds, generation)) return;
+          if (!error.isEmpty()) {
+            SetQueryError(error);
+            return;
+          }
+          // One content refresh after every choice is visible.
+          const QSignalBlocker block(&display_model_);
+          for (const auto& key : keys) display_model_.SetStackExpanded(key, expanded);
+          RequestLibraryContentRefresh();
+        },
+        Qt::QueuedConnection);
+  });
+}
+auto LibraryModule::StackCommandOrder(std::vector<sl_element_id_t> ids) const
+    -> std::function<std::vector<sl_element_id_t>()> {
+  auto input   = AcceptedReadInput({});
+  auto service = project_->handler().project()->GetPhotoStackService();
+  return [input = std::move(input), service = std::move(service), ids = std::move(ids)] {
+    auto outside = service->OrderCommandFiles(ids);
+    if (!input) return outside;
+    const auto displayed = input->browse_->ReadAlbumDisplayFileIds(
+        input->folder_id_, MergeFilterNodes(input->stats_filter_, input->search_.filter_),
+        input->options_, input->active_model_key_, input->read_.expanded_fragments, 0,
+        std::numeric_limits<int64_t>::max(), input->search_.semantic_query_);
+    std::unordered_set<sl_element_id_t> remaining(ids.begin(), ids.end());
+    std::vector<sl_element_id_t>        ordered;
+    for (auto file : displayed)
+      if (remaining.erase(file)) ordered.push_back(file);
+    for (auto file : outside)
+      if (remaining.erase(file)) ordered.push_back(file);
+    return ordered;
+  };
 }
 
 void LibraryModule::SelectMatchingStackPhotos(const AlbumStackFragmentKey& fragment) {
@@ -1018,6 +1086,23 @@ void LibraryModule::FinishRefresh(bool search_changed) {
   }
 }
 
+void LibraryModule::AcceptQueryInput(const LibraryQueryInput&  input,
+                                     const LibraryQueryOutput& output) {
+  accepted_input_ = std::make_shared<const LibraryQueryInput>(LibraryQueryInput{
+      .folder_id_        = input.folder_id_,
+      .stats_filter_     = input.stats_filter_,
+      .search_           = LibrarySearchInput{.display_query_  = input.search_.display_query_,
+                                              .filter_         = output.search_filter_,
+                                              .semantic_query_ = output.semantic_query_,
+                                              .pending_        = false,
+                                              .field_mask_     = input.search_.field_mask_},
+      .options_          = input.options_,
+      .active_model_key_ = input.active_model_key_,
+      .read_             = AlbumQueryRead{.mode               = input.read_.mode,
+                                          .expanded_fragments = input.read_.expanded_fragments},
+      .page_size_        = input.page_size_});
+}
+
 void LibraryModule::PublishRefresh(const LibraryQueryInput& input, LibraryQueryOutput output) {
   if (!output.error_.isEmpty()) {
     FailRefresh(output.error_);
@@ -1057,19 +1142,7 @@ void LibraryModule::PublishRefresh(const LibraryQueryInput& input, LibraryQueryO
   if (pending_options_.has_value() && SamePresentation(*pending_options_, input.options_)) {
     pending_options_.reset();
   }
-  accepted_input_          = std::make_shared<const LibraryQueryInput>(LibraryQueryInput{
-      .folder_id_        = input.folder_id_,
-      .stats_filter_     = input.stats_filter_,
-      .search_           = LibrarySearchInput{.display_query_  = input.search_.display_query_,
-                                              .filter_         = output.search_filter_,
-                                              .semantic_query_ = output.semantic_query_,
-                                              .pending_        = false,
-                                              .field_mask_     = input.search_.field_mask_},
-      .options_          = input.options_,
-      .active_model_key_ = input.active_model_key_,
-      .read_             = AlbumQueryRead{.mode               = input.read_.mode,
-                                          .expanded_fragments = input.read_.expanded_fragments},
-      .page_size_        = input.page_size_});
+  AcceptQueryInput(input, output);
   occurrence_count_        = result.occurrence_count_;
   loaded_display_end_      = static_cast<int64_t>(display_items.size());
   load_through_            = -1;
@@ -1112,7 +1185,8 @@ auto LibraryModule::PlanInPlaceChange(const LibraryQueryInput& input,
           0, std::vector<AlbumDisplayItem>(std::make_move_iterator(items.begin()),
                                            std::make_move_iterator(items.begin() + end)));
   } else
-    change.pages_ = display_model_.RetainedPages(items);
+    change.pages_ = display_model_.RetainedPages(items, requested_begin_, input.page_size_,
+                                                 kMaxRetainedSectionPages);
   if (change.pages_.empty() && !items.empty()) {
     const auto end = std::min<int64_t>(items.size(), input.page_size_);
     change.pages_.emplace(
@@ -1251,6 +1325,7 @@ void LibraryModule::ApplyInPlaceChange(const LibraryQueryInput& input, LibraryQu
   });
 
   display_model_.BeginReplace();
+  AcceptQueryInput(input, output);
   thumbnail_model_.applyOrder(
       change.loaded_order_, new_items, static_cast<size_t>(result.unique_file_count_),
       change.loaded_end_ < result.display_count, [&] {
@@ -1393,6 +1468,15 @@ void LibraryModule::ContinuePaging() {
     return;
   }
   SubmitPage(missing, section_model_.NextLoadedPageStart(missing) - missing);
+}
+
+void LibraryModule::RequestDisplayRange(qint64 begin, qint64 end) {
+  if (refresh_in_flight_ || !accepted_input_ ||
+      accepted_input_->read_.mode != AlbumReadMode::kDisplay)
+    return;
+  requested_begin_ = std::clamp<int64_t>(begin, 0, display_model_.DisplayCount());
+  requested_end_   = std::clamp<int64_t>(end, requested_begin_, display_model_.DisplayCount());
+  ContinuePaging();
 }
 
 void LibraryModule::RequestSectionRows(int firstRow, int lastRow) {

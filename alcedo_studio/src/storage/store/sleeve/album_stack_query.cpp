@@ -149,6 +149,29 @@ struct GroupRow {
   using Columns = duckorm::RowColumns<&GroupRow::key, &GroupRow::count, &GroupRow::first>;
 };
 
+/// Equivalent ordinary-photo projection when the transaction contains no memberships.
+/// Uses the shared comparator and typed group expression, with no stack window functions.
+auto UnstackedProjection(const AlbumQueryOptions& options, const std::string& model, bool relevance,
+                         sql::EditStateProjection metadata) -> SqlFragment {
+  auto query = sql::RelationsPrefix(options, model, metadata);
+  query.sql_.append(query.empty() ? "WITH " : ", ");
+  query.sql_.append("display AS (SELECT s.file_id, CAST(");
+  if (options.group_field_ == AlbumGroupField::kNone)
+    query.sql_.append("NULL");
+  else
+    query.append(sql::GroupKeyExpression(options.group_field_));
+  query.sql_.append(" AS VARCHAR) AS group_key, ROW_NUMBER() OVER (");
+  query.append(duckorm::clause::order_by(sql::OccurrenceOrderTerms(options, relevance)));
+  query.sql_.append(
+      ") - 1 AS display_position, CAST(NULL AS VARCHAR) AS stack_id, "
+      "CAST(NULL AS BIGINT) AS cover_file_id, 1::BIGINT AS total_count, "
+      "1::BIGINT AS query_count, 1::BIGINT AS fragment_count, "
+      "s.file_id AS displayed_cover, FALSE AS expanded ");
+  query.append(sql::OccurrenceSource(options, sql::EditStateProjection::kNotRead));
+  query.sql_.append(") ");
+  return query;
+}
+
 /// Scalar SQL output shared by bounded pages and metadata-free relocation reads.
 struct ItemRow {
   std::optional<std::string> key;
@@ -222,6 +245,12 @@ void ValidateStacks(duckorm::Connection connection) {
 }
 }  // namespace
 
+bool HasMemberships(duckorm::Connection connection) {
+  return duckorm::scalar<bool>(connection,
+                               {"SELECT EXISTS(SELECT 1 FROM PhotoStackMember LIMIT 1)", {}})
+      .value();
+}
+
 void ValidateExpansion(sl_element_id_t folder_id, const AlbumQueryOptions& options,
                        std::span<const AlbumStackFragmentKey> fragments) {
   ValidateAlbumQueryOptions(options);
@@ -238,13 +267,38 @@ void ValidatePreferredGroup(AlbumGroupField field, const std::optional<AlbumGrou
   if (group) ValidateKey(field, *group);
 }
 
+void ProjectUnstackedPage(sl_element_id_t folder, const AlbumQueryOptions& options, int64_t offset,
+                          AlbumQueryResult& result) {
+  result.display_count = result.occurrence_count_;
+  result.first_display = offset;
+  for (auto& group : result.groups_) {
+    group.display_count = group.photo_count_;
+    group.first_display = group.first_occurrence_;
+  }
+  result.display_rows.reserve(result.rows_.size());
+  for (auto& photo : result.rows_) {
+    AlbumDisplayRow item;
+    item.file_id  = photo.photo_.file_id_;
+    item.identity = {{folder, options.group_field_, photo.group_key_, {}},
+                     AlbumDisplayKind::kPhoto,
+                     item.file_id};
+    item.photo    = std::move(photo);
+    result.display_rows.push_back(std::move(item));
+  }
+  result.rows_.clear();
+}
+
 void ReadDisplay(duckorm::Connection connection, sl_element_id_t folder_id,
                  const AlbumQueryOptions& options, const std::string& model,
                  const AlbumQueryRead& read, bool has_relevance, AlbumQueryResult& result) {
   ValidateStacks(connection);
   result.first_display = read.display_offset;
-  auto counts = Projection(options, model, has_relevance, sql::EditStateProjection::kNotRead,
-                           read.expanded_fragments);
+  const bool stacked    = HasMemberships(connection);
+  const auto projection = [&](sql::EditStateProjection metadata) {
+    return stacked ? Projection(options, model, has_relevance, metadata, read.expanded_fragments)
+                   : UnstackedProjection(options, model, has_relevance, metadata);
+  };
+  auto counts = projection(sql::EditStateProjection::kNotRead);
   if (read.read_groups_ && options.group_field_ != AlbumGroupField::kNone) {
     counts.sql_.append(
         "SELECT group_key, COUNT(*), MIN(display_position) FROM display "
@@ -267,8 +321,7 @@ void ReadDisplay(duckorm::Connection connection, sl_element_id_t folder_id,
     result.display_count = duckorm::scalar<int64_t>(connection, counts).value();
   }
   if (read.read_display_items) {
-    auto items = Projection(options, model, has_relevance, sql::EditStateProjection::kNotRead,
-                            read.expanded_fragments);
+    auto items = projection(sql::EditStateProjection::kNotRead);
     items.sql_.append("SELECT ");
     items.sql_.append(kItemColumns);
     items.sql_.append(" FROM display d ORDER BY d.display_position");
@@ -277,8 +330,7 @@ void ReadDisplay(duckorm::Connection connection, sl_element_id_t folder_id,
     }
   }
   if (read.limit_ == 0) return;
-  auto page = Projection(options, model, has_relevance, sql::EditStateProjection::kRead,
-                         read.expanded_fragments);
+  auto page = projection(sql::EditStateProjection::kRead);
   page.sql_.append("SELECT ");
   page.sql_.append(album_query_rows::kMatchSetResultColumns);
   page.sql_.append(", es.edited_at_ns, es.version_name, ");
@@ -305,13 +357,21 @@ auto ReadPosition(duckorm::Connection connection, sl_element_id_t folder_id,
                   sl_element_id_t file_id, const std::optional<AlbumGroupKey>& preferred_group)
     -> std::optional<AlbumDisplayPosition> {
   ValidateStacks(connection);
-  auto query = Projection(options, model, has_relevance, sql::EditStateProjection::kNotRead,
-                          expanded_fragments);
-  query.sql_.append(
-      "SELECT d.display_position, d.group_key, d.stack_id, d.file_id, d.displayed_cover, "
-      "(c.file_id <> d.file_id) FROM expanded_members c JOIN display d "
-      "ON d.unit_position = c.unit_position AND d.file_id = "
-      "CASE WHEN c.expanded THEN c.file_id ELSE c.displayed_cover END WHERE c.file_id = ");
+  const bool stacked = HasMemberships(connection);
+  auto       query   = stacked ? Projection(options, model, has_relevance,
+                                            sql::EditStateProjection::kNotRead, expanded_fragments)
+                               : UnstackedProjection(options, model, has_relevance,
+                                                     sql::EditStateProjection::kNotRead);
+  if (stacked)
+    query.sql_.append(
+        "SELECT d.display_position, d.group_key, d.stack_id, d.file_id, d.displayed_cover, "
+        "(c.file_id <> d.file_id) FROM expanded_members c JOIN display d "
+        "ON d.unit_position = c.unit_position AND d.file_id = "
+        "CASE WHEN c.expanded THEN c.file_id ELSE c.displayed_cover END WHERE c.file_id = ");
+  else
+    query.sql_.append(
+        "SELECT d.display_position, d.group_key, d.stack_id, d.file_id, "
+        "d.displayed_cover, FALSE FROM display d WHERE d.file_id = ");
   query.append(expr::param(static_cast<int64_t>(file_id)));
   query.sql_.append(" ORDER BY ");
   if (preferred_group) {
@@ -334,8 +394,11 @@ auto ReadFileIds(duckorm::Connection connection, const AlbumQueryOptions& option
                  std::span<const AlbumStackFragmentKey> expanded_fragments, bool has_relevance,
                  int64_t begin, int64_t end) -> std::vector<sl_element_id_t> {
   ValidateStacks(connection);
-  auto query = Projection(options, model, has_relevance, sql::EditStateProjection::kNotRead,
-                          expanded_fragments);
+  auto query =
+      HasMemberships(connection)
+          ? Projection(options, model, has_relevance, sql::EditStateProjection::kNotRead,
+                       expanded_fragments)
+          : UnstackedProjection(options, model, has_relevance, sql::EditStateProjection::kNotRead);
   query.sql_.append("SELECT file_id FROM display WHERE display_position >= ");
   query.append(expr::param(begin));
   query.sql_.append(" AND display_position < ");
@@ -356,5 +419,23 @@ auto ReadFragmentIds(duckorm::Connection connection, const AlbumQueryOptions& op
   query.sql_.append(
       " AS VARCHAR) ORDER BY (file_id = displayed_cover) DESC, member_order, file_id");
   return FileIds(connection, query);
+}
+auto ReadFragmentKeys(duckorm::Connection connection, sl_element_id_t folder,
+                      const AlbumQueryOptions& options, const std::string& model, bool relevance)
+    -> std::vector<AlbumStackFragmentKey> {
+  ValidateStacks(connection);
+  auto query = Projection(options, model, relevance, sql::EditStateProjection::kNotRead);
+  query.sql_.append(
+      "SELECT DISTINCT group_key, stack_id FROM unit_members WHERE stack_id IS NOT NULL");
+  struct KeyRow {
+    std::optional<std::string> group;
+    std::string                stack;
+    using Columns = duckorm::RowColumns<&KeyRow::group, &KeyRow::stack>;
+  };
+  std::vector<AlbumStackFragmentKey> result;
+  for (const auto& row : duckorm::query<KeyRow>(connection, query))
+    result.push_back(
+        {folder, options.group_field_, GroupKey(options.group_field_, row.group), row.stack});
+  return result;
 }
 }  // namespace alcedo::album_stack_query

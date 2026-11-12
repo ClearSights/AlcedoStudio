@@ -401,6 +401,59 @@ auto PhotoStackStore::MoveMember(sl_element_id_t file_id, PhotoStackMove directi
   });
 }
 
+auto PhotoStackStore::ReadActionOptions(std::span<const sl_element_id_t> ids,
+                                        const std::string& stack, sl_element_id_t clicked)
+    -> PhotoStackActionOptions {
+  return InTransaction(database_, [&](duckdb_connection& conn) {
+    auto files = UniqueFiles(ids);
+    ValidateFiles(conn, files);
+    PhotoStackActionOptions options;
+    options.group = files.size() >= 2;
+    if (!files.empty()) {
+      auto query = expr::raw("SELECT DISTINCT stack_id FROM PhotoStackMember WHERE ");
+      query.append(expr::in_list(expr::col("file_id"), std::span<const sl_element_id_t>(files)));
+      const auto stacks = duckorm::query<StackIdRow>(conn, query);
+      options.remove    = !stacks.empty();
+      if (stacks.size() == 1) {
+        auto members = MemberIds(conn, stacks.front().stack_id);
+        auto sorted  = files;
+        std::sort(members.begin(), members.end());
+        std::sort(sorted.begin(), sorted.end());
+        if (sorted == members) options.group = false;
+      }
+    }
+    if (!stack.empty()) {
+      ValidateRelations(conn, &stack);
+      const auto members = MemberIds(conn, stack);
+      options.add        = std::any_of(files.begin(), files.end(), [&](auto file) {
+        return std::find(members.begin(), members.end(), file) == members.end();
+      });
+      const auto member  = std::find(members.begin(), members.end(), clicked);
+      if (files.size() == 1 && files.front() == clicked && member != members.end()) {
+        options.earlier = member != members.begin();
+        options.later   = std::next(member) != members.end();
+      }
+    }
+    return options;
+  });
+}
+
+auto PhotoStackStore::OrderCommandFiles(std::span<const sl_element_id_t> ids)
+    -> std::vector<sl_element_id_t> {
+  return InTransaction(database_, [&](duckdb_connection& conn) {
+    auto files = UniqueFiles(ids);
+    ValidateFiles(conn, files);
+    auto query = expr::raw(
+        "SELECT e.id FROM Element e LEFT JOIN PhotoStackMember m ON m.file_id = e.id WHERE ");
+    query.append(expr::in_list(expr::col("e.id"), std::span<const sl_element_id_t>(files)));
+    query.sql_.append(" ORDER BY m.stack_id NULLS LAST, m.member_order, e.id");
+    std::vector<sl_element_id_t> result;
+    for (const auto& row : duckorm::query<FileIdRow>(conn, query))
+      result.push_back(FileId(row.file_id));
+    return result;
+  });
+}
+
 auto PhotoStackStore::ReadMemberIds(const std::string& stack_id) -> std::vector<sl_element_id_t> {
   return InTransaction(database_, [&](duckdb_connection& conn) {
     ValidateStack(conn, stack_id);

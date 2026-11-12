@@ -63,6 +63,7 @@ class ApplicationModuleHost final : public QObject {
   Q_PROPERTY(ProjectModule* project READ project CONSTANT)
   Q_PROPERTY(LibraryModule* library READ library CONSTANT)
   Q_PROPERTY(LibraryDisplayModel* libraryDisplayModel READ library_display CONSTANT)
+  Q_PROPERTY(PhotoStackController* photoStacks READ photo_stacks CONSTANT)
   Q_PROPERTY(FolderController* folders READ folders CONSTANT)
   Q_PROPERTY(ImageController* images READ images CONSTANT)
   Q_PROPERTY(StatsEngine* stats READ stats CONSTANT)

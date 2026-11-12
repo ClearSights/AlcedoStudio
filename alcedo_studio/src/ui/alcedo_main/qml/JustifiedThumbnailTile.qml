@@ -19,6 +19,7 @@ Item {
 
     // The ThumbnailGridView that owns the tile.
     required property Item view
+    required property string occurrenceKey
     required property int photoIndex
     required property real tileX
     required property real tileY
@@ -43,6 +44,27 @@ Item {
     required property bool thumbLoading
     required property bool thumbMissingSource
     required property string thumbErrorText
+
+    readonly property var stackItem: { const revision = view.occurrenceRevision; return view.occurrences.getStackAt(photoIndex) }
+    readonly property alias stackDisclosure: disclosure
+    PhotoStackDisclosure {
+        id: disclosure
+        x: appTheme.spaceXs
+        y: appTheme.spaceXs
+        z: 4
+        occurrenceKey: tile.occurrenceKey
+        matchingCount: Number(tile.stackItem.fragmentMatchCount || 0)
+        queryCount: Number(tile.stackItem.queryMatchCount || 0)
+        totalCount: Number(tile.stackItem.stackTotal || 0)
+        expanded: tile.stackItem.stackExpanded === true
+        temporaryCover: tile.stackItem.temporaryCover === true
+        availableWidth: tile.width - appTheme.spaceXs * 2
+        compact: view.compactText || availableWidth < fullTextWidth
+        interactive: !appModules.library.queryUpdating
+        pointerInside: view.hoveredCardIndex === photoIndex
+            && view.inputOverlay.disclosureAt(photoIndex, view.inputOverlay.mouseX, view.inputOverlay.mouseY)
+        onToggled: { view.captureChange(); appModules.library.ToggleStack(occurrenceKey) }
+    }
 
     // Photo index of the tile; the view reads it from every delegate kind.
     readonly property int cardIndex: photoIndex

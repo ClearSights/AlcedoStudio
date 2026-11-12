@@ -14,14 +14,15 @@
 
 #include "ui/alcedo_main/album_backend/album_thumbnail_model.hpp"
 #include "ui/alcedo_main/album_backend/justified_row_layout.hpp"
+#include "ui/alcedo_main/album_backend/library_display_model.hpp"
 
 namespace alcedo::ui {
 
 /**
- * @brief The justified-rows Library layout of the loaded photos of an AlbumThumbnailModel, and
- *        the window of the photos whose tiles are near the viewport.
+ * @brief The justified-rows Library layout of source occurrences and their viewport window.
  *
- * @details The model lays out the photos of `source` with JustifiedRowLayout (row height
+ * @details The source is a LibraryDisplayModel or AlbumThumbnailModel. The model lays out its
+ * loaded occurrences with JustifiedRowLayout (row height
  * `rowHeight`, view width `viewWidth`). Its rows are the photos of the window: the photos of the
  * layout rows that intersect `[viewportY - overscan, viewportY + viewportHeight + overscan]`.
  * Row `i` of this model is photo `firstIndex + i` of the source. Each row has every role of the
@@ -148,7 +149,9 @@ class JustifiedLayoutModel : public QAbstractListModel {
   void windowChanged();
 
  private:
-  [[nodiscard]] auto thumbnailModel() const -> AlbumThumbnailModel*;
+  [[nodiscard]] auto sourceModel() const -> QAbstractListModel*;
+  /// Loaded extent supplied by the source owner; total rows may include unloaded pages.
+  [[nodiscard]] auto SourceCount() const -> int;
   [[nodiscard]] auto AspectRatioAt(int source_row) const -> double;
   [[nodiscard]] auto AspectRatios(int first, int last) const -> std::vector<double>;
   void               ApplyGeometry(const JustifiedLayoutGeometry& geometry);
@@ -163,7 +166,7 @@ class JustifiedLayoutModel : public QAbstractListModel {
   void OnSourceDataChanged(const QModelIndex& top_left, const QModelIndex& bottom_right,
                            const QList<int>& roles);
 
-  QPointer<AlbumThumbnailModel>        source_;
+  QPointer<QAbstractListModel>         source_;
   std::vector<QMetaObject::Connection> source_connections_;
   JustifiedLayoutGeometry              geometry_{};
   JustifiedRowLayout                   layout_{};

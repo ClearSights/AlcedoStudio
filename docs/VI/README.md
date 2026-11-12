@@ -501,6 +501,24 @@ labels.
   of a new rating appear 30 ms apart with a short scale settle (a cut with
   `reduceMotion`). As display, only the filled stars show.
 
+### `PhotoStackDisclosure.qml` and `PhotoStackActions.qml`
+
+- Shared by classic, grouped, and justified Library cards. The display owner supplies the
+  occurrence identity, matching counts, saved total, expansion, and temporary-cover state.
+  QML retains no member list and never derives stack membership.
+- Use the 24 px `inspectorHeaderActionSize` disclosure and existing monochrome surface,
+  hover, focus, and caption tokens. Counts use Manrope with tabular figures. Normal labels
+  have separate matching and saved-total roles; compact cards keep the fragment count.
+  Tooltip and accessibility text give all exact counts and identify a temporary cover.
+- The pointer overlay reserves disclosure presses before rating, drag selection, or photo
+  activation. A keyboard-focused disclosure handles Space and Enter itself. Group-header
+  collapse remains a separate action.
+- Menu validity comes from the C++ command owner. Confirm full saved totals before selecting
+  an entire stack or ungrouping hidden members. Cover tooltips explain project-wide scope.
+- Review classic and justified flat layouts and grouped classic, both themes, English and
+  Chinese, all eight zoom levels, a narrow window, pointer and keyboard, `reduceMotion`,
+  temporary covers, hidden selection, command refusal, and failed save with Retry Save.
+
 ### `ThumbnailGridView.qml`
 
 - Selected card: the normal card fill and a 2 px `textColor` outline, the same

@@ -512,7 +512,35 @@ edit state and the rating. The shared parts are `ThumbnailEditMark.qml` and
   new tier replaces the shown one when it is ready. The grouped view uses the
   same rules (260 ms).
 
-### Library justified rows
+### Library photo stacks
+
+`PhotoStackDisclosure.qml` reads scalar occurrence roles from `LibraryDisplayModel`.
+The control is independent of photo selection, rating, group-header collapse, and editor input.
+The displayed File opens in the editor, including a temporary cover.
+
+- The disclosure uses `inspectorHeaderActionSize` (24 px), a standard text triangle,
+  `cardSurfaceColor`, `textColor`, and `textMutedColor`. Focus has a 1 px muted outline;
+  hover uses `hoverColor`. There is no new icon asset or rounded count container.
+- Counts use `headlineFontFamily`, `fontSizeCaption`, and tabular figures. Normal cards
+  show separate labels for matching photos in this fragment and total saved stack members.
+  If the labels cannot fit, or at compact zoom, only the fragment count follows the triangle.
+  Compact counts of 1,000 or more use whole thousands (`12K`, `12千`); the accessible
+  description and tooltip always state the exact fragment, query, and saved totals.
+- The control stays on the top-left of the photo at caption-free zoom. Its target stays
+  24 px high. Existing edit and source marks keep their own hit areas. Space and Enter
+  on the disclosure change that fragment only and do not select or open its photo.
+- A temporary cover's accessible description explicitly identifies it. No error causes a
+  different cover to be selected. Selection summaries separately report hidden and
+  outside-result selections.
+- Context commands use the existing Basic menu family. Whole-stack selection always
+  confirms its saved total; ungrouping confirms when the clicked fragment hides members.
+  Cover changes explain their project-wide scope in the tooltip.
+- Query, command, and save errors use `AlertBadge`; Retry Save calls the project owner.
+  Expansion and cover replacement retain the first surviving occurrence using its opaque
+  typed identity and the real card or tile rectangle. Motion follows the existing view
+  transitions and `reduceMotion`.
+
+### Library justified row geometry
 
 Settings "Language / Theme" > Library > Photo layout selects the layout of the
 ungrouped Library: "Classic grid" (the cards above) or "Justified rows"

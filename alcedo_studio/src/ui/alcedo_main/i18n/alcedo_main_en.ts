@@ -1051,6 +1051,9 @@
 </context>
 <context>
     <name>Alcedo</name>
+    <message><source>Stack changed, but project save failed: %1</source><translation>Stack changed, but project save failed: %1</translation></message>
+    <message><source>A photo stack command is running.</source><translation>A photo stack command is running.</translation></message>
+    <message><source>Save pending photo stack changes or explicitly close the project with Discard before replacing it.</source><translation>Save pending photo stack changes or explicitly close the project with Discard before replacing it.</translation></message>
     <message>
         <location filename="../album_backend/image_controller.cpp" line="+51"/>
         <source>Capture</source>
@@ -2033,6 +2036,9 @@ Original source files on disk will be kept.</source>
 </context>
 <context>
     <name>EditorCloseConfirmDialog</name>
+    <message><source>Unsaved Project Changes</source><translation>Unsaved Project Changes</translation></message>
+    <message><source>Save the project before quitting, or discard all changes since the last project save.</source><translation>Save the project before quitting, or discard all changes since the last project save.</translation></message>
+    <message><source>Retry Save</source><translation>Retry Save</translation></message>
     <message>
         <location filename="../qml/EditorCloseConfirmDialog.qml" line="+86"/>
         <source>Unsaved Edits</source>
@@ -4929,6 +4935,14 @@ Original source files on disk will be kept.</source>
 <context>
     <name>LibraryWorkspace</name>
     <message>
+        <source>Updating library…</source>
+        <translation>Updating library…</translation>
+    </message>
+    <message><source>Stack changed, but project save failed: %1</source><translation>Stack changed, but project save failed: %1</translation></message>
+    <message><source>Retry Save</source><translation>Retry Save</translation></message>
+    <message><source>Dismiss</source><translation>Dismiss</translation></message>
+    <message><source>%1 selected photos hidden by collapsed stacks or groups. %2 outside the current result.</source><translation>%1 selected photos hidden by collapsed stacks or groups. %2 outside the current result.</translation></message>
+    <message>
         <location filename="../qml/LibraryWorkspace.qml" line="+255"/>
         <source>Browser</source>
         <translation type="unfinished"></translation>
@@ -4960,7 +4974,7 @@ Original source files on disk will be kept.</source>
     </message>
     <message>
         <source>Library query failed: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>Library query failed: %1</translation>
     </message>
     <message>
         <source>Updating</source>
@@ -6749,6 +6763,10 @@ CLIP / SigLIP 这类视觉语言模型会把图像和文字映射到同一语义
 <context>
     <name>alcedo::ui::ApplicationCloseCoordinator</name>
     <message>
+        <source>A photo stack command is running.</source>
+        <translation>A photo stack command is running.</translation>
+    </message>
+    <message>
         <source>Another close is in progress.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -6816,5 +6834,51 @@ CLIP / SigLIP 这类视觉语言模型会把图像和文字映射到同一语义
             <numerusform>Edited %n hours ago</numerusform>
         </translation>
     </message>
+</context>
+<context>
+    <name>PhotoStackDisclosure</name>
+    <message><source>Collapse stack, %1 matching photos</source><translation>Collapse stack, %1 matching photos</translation></message>
+    <message><source>Expand stack, %1 matching photos</source><translation>Expand stack, %1 matching photos</translation></message>
+    <message><source>%1 matching here. %2 matching the query. %3 in stack.</source><translation>%1 matching here. %2 matching the query. %3 in stack.</translation></message>
+    <message><source>Temporary cover. The saved cover is outside this group or filter.</source><translation>Temporary cover. The saved cover is outside this group or filter.</translation></message>
+    <message><source>%1 matching here</source><translation>%1 matching here</translation></message>
+    <message><source>%1 in stack</source><translation>%1 in stack</translation></message>
+    <message><source>%1K</source><translation>%1K</translation></message>
+</context>
+<context>
+    <name>PhotoStackActions</name>
+    <message><source>Group selected photos</source><translation>Group selected photos</translation></message>
+    <message><source>Add selected photos to this stack</source><translation>Add selected photos to this stack</translation></message>
+    <message><source>Remove selected photos from stacks</source><translation>Remove selected photos from stacks</translation></message>
+    <message><source>Ungroup entire stack</source><translation>Ungroup entire stack</translation></message>
+    <message><source>Set as stack cover</source><translation>Set as stack cover</translation></message>
+    <message><source>Changes the saved cover throughout this project.</source><translation>Changes the saved cover throughout this project.</translation></message>
+    <message><source>Moves this photo in saved stack order throughout this project.</source><translation>Moves this photo in saved stack order throughout this project.</translation></message>
+    <message><source>Move earlier in stack</source><translation>Move earlier in stack</translation></message>
+    <message><source>Move later in stack</source><translation>Move later in stack</translation></message>
+    <message><source>Select matching photos in this stack</source><translation>Select matching photos in this stack</translation></message>
+    <message><source>Select entire stack (%1 photos)</source><translation>Select entire stack (%1 photos)</translation></message>
+    <message><source>Collapse this stack</source><translation>Collapse this stack</translation></message>
+    <message><source>Expand this stack</source><translation>Expand this stack</translation></message>
+    <message><source>Expand all matching stacks</source><translation>Expand all matching stacks</translation></message>
+    <message><source>Collapse all matching stacks</source><translation>Collapse all matching stacks</translation></message>
+    <message><source>Select entire stack</source><translation>Select entire stack</translation></message>
+    <message><source>Ungroup all %1 photos? This changes every group and album. Photos outside the current filter are included.</source><translation>Ungroup all %1 photos? This changes every group and album. Photos outside the current filter are included.</translation></message>
+    <message><source>Select all %1 photos in this stack? Photos outside the current filter or album are included.</source><translation>Select all %1 photos in this stack? Photos outside the current filter or album are included.</translation></message>
+    <message><source>Cancel</source><translation>Cancel</translation></message>
+    <message><source>Confirm</source><translation>Confirm</translation></message>
+</context>
+<context>
+    <name>alcedo::ui::PhotoStackController</name>
+    <message><source>A photo stack command is running.</source><translation>A photo stack command is running.</translation></message>
+    <message><source>No project is available.</source><translation>No project is available.</translation></message>
+    <message><source>A photo File ID is invalid.</source><translation>A photo File ID is invalid.</translation></message>
+    <message><source>Select at least two photos.</source><translation>Select at least two photos.</translation></message>
+    <message><source>The stack cover must be selected.</source><translation>The stack cover must be selected.</translation></message>
+    <message><source>Select at least one photo.</source><translation>Select at least one photo.</translation></message>
+    <message><source>A photo stack ID is required.</source><translation>A photo stack ID is required.</translation></message>
+    <message><source>Updating photo stacks</source><translation>Updating photo stacks</translation></message>
+    <message><source>This photo occurrence is no longer available.</source><translation>This photo occurrence is no longer available.</translation></message>
+    <message><source>Unknown photo stack action.</source><translation>Unknown photo stack action.</translation></message>
 </context>
 </TS>

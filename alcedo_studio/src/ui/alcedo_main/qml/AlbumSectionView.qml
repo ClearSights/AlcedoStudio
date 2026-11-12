@@ -243,6 +243,13 @@ Item {
         }
     }
 
+    // Add only the accepted identity to an existing photo target; unloaded cells stay null.
+    function occurrenceItem(photo, key) {
+        const item = selectionItem(photo)
+        if (item) item.occurrenceKey = key
+        return item
+    }
+
     function isSelected(elementId) {
         // Reading revision makes a binding that calls this read again after each change.
         return selection.revision >= 0 && selection.IsSelected(Number(elementId))
@@ -405,9 +412,10 @@ Item {
                 }
                 // Drawn rectangle: mapToItem includes the running flip (scale and offset).
                 const p = cell.mapToItem(list, 0, 0)
-                entries.push({ key: "p|" + groupKey + "|" + cell.fileId, header: false,
+                entries.push({ key: cell.occurrenceKey, header: false,
                                target: cell, title: row.groupTitle, unknown: row.groupUnknown,
-                               fileId: cell.fileId, occurrence: cell.occurrence, x: p.x, y: p.y,
+                               fileId: cell.fileId, occurrenceKey: cell.occurrenceKey, occurrence: cell.occurrence, x: p.x, y: p.y,
+                               disclosureFocused: cell.stackDisclosureControl.controlFocused,
                                w: cell.width * cell.flipScaleX, h: cell.height * cell.flipScaleY,
                                gapX: cellGap / 2 * cell.flipScaleX,
                                gapY: cellGap / 2 * cell.flipScaleY, rowTop: rowTop,
@@ -449,7 +457,8 @@ Item {
                 rangeEntry = entry
             }
         }
-        changeCapture = { entries: entries, byKey: byKey, focus: focusEntry, range: rangeEntry }
+        changeCapture = { entries: entries, byKey: byKey, focus: focusEntry, range: rangeEntry,
+            focusedDisclosureKey: (entries.find(function(entry) { return entry.disclosureFocused }) || {}).key || "" }
     }
 
     // Row that shows a recorded entry after the change; -1 when its photo or group left.
@@ -461,7 +470,8 @@ Item {
         if (entry.header) {
             return sections.GroupHeaderRow(group)
         }
-        const occurrence = sections.LoadedOccurrenceOf(entry.fileId, group)
+        let occurrence = entry.occurrenceKey ? library.displayModel.rowByKey(entry.occurrenceKey) : -1
+        if (occurrence < 0) occurrence = sections.LoadedOccurrenceOf(entry.fileId, group)
         return occurrence >= 0 ? sections.RowForOccurrence(occurrence) : -1
     }
 
@@ -470,7 +480,9 @@ Item {
             return -1
         }
         const group = sections.GroupIndexForTitle(entry.title, entry.unknown)
-        return group >= 0 ? Number(sections.LoadedOccurrenceOf(entry.fileId, group)) : -1
+        const occurrence = entry.occurrenceKey ? library.displayModel.rowByKey(entry.occurrenceKey) : -1
+        return occurrence >= 0 ? occurrence
+            : (group >= 0 ? Number(sections.LoadedOccurrenceOf(entry.fileId, group)) : -1)
     }
 
     function keepChangeAnchor(entries) {
@@ -515,6 +527,11 @@ Item {
         visibleRowsTimer.restart()
 
         const after = changeEntries()
+        for (let f = 0; f < after.length; ++f) {
+            const entry = after[f]
+            if (!entry.header && entry.key === capture.focusedDisclosureKey)
+                entry.target.stackDisclosureControl.focusControl()
+        }
         const shown = {}
         const moves = []
         const fades = []
@@ -683,8 +700,15 @@ Item {
                 root.scrollToRow(sectionRow)
             }
         }
-        function onLibraryChangeAboutToApply() { root.captureChange() }
+        function onLibraryChangeAboutToApply() { if (!root.changeCapture) root.captureChange() }
         function onLibraryChangeApplied() { root.applyChange() }
+    }
+
+    Connections {
+        target: library.displayModel
+        function onModelAboutToBeReset() { if (!root.changeCapture) root.captureChange() }
+        function onModelReset() { root.photoRevision++; Qt.callLater(root.applyChange) }
+        function onDataChanged() { root.photoRevision++ }
     }
 
     // During an in-place change the photo rows change in runs; the cells read the photos once,
@@ -784,6 +808,9 @@ Item {
         property string groupTitle: ""
         property bool groupUnknown: false
         property bool rowInUse: true
+        readonly property var stackItem: { const revision = root.photoRevision; return library.displayModel.getStackAt(occurrence) }
+        readonly property string occurrenceKey: stackItem.occurrenceKey || ""
+        readonly property alias stackDisclosureControl: stackDisclosure
         readonly property var photo: root.photoFor(fileId, root.photoRevision)
         readonly property int imageId: photo ? Number(photo.imageId) : 0
         readonly property bool selected: fileId > 0 && root.isSelected(fileId)
@@ -1080,7 +1107,7 @@ Item {
                         cardHovered: cell.hovered
                         pixelSize: appTheme.fontSizeBody
                         onRatingRequested: function(rating) {
-                            const item = root.selectionItem(cell.photo)
+                            const item = root.occurrenceItem(cell.photo, cell.occurrenceKey)
                             if (item) {
                                 root.ratingRequested(item, rating)
                             }
@@ -1088,6 +1115,23 @@ Item {
                     }
                 }
             }
+        }
+
+        PhotoStackDisclosure {
+            id: stackDisclosure
+            x: root.cardInset
+            y: root.cardInset
+            z: 4
+            occurrenceKey: cell.occurrenceKey
+            matchingCount: Number(cell.stackItem.fragmentMatchCount || 0)
+            queryCount: Number(cell.stackItem.queryMatchCount || 0)
+            totalCount: Number(cell.stackItem.stackTotal || 0)
+            expanded: cell.stackItem.stackExpanded === true
+            temporaryCover: cell.stackItem.temporaryCover === true
+            availableWidth: cell.width - root.cardInset * 2
+            compact: root.visualColumns >= 8 || availableWidth < fullTextWidth
+            interactive: !library.queryUpdating
+            onToggled: { root.captureChange(); library.ToggleStack(occurrenceKey) }
         }
 
         MouseArea {
@@ -1098,7 +1142,7 @@ Item {
             cursorShape: cell.photo ? Qt.PointingHandCursor : Qt.ArrowCursor
             onPressed: function(mouse) {
                 root.forceActiveFocus()
-                const item = root.selectionItem(cell.photo)
+                const item = root.occurrenceItem(cell.photo, cell.occurrenceKey)
                 if (!item) {
                     return
                 }
@@ -1112,7 +1156,7 @@ Item {
                 if (mouse.button !== Qt.LeftButton) {
                     return
                 }
-                const item = root.selectionItem(cell.photo)
+                const item = root.occurrenceItem(cell.photo, cell.occurrenceKey)
                 if (!item) {
                     return
                 }
@@ -1134,7 +1178,7 @@ Item {
                 }
             }
             onDoubleClicked: function(mouse) {
-                const item = root.selectionItem(cell.photo)
+                const item = root.occurrenceItem(cell.photo, cell.occurrenceKey)
                 if (item && mouse.button === Qt.LeftButton) {
                     appModules.workspaceRouter.openEditor(item.elementId, item.imageId)
                 }

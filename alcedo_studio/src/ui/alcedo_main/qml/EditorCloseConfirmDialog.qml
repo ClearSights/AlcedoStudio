@@ -100,11 +100,16 @@ Popup {
                   ? qsTr("Saving current edits…")
                   : root.pendingStackSave
                     ? qsTr("Save the project before quitting, or discard all changes since the last project save.")
-                      + (root.stackSaveError.length ? "\n" + root.stackSaveError : "")
                     : qsTr("Save edits for the current image before quitting, or discard them.")
             color: root.theme ? root.theme.colTextMuted : appTheme.textMutedColor
             font.pixelSize: appTheme.fontSizeBody
             font.family: root.theme ? root.theme.uiFontFamily : appTheme.uiFontFamily
+        }
+
+        AlertBadge {
+            objectName: "editorCloseStackSaveError"
+            Layout.fillWidth: true
+            text: root.pendingStackSave ? root.stackSaveError : ""
         }
 
         RowLayout {
