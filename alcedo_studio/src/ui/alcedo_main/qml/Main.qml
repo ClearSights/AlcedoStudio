@@ -440,7 +440,8 @@ ApplicationWindow {
         }
         const router = appModules.workspaceRouter
         const inEditor = !!(router && String(router.workspace || "") === "editor")
-        if (!inEditor && appModules.applicationClose.EditorPersistBusy()) {
+        if (!inEditor && !appModules.project.hasUnsavedStackChanges
+                && appModules.applicationClose.EditorPersistBusy()) {
             appModules.applicationClose.BeginPersistWait()
             return
         }

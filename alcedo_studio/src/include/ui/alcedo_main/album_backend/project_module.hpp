@@ -142,11 +142,15 @@ class ProjectModule final : public QObject, public IUiStatusSink {
   Q_INVOKABLE bool   CreateProjectInFolderNamed(const QString& folderUrlOrPath,
                                                 const QString& projectName);
   Q_INVOKABLE bool   SaveProject();
+  /// GUI-thread retry of persistence only. Refuses during a stack command; failure keeps pending.
+  Q_INVOKABLE bool      RetryStackSave();
   [[nodiscard]] bool    HasUnsavedStackChanges() const { return unsaved_stack_changes_; }
   [[nodiscard]] QString StackSaveError() const { return stack_save_error_; }
   [[nodiscard]] bool    StackCommandBusy() const;
   /// Consume a committed command outcome, or a successful project save. GUI thread only.
   void                  SetStackSaveState(bool pending, const QString& diagnostic = {});
+  /// Explicit application discard closes the working project without writing its package.
+  bool                  DiscardUnsavedProject();
   /// GUI completion of a successful package save. A live stack command publishes its own result.
   void                  NoteProjectSaved();
   /// Loads the project at @p projectUrlOrPath in preview mode for the welcome surface.

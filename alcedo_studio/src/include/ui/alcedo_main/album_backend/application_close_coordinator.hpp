@@ -89,6 +89,7 @@ class ApplicationCloseCoordinator final : public QObject {
   // False when the close only waits for a running persist (no editor finalize started).
   bool                              awaiting_seal_         = false;
   bool                              project_close_persist_ = true;
+  bool                              application_save_      = true;
 };
 
 }  // namespace alcedo::ui

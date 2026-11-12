@@ -28,6 +28,11 @@ Item {
     Connections {
         target: appModules.project
         ignoreUnknownSignals: true
+        function onStackSaveStateChanged() {
+            if (root.host && appModules.project.hasUnsavedStackChanges) {
+                root.host.showSnackbar(qsTr("Stack changed, but project save failed: %1").arg(appModules.project.stackSaveError))
+            }
+        }
         function onProjectChanged() {
             if (root.host) {
                 root.host.updateWelcomeDialogVisibility()

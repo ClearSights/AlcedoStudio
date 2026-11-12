@@ -787,8 +787,25 @@ void ProjectModule::SetStackSaveState(bool pending, const QString& diagnostic) {
   emit stackSaveStateChanged();
 }
 
+bool ProjectModule::RetryStackSave() {
+  if (StackCommandBusy() || handler_.project_loading() || !handler_.project()) return false;
+  QString error;
+  if (!handler_.MakeSaveAndPackageJob()(&error)) {
+    SetStackSaveState(true, error);
+    SetServiceMessageForCurrentProject(
+        PL_TEXT("Stack changed, but project save failed: %1", error));
+    return false;
+  }
+  SetStackSaveState(false);
+  return true;
+}
+
 void ProjectModule::NoteProjectSaved() {
   if (!StackCommandBusy()) SetStackSaveState(false);
+}
+
+bool ProjectModule::DiscardUnsavedProject() {
+  return !HasUnsavedStackChanges() || CloseProject(false);
 }
 
 bool ProjectModule::SaveProject() {
@@ -905,6 +922,11 @@ void ProjectModule::ClearProjectUiState() {
 }
 
 auto ProjectModule::ProjectSwitchBlockReason() const -> QString {
+  if (HasUnsavedStackChanges())
+    return PL_TEXT(
+               "Save pending photo stack changes or explicitly close the project with Discard "
+               "before replacing it.")
+        .Render();
   return lifecycle_hooks_.project_switch_block_reason
              ? lifecycle_hooks_.project_switch_block_reason()
              : QString{};

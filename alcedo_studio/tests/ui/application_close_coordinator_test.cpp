@@ -104,6 +104,36 @@ class DeferredCloseBackend final : public alcedo::IEditorSessionBackend {
 
 class ApplicationCloseCoordinatorTest : public ApplicationModuleHostTestFixture {};
 
+TEST_F(ApplicationCloseCoordinatorTest,
+       ApplicationCloseWaitsForProjectPackageSaveAfterEditorFinalize) {
+  ApplicationModuleHost host;
+  ASSERT_TRUE(CreateTestProject(host));
+  host.project()->SetStackSaveState(true, QStringLiteral("Previous package failure"));
+  auto blocked = host.project()->handler().package_path();
+  blocked += ".tmp";
+  std::filesystem::create_directory(blocked);
+  DeferredCloseBackend    backend;
+  EditorSessionController editor(&backend);
+  editor.Open(4, 7);
+  ApplicationCloseCoordinator close(&editor, nullptr, host.project());
+  QSignalSpy finished(&close, &ApplicationCloseCoordinator::ApplicationCloseFinished);
+  QSignalSpy aborted(&close, &ApplicationCloseCoordinator::ApplicationCloseAborted);
+  close.BeginSave();
+  ProcessEvents(50);
+  EXPECT_TRUE(close.waiting());
+  EXPECT_EQ(aborted.count(), 0);
+  EXPECT_EQ(finished.count(), 0);
+  backend.CompleteClose();
+  ASSERT_TRUE(WaitForSignal(aborted));
+  EXPECT_EQ(finished.count(), 0);
+  EXPECT_TRUE(host.project()->HasUnsavedStackChanges());
+  std::filesystem::remove(blocked);
+  close.BeginSave();
+  backend.CompleteClose();
+  ASSERT_TRUE(WaitForSignal(finished));
+  EXPECT_FALSE(host.project()->HasUnsavedStackChanges());
+}
+
 TEST_F(ApplicationCloseCoordinatorTest, CloseWaitsForSaveAndFinishesOnNoImage) {
   DeferredCloseBackend    backend;
   EditorSessionController editor(&backend);

@@ -304,6 +304,8 @@ Item {
 
     EditorCloseConfirmDialog {
         id: editorCloseConfirmDialogObj
+        pendingStackSave: appModules.project.hasUnsavedStackChanges
+        stackSaveError: appModules.project.stackSaveError
         parent: Overlay.overlay
         theme: root.host
         host: root.host
