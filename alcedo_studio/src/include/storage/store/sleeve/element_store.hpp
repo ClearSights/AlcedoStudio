@@ -131,12 +131,26 @@ struct AlbumQueryRow {
   std::string            edit_version_name_{};
 };
 
+/// One bounded display result. The photo is the actual displayed File. Counts describe its
+/// saved stack and matching fragment; plain photos have counts of one and no saved cover.
+struct AlbumDisplayRow {
+  AlbumQueryRow        photo;
+  AlbumDisplayIdentity identity;
+  sl_element_id_t      saved_cover_file_id  = 0;
+  int64_t              stack_total          = 1;
+  int64_t              query_match_count    = 1;
+  int64_t              fragment_match_count = 1;
+  bool                 temporary_cover      = false;
+};
+
 /// One group of an album query: its key, its photo count, and the position of its first
 /// occurrence in the ordered occurrence stream. It does not hold the photos.
 struct AlbumGroupDescriptor {
   AlbumGroupKey key_{};
   int64_t       photo_count_      = 0;
   int64_t       first_occurrence_ = 0;
+  int64_t       display_count     = 0;
+  int64_t       first_display     = 0;
 };
 
 /// Parts of one album query read. A read without groups and statistics is a scroll page.
@@ -148,6 +162,9 @@ struct AlbumQueryRead {
   /// Read the file id of every occurrence in occurrence order (AlbumQueryResult::
   /// occurrence_file_ids_), in the same transaction as the counts and the groups.
   bool    read_occurrence_file_ids_ = false;
+  AlbumReadMode mode                      = AlbumReadMode::kPhotos;
+  /// Display offsets never use the raw occurrence offset. limit_ bounds either page mode.
+  int64_t       display_offset            = 0;
 };
 
 /// Result of ElementStore::ReadAlbumQuery: counts, the requested groups and statistics, and one
@@ -164,6 +181,9 @@ struct AlbumQueryResult {
   /// several label groups is listed once per group). Empty unless
   /// AlbumQueryRead::read_occurrence_file_ids_.
   std::vector<sl_element_id_t>      occurrence_file_ids_{};
+  int64_t                           display_count = 0;
+  int64_t                           first_display = 0;
+  std::vector<AlbumDisplayRow>      display_rows;
 };
 
 /// Position of one file's occurrence in the ordered occurrence stream.

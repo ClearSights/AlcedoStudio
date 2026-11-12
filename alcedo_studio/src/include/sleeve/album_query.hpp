@@ -8,6 +8,8 @@
 #include <string>
 #include <variant>
 
+#include "type/type.hpp"
+
 namespace alcedo {
 
 /// Field of the explicit photo sort of a library read. kNone keeps the defined presentation
@@ -83,6 +85,31 @@ struct AlbumQueryOptions {
  *        key as text, or a rating as a number. std::monostate is the unknown group.
  */
 using AlbumGroupKey = std::variant<std::monostate, std::string, int64_t>;
+
+/// Photo reads preserve the complete matching set. Display reads project stack cards.
+enum class AlbumReadMode : uint8_t { kPhotos, kDisplay };
+
+/// A fragment belongs to one scope and typed grouping. kNone tags the flat group, while
+/// monostate with another grouping tags its unknown group. Project lifetime supplies the
+/// session identity; callers release these keys when the project closes.
+struct AlbumStackFragmentKey {
+  sl_element_id_t folder_id   = 0;
+  AlbumGroupField group_field = AlbumGroupField::kNone;
+  AlbumGroupKey   group_key{};
+  std::string     stack_id;
+  auto            operator==(const AlbumStackFragmentKey&) const -> bool = default;
+};
+
+enum class AlbumDisplayKind : uint8_t { kPhoto, kStackRepresentative, kStackMember };
+
+/// A representative has file_id 0 so a temporary-cover change preserves its identity.
+/// Ordinary photos and expanded members use their actual File ID.
+struct AlbumDisplayIdentity {
+  AlbumStackFragmentKey fragment;
+  AlbumDisplayKind      kind    = AlbumDisplayKind::kPhoto;
+  sl_element_id_t       file_id = 0;
+  auto                  operator==(const AlbumDisplayIdentity&) const -> bool = default;
+};
 
 /// Largest number of photo rows that one library page read returns.
 inline constexpr int64_t kMaxAlbumQueryPageRows = 1000;

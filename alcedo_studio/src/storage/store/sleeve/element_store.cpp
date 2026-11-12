@@ -34,7 +34,9 @@
 #include "storage/store/semantic/semantic_embedding_store.hpp"
 #include "storage/store/semantic/semantic_vector_search.hpp"
 #include "storage/store/sleeve/album_edit_state_sql.hpp"
+#include "storage/store/sleeve/album_query_rows.hpp"
 #include "storage/store/sleeve/album_query_sql.hpp"
+#include "storage/store/sleeve/album_stack_query.hpp"
 #include "storage/store/sleeve/photo_stack_store.hpp"
 #include "type/type.hpp"
 #include "utils/diagnostics/app_logging.hpp"
@@ -114,34 +116,9 @@ constexpr const char* kSearchResultColumns =
     "e.id, fi.image_id, i.file_name, i.camera_model, i.lens, "
     "CAST(i.capture_date AS VARCHAR), i.rating, CAST(epoch(e.added_time) AS BIGINT), "
     "i.color_labels, i.delete_mark";
-// The same columns read from the match set table (alias `s`).
-constexpr const char* kMatchSetResultColumns =
-    "s.file_id, s.image_id, s.file_name, s.camera_model, s.lens, "
-    "CAST(s.capture_date AS VARCHAR), s.rating, CAST(epoch(s.added_time) AS BIGINT), "
-    "s.color_labels, s.delete_mark";
-
-/// One row of kSearchResultColumns or kMatchSetResultColumns. The text, rating, and mark
-/// columns are optional: databases written before their NOT NULL defaults (and the #768 mark
-/// migration, which adds no NOT NULL constraint) can hold NULL there, and a NULL reads as the
-/// empty text, rating 0, no color label, and no Delete mark.
-struct SearchResultDbRow {
-  int64_t                    file_id  = 0;
-  int64_t                    image_id = 0;
-  std::optional<std::string> file_name;
-  std::optional<std::string> camera_model;
-  std::optional<std::string> lens;
-  std::optional<std::string> capture_date;
-  std::optional<int32_t>     rating;
-  std::optional<int64_t>     added_time;
-  std::optional<uint8_t>     color_labels;
-  std::optional<bool>        delete_mark;
-  using Columns =
-      duckorm::RowColumns<&SearchResultDbRow::file_id, &SearchResultDbRow::image_id,
-                          &SearchResultDbRow::file_name, &SearchResultDbRow::camera_model,
-                          &SearchResultDbRow::lens, &SearchResultDbRow::capture_date,
-                          &SearchResultDbRow::rating, &SearchResultDbRow::added_time,
-                          &SearchResultDbRow::color_labels, &SearchResultDbRow::delete_mark>;
-};
+using album_query_rows::kMatchSetResultColumns;
+using album_query_rows::SearchResultDbRow;
+using album_query_rows::ToSearchResultRow;
 
 /// A search result row followed by `COUNT(*) OVER ()`: the rows that match before LIMIT.
 struct SearchResultPageDbRow : SearchResultDbRow {
@@ -149,20 +126,6 @@ struct SearchResultPageDbRow : SearchResultDbRow {
   using Columns =
       duckorm::AppendRowColumns<SearchResultDbRow::Columns, &SearchResultPageDbRow::total_count>;
 };
-
-auto ToSearchResultRow(const SearchResultDbRow& row) -> SearchResultRow {
-  return SearchResultRow{.file_id_      = static_cast<sl_element_id_t>(row.file_id),
-                         .image_id_     = static_cast<image_id_t>(row.image_id),
-                         .file_name_    = row.file_name.value_or(std::string{}),
-                         .camera_model_ = row.camera_model.value_or(std::string{}),
-                         .lens_         = row.lens.value_or(std::string{}),
-                         .capture_date_ = row.capture_date.value_or(std::string{}),
-                         .rating_       = static_cast<int>(row.rating.value_or(0)),
-                         .color_labels_ = static_cast<ColorLabelMask>(row.color_labels.value_or(0) &
-                                                                      kColorLabelMaskAll),
-                         .delete_mark_  = row.delete_mark.value_or(false),
-                         .added_time_   = row.added_time};
-}
 
 /// One file id column (`e.id`, `s.file_id`, or an occurrence file id).
 struct FileIdRow {
@@ -595,7 +558,7 @@ auto ReadAlbumQueryFromMatchSet(duckorm::Connection conn, const AlbumQueryOption
     });
   }
 
-  if (read.limit_ > 0) {
+  if (read.limit_ > 0 && read.mode == AlbumReadMode::kPhotos) {
     // Every photo row carries its edit state, so the card shows the edit mark in any
     // presentation, not only when the edit-time sort or group reads the relation.
     auto query = album_sql::RelationsPrefix(options, active_semantic_model_key,
@@ -646,6 +609,14 @@ auto ReadAlbumQueryFromMatchSet(duckorm::Connection conn, const AlbumQueryOption
 /// Validate the scalar inputs of an album read before any statement runs.
 void ValidateAlbumQueryRead(const AlbumQueryOptions& options, const AlbumQueryRead& read) {
   ValidateAlbumQueryOptions(options);
+  if (read.mode != AlbumReadMode::kPhotos && read.mode != AlbumReadMode::kDisplay) {
+    throw std::invalid_argument("Album query: unknown read mode");
+  }
+  if (read.display_offset < 0 ||
+      (read.mode == AlbumReadMode::kPhotos && read.display_offset != 0) ||
+      (read.mode == AlbumReadMode::kDisplay && read.offset_ != 0)) {
+    throw std::invalid_argument("Album query: use the offset of the selected read mode");
+  }
   if (read.offset_ < 0) {
     throw std::invalid_argument("Album query: the page offset is negative");
   }
@@ -874,7 +845,7 @@ auto ElementStore::GetFolderContent(const sl_element_id_t folder_id)
  * element is 0.
  *
  * Low-level row delete: removes the Element row only. It does NOT cascade
- * AI / semantic / pipeline / file-binding rows — that orchestration
+ * AI / semantic / pipeline / file-binding rows â€” that orchestration
  * lives at the service layer (SleeveServiceImpl::DeleteElement flows through
  * Write -> SyncLocked -> ApplyElementChanges -> RemoveElementRows; standalone full removal
  * also uses RemoveElementRows, including stack repair and DeleteSemanticAndAiRowsForFiles
@@ -1045,6 +1016,10 @@ auto ElementStore::ReadAlbumQuery(
     const MatchSetTable match_set(guard.conn_, scope, options.local_day_time_zone_);
     out = ReadAlbumQueryFromMatchSet(guard.conn_, options, active_semantic_model_key, read,
                                      scope.joins_relevance_);
+    if (read.mode == AlbumReadMode::kDisplay) {
+      album_stack_query::ReadDisplay(guard.conn_, folder_id, options, active_semantic_model_key,
+                                     read, scope.joins_relevance_, out);
+    }
   }
   transaction.commit();
   return out;

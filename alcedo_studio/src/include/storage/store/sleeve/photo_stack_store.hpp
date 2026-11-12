@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "sleeve/photo_stack.hpp"
+#include "storage/mapper/duckorm/duckdb_expr.hpp"
 #include "storage/store/database.hpp"
 
 namespace alcedo {
@@ -46,6 +47,11 @@ class PhotoStackStore {
   /// Project open calls this before exposing services. Throws the persisted-data diagnostic;
   /// never repairs damaged data or changes covers, memberships, or positions.
   void        ValidateAll();
+  /// Validate the stacks touched by a File ID SELECT on the caller's locked read transaction.
+  /// The prepared query returns one file_id column. Reads minimal IDs and checks the complete
+  /// affected relations; opens no connection and changes no rows. Throws the actual diagnostic.
+  static void ValidateFileStacks(duckdb_connection&          connection,
+                                 const duckorm::SqlFragment& file_ids);
   /// Remove memberships before File deletion on the caller's locked transaction connection.
   /// Validate affected stacks, then repair covers or dissolve them. Opens no connection or
   /// transaction; the caller must retain live File bindings until this method returns.

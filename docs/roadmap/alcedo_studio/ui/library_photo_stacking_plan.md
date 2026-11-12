@@ -2,7 +2,7 @@
 
 Date: 2026-11-11
 
-Status: PS1, PS2A, and PS2B complete (2026-11-11). All other phases remain planned.
+Status: PS1, PS2A, PS2B, and PS3 complete (2026-11-11). All other phases remain planned.
 The latest Windows Release verification has 113 distinct passes, three skips, and no unresolved
 test failures after fixture preparation and reruns. One GPU rendering comparison was excluded.
 See the PS1 and PS2A review-fix records and the original PS2B completion record.
@@ -133,7 +133,7 @@ The following example is required acceptance data:
 | File | Saved order | Saved cover | Capture day | Camera | Lens | Labels |
 | --- | ---: | --- | --- | --- | --- | --- |
 | A | 0 | Yes | Monday | Canon | Lens A | bird |
-| B | 1 | No | Tuesday | Nikon | Lens B | bird, flight |
+| B | 1 | No | Tuesday | Nikon | Lens B | bird |
 | C | 2 | No | Tuesday | Canon | Lens A | flight |
 | D | 3 | No | Wednesday | Nikon | Lens B | none |
 
@@ -144,12 +144,15 @@ The following example is required acceptance data:
 | Monday AND Lens B | No matching fragment. |
 | Capture-day grouping | Monday: A; Tuesday: B and C with temporary cover B; Wednesday: D with temporary cover D. |
 | Camera grouping | Canon: A and C with cover A; Nikon: B and D with temporary cover B. |
-| Label grouping | bird: A and B; flight: B and C; unknown: D. Each fragment uses only its own members. |
+| Label grouping | bird: A and B; flight: C; unknown: D. Each fragment uses only its own members. |
 | Album containing C and D | One flat fragment with temporary cover C. A and B remain members of the saved stack. |
 
-The same File can appear in several label groups.
-Those occurrences share photo selection and image state. They have separate fragment identities.
-Do not count their repeated appearances as additional project photos.
+The current `SemanticImageLabel` primary key is `(file_id, model_key)`. Thus each File has
+at most one label for the active model. The example uses that supported representation.
+The existing occurrence relation still defines the query boundary: if that owner later supports
+several active labels, repeated File occurrences must share photo selection and image state,
+keep separate fragment identities, and count once in project photo totals. Stacking does not
+change the semantic-label schema or assignment policy.
 
 Changing the filter, grouping, semantic model, sort direction, or album can change the displayed cover.
 It must not issue a stack write.
@@ -484,6 +487,9 @@ Compute the global stack total from PhotoStackMember.
 Compute the query match count from unique matching Files before label expansion.
 Compute the fragment count after label expansion, grouped by stack ID and typed group key.
 Use the same SQL comparison for display pages, display positions, and display range IDs.
+Rank the existing photo occurrence stream once with its current comparator. A fragment uses its
+displayed cover's occurrence rank as its unit position. The shared display projection then orders
+that unit and its visible members. This keeps sort and semantic relevance definitions in one owner.
 
 Build the display query in these steps:
 
@@ -760,7 +766,7 @@ Do not place the complete implementation in one PR if its added diff can exceed 
 | PS1 | Stack schema, store, and application operations | Source audit | 1300-1850 | Keep persistent invariants in one reviewed unit. | complete |
 | PS2A | Atomic element sync and stack-aware project deletion | PS1 | 1200-1850 | Main needs a complete sync transaction and focused owner restore. | complete |
 | PS2B | Migration, package preservation, and diagnostics | PS1 | 750-1250 | Keep format and package evidence separate from deletion changes. | complete |
-| PS3 | Filter-first fragments, covers, and collapsed display reads | PS1 | 1200-1800 | Isolate query semantics from expansion and UI. | planned |
+| PS3 | Filter-first fragments, covers, and collapsed display reads | PS1 | 1200-1800 | Isolate query semantics from expansion and UI. | complete |
 | PS4 | Expansion, bounded pages, positions, and matching-member reads | PS3 | 1100-1750 | Paging and three position spaces need dedicated tests. | planned |
 | PS5A | C++ display owner and complete query publication | PS4 | 800-1300 | Separate display state from command and save state. | planned |
 | PS5B | Command controller, task policy, and save outcomes | PS2A, PS2B, PS5A | 700-1200 | Keep command task behavior independent from close decisions. | planned |
@@ -777,7 +783,8 @@ PS7 and PS8 form one product delivery: do not release a build with a layout that
 
 ### 7.1 Pull request delivery
 
-The user selected five sequential pull requests on 2026-11-11.
+The user selected five pull requests on 2026-11-11. The later branch decision below supersedes
+the original merge-before-next-branch workflow.
 The twelve phases remain the implementation and verification units. They do not require twelve PRs.
 Keep a focused, tested commit for each phase. Use functional commit and PR titles without phase IDs.
 Put the phase IDs and this plan link in the PR body's Plan section.
@@ -795,8 +802,13 @@ Keep PR 1's persistence, deletion repair, and format compatibility together befo
 Keep all layouts and integrated acceptance together in PR 5 before product release.
 PS1 through PS6 must not expose stack commands or incomplete stack presentation in the production UI.
 
-Use `feature/library-photo-stacking` for PR 1. After each PR merges, create the next functional
-branch from updated main. Open one PR in this series at a time. Search for overlapping work first.
+PR 1 is upstream [#828](https://github.com/zidage/AlcedoStudio/pull/828), with head
+`feature/library-photo-stacking` at `c6981926`. The user approved stacked development in the fork
+so the complete UI can provide real screenshots before upstream review finishes.
+Create PR 2 as `feature/library-photo-stacking-PR2` from that PR 1 head. Use
+`feature/library-photo-stacking-PRn` for subsequent branches, each based on the preceding PR branch.
+Keep this dependency chain in the fork. The current request implements PS3 and PS4 only.
+Search for competing work before opening a PR.
 Use the current alcedo-create-pr skill and its Plan, Why, Changes, and Verification sections.
 Report the targeted test evidence collected during implementation.
 Each PR must stay within CONTRIBUTING.md's limit of 10,000 added lines.
@@ -1446,7 +1458,7 @@ Temporary covers are read results. A saved stack with one match remains a saved 
 - `NonCoverMatchShowsStackAndChoosesTemporaryCover`: Tuesday returns B, with two matches and total four.
 - `DifferentMembersCannotSatisfyDifferentAndConditions`: Monday AND Lens B returns no fragment.
 - `OneStackSpanningDaysHasOneFragmentInEachMatchingDay`: assert exact members, counts, and covers.
-- `LabelOccurrencesUseOneSavedStackWithoutDuplicatingPhotoTotals`: B appears in two groups; total stays four.
+- `LabelOccurrencesUseOneSavedStackWithoutDuplicatingPhotoTotals`: bird, flight, and unknown fragments share one saved stack; total stays four.
 - `AlbumScopeCanUseATemporaryCoverWithoutChangingSavedCover`: C/D album displays C; stored cover stays A.
 - `ExplicitSortAndSemanticRelevanceOrderUseTheDisplayedCover`: verify each supported comparator.
 - `UnknownGroupAndFlatModeHaveDifferentFragmentKeys`: preserve typed unknown values.
@@ -1454,10 +1466,90 @@ Temporary covers are read results. A saved stack with one match remains a saved 
 - `InvalidStoredCoverReportsErrorInsteadOfChoosingATemporaryCover`: distinguish damaged data from excluded data.
 
 **Build and run.** V3: AlbumStackQueryTest and AlbumQueryTest.
-**Exit criteria.** [ ] Section 2.2 table matches exact expected outputs.
-[ ] Predicate evaluates once per read. [ ] Saved rows stay byte-for-byte unchanged after reads.
+**Exit criteria.** [x] Section 2.2 table matches exact expected outputs.
+[x] Predicate evaluates once per read. [x] Saved rows stay byte-for-byte unchanged after reads.
 **Expected diff.** 1200-1800 lines.
-**Completion record.** Not started. Fill the Section 12 template here after implementation.
+#### PS3 completion record (2026-11-11)
+
+**Status:** complete. Display mode is opt-in; the existing photo mode remains the default.
+The fork branch `feature/library-photo-stacking-PR2` starts at PR 1 commit `c6981926`.
+
+**Implementation decisions.** The existing occurrence comparator assigns a raw rank. Each stack
+unit uses the rank of its displayed cover. This shares all sort and relevance rules without a
+second comparator. The new `album_stack_query` module owns the SQL projection, and the existing
+ElementStore operation owns its connection, lock, match table, and transaction. A shared typed
+SQL row definition avoids a second metadata decoder. Participating stacks are validated through
+PhotoStackStore on that same connection. Reads do not repair malformed rows.
+
+The acceptance fixture was corrected to the current semantic-label schema: one label per File
+and model. B has `bird`; C has `flight`. No label schema or assignment behavior changes here.
+The relation remains occurrence-based so later owner support for repeated labels does not require
+a new stacking model. Repeated active-model label assignments cannot be tested against this schema.
+
+**Primary success call chain:**
+
+```text
+AlbumBrowseService::ReadAlbumQuery(display mode)
+  -> ElementStore: connection lock + read transaction + one SearchMatchSet evaluation
+  -> existing photo counts/groups/statistics
+  -> album_stack_query: validated fragments + cover rank + bounded display metadata
+  -> typed display identities, counts, saved and temporary covers
+```
+
+**Primary failure call chain:**
+
+```text
+Invalid read bounds or damaged participating saved cover
+  -> validation exception + transaction rollback + match-table cleanup
+  -> no successful result and no stack or Image write
+```
+
+**Executed evidence:** `AlbumStackQueryTest` passes all 10 cases, including every named PS3
+criterion plus `PredicateRunsOnceAndReadsKeepStoredOrganizationAndMetadataUnchanged`.
+The latter compares persisted organization and Image JSON, counts actual sequence evaluations,
+and checks stable representative identity across filters. `AlbumQueryTest` passes 34 regular
+cases; its opt-in 10,000-photo measurement also passes. `PhotoStackStoreTest` passes 15 cases.
+
+Commands (PowerShell from repository root; MSVC 14.44, Qt 6.12, existing `build/release`):
+
+```powershell
+cmd /c scripts\msvc_env.cmd --build --preset win_release --target AlbumStackQueryTest AlbumQueryTest PhotoStackStoreTest --parallel 4
+ctest --test-dir build/release -R '^(AlbumStackQueryTest\.|AlbumQueryTest\.|PhotoStackStoreTest\.)' --output-on-failure
+$env:ALCEDO_ALBUM_QUERY_PROFILE='10000'
+& build/release/alcedo_studio/tests/app/AlbumQueryTest_runtime/AlbumQueryTest.exe --gtest_filter=AlbumQueryTest.LargeLibraryPagesStayBoundedAndRecordTimings
+```
+
+The regular run has 59 passes and one opt-in skip. The direct measurement adds that skipped
+case: 60 distinct cases pass. Test runtime PATH includes the vcpkg binary directories.
+The first fixture run rejected an invalid second label assignment; it was corrected before
+acceptance. No production failure was suppressed.
+
+**Raw-photo timing reference:** the existing, unchanged photo-mode statements were measured on
+10,000 unstacked synthetic photos, with one first read and 10 warm reads. This records an equivalent
+raw-photo reference after the new opt-in mode was added, rather than claiming a checkout of the
+parent commit. PS9 must use the same fixture and configuration for its display-mode comparison.
+
+| Operation | First ms | Warm median ms | Warm p95 ms |
+| --- | ---: | ---: | ---: |
+| Camera-group initial page + statistics | 39.902 | 28.676 | 37.192 |
+| Camera-group deep page | 21.375 | 18.733 | 22.338 |
+| Camera-group position | 12.190 | 11.262 | 14.910 |
+| Label-group initial page + statistics | 50.056 | 41.015 | 47.088 |
+| Label-group deep page | 32.074 | 24.873 | 30.406 |
+| Edit-day initial page + statistics | 48.652 | 40.381 | 56.709 |
+| Edit-day deep page | 23.841 | 20.650 | 32.166 |
+
+**Review and size:** new projection 177 lines, shared SQL row definition 56, query tests 234,
+fixture 134. ElementStore is 1347 lines (down from 1372): new fragment logic lives in a module
+with an explicit stateless API; ElementStore retains transaction and match-table ownership.
+The 1054-line app CMake file remains target registration only. The plan's length reflects its
+product specification and retained completion history. Changed files use LF; changed C++ lines
+and new files were formatted. The roadmap-wide terminology scan found pre-existing matches in
+unrelated files; the touched plan and new code contain no prohibited wording.
+
+**Completion criteria:** all checked. Full-suite, macOS, and GUI execution were not run.
+GUI publication and screenshot evidence require PS5A through PS8; this phase changes no QML.
+
 
 ### PS4 - Expanded display pages and position reads
 
@@ -1804,7 +1896,7 @@ Do not compute expected covers by calling the production fragment helper.
 | Filter on a non-cover | PS3 example and integration | Matching fragment appears with a temporary cover. |
 | Combined predicates | PS3 independent evaluator | One File must satisfy the full predicate. |
 | Cross-day/camera/lens/rating/edit groups | PS3, PS9 | Correct fragment in every applicable group. |
-| Multiple semantic labels | PS3, PS6 | Repeated appearances, unique photo counts and action targets. |
+| Label fragments | PS3, PS6 | Active-model groups share one stack; unique photo counts and action targets. |
 | Album excludes saved cover | PS3, PS9 | Temporary cover; global membership unchanged. |
 | Single or zero matching member | PS3 | One-member fragment keeps stack identity; zero members hide it. |
 | Paging through a large expanded stack | PS4 | Exact order, bounded returned metadata, no duplicate representative. |

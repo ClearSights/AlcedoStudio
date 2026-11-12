@@ -420,6 +420,14 @@ alcedo_copy_duckdb_fts_extension(PhotoStackLifecycleTest)
 alcedo_register_test_target(PhotoStackLifecycleTest app ci_core)
 
 # Library sort, group, and import-time reads (album_sort_group_and_import_time_plan.md).
+add_executable(AlbumStackQueryTest ${ALCEDO_TEST_ROOT}/app/album_stack_query_test.cpp)
+target_include_directories(AlbumStackQueryTest PRIVATE ${ALCEDO_INCLUDE_DIR} ${ALCEDO_TEST_DIR})
+target_link_libraries(AlbumStackQueryTest PRIVATE PhotoStackService ProjectService PipelineMgmtService
+  StorageInvariantsTestSupport GTest::gtest_main)
+gtest_discover_tests(AlbumStackQueryTest TEST_PREFIX "AlbumStackQueryTest." PROPERTIES LABELS "ci_core_flow")
+alcedo_copy_duckdb_fts_extension(AlbumStackQueryTest)
+alcedo_register_test_target(AlbumStackQueryTest app ci_core)
+
 add_executable(AlbumQueryTest ${ALCEDO_TEST_ROOT}/app/album_query_test.cpp)
 target_include_directories(AlbumQueryTest PUBLIC ${ALCEDO_INCLUDE_DIR} ${ALCEDO_TEST_DIR})
 target_link_libraries(AlbumQueryTest

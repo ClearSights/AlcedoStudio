@@ -98,13 +98,19 @@ void ValidateFiles(duckdb_connection conn, std::span<const sl_element_id_t> ids)
 
 /// Check the same persisted invariants for one stack or every header, with one grouped query.
 /// The caller holds the connection lock and transaction; this read never repairs stored rows.
-void ValidateRelations(duckdb_connection conn, const std::string* stack_id = nullptr) {
+void ValidateRelations(duckdb_connection conn, const std::string* stack_id = nullptr,
+                       const duckorm::SqlFragment* stack_ids = nullptr) {
   auto query = expr::raw(
       "SELECT s.stack_id FROM PhotoStack s LEFT JOIN PhotoStackMember m "
       "ON m.stack_id = s.stack_id");
   if (stack_id) {
     query.append(expr::raw(" WHERE s.stack_id = "));
     query.append(expr::param(*stack_id));
+  }
+  if (stack_ids) {
+    query.sql_.append(" WHERE s.stack_id IN (");
+    query.append(*stack_ids);
+    query.sql_.append(")");
   }
   query.append(
       expr::raw(" GROUP BY s.stack_id, s.cover_file_id HAVING COUNT(m.file_id) < 2 "
@@ -430,6 +436,31 @@ void PhotoStackStore::RemoveFileMemberships(duckdb_connection&               con
                                             std::span<const sl_element_id_t> file_ids) {
   const auto sources = SourceStacks(connection, file_ids);
   Detach(connection, file_ids, sources);
+}
+
+void PhotoStackStore::ValidateFileStacks(duckdb_connection&          connection,
+                                         const duckorm::SqlFragment& file_ids) {
+  auto ids = expr::raw("SELECT DISTINCT m.stack_id FROM PhotoStackMember m WHERE m.file_id IN (");
+  ids.append(file_ids);
+  ids.sql_.append(")");
+  auto headers = expr::raw("SELECT selected.stack_id FROM (");
+  headers.append(ids);
+  headers.sql_.append(
+      ") selected LEFT JOIN PhotoStack s ON s.stack_id = selected.stack_id "
+      "WHERE s.stack_id IS NULL LIMIT 1");
+  if (const auto orphan = duckorm::query<StackIdRow>(connection, headers); !orphan.empty()) {
+    throw std::runtime_error("Photo stack membership has no saved stack: " +
+                             orphan.front().stack_id);
+  }
+  for (const auto& row : duckorm::query<StackIdRow>(connection, ids)) {
+    try {
+      ValidateStackId(row.stack_id);
+    } catch (const std::invalid_argument& error) {
+      throw std::runtime_error("Invalid persisted photo stack ID: " + row.stack_id + ": " +
+                               error.what());
+    }
+  }
+  ValidateRelations(connection, nullptr, &ids);
 }
 
 }  // namespace alcedo
