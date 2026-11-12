@@ -632,6 +632,9 @@ void ValidateAlbumQueryRead(const AlbumQueryOptions& options, const AlbumQueryRe
   if (read.mode != AlbumReadMode::kPhotos && read.mode != AlbumReadMode::kDisplay) {
     throw std::invalid_argument("Album query: unknown read mode");
   }
+  if (read.mode == AlbumReadMode::kPhotos && read.read_display_items) {
+    throw std::invalid_argument("Album query: display-item reads require display mode");
+  }
   if (read.display_offset < 0 ||
       (read.mode == AlbumReadMode::kPhotos &&
        (read.display_offset != 0 || !read.expanded_fragments.empty())) ||

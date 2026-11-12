@@ -542,6 +542,7 @@ alcedo_register_test_target(AlbumBackendSearchWorkerTest ui)
 # section projection geometry, and the one library query path of LibraryModule.
 def_ui_test(AlbumSectionModelTest album_section_model_test.cpp)
 def_ui_test(LibraryDisplayModelTest library_display_model_test.cpp)
+target_sources(LibraryDisplayModelTest PRIVATE ${ALCEDO_TEST_ROOT}/ui/library_display_publication_test.cpp)
 alcedo_register_test_target(LibraryDisplayModelTest ui)
 alcedo_register_test_target(AlbumSectionModelTest ui)
 # Issue 745: justified-rows Library layout geometry, its window model, and the layout setting.
@@ -605,17 +606,17 @@ def_ui_test(AdjustmentTransferControllerTest adjustment_transfer_controller_test
 alcedo_register_test_target(AdjustmentTransferControllerTest ui)
 
 # Phase 0: deterministic editor RHI checks (backend parse, fixtures, lease schema).
-add_executable(EditorRhiContractsTest
-    ${ALCEDO_TEST_ROOT}/ui/editor_rhi_contracts_test.cpp
+add_executable(EditorRhiPresentationTest
+    ${ALCEDO_TEST_ROOT}/ui/editor_rhi_presentation_test.cpp
 )
-target_include_directories(EditorRhiContractsTest PUBLIC ${ALCEDO_INCLUDE_DIR})
-target_link_libraries(EditorRhiContractsTest PRIVATE
-    EditorRhiContracts
+target_include_directories(EditorRhiPresentationTest PUBLIC ${ALCEDO_INCLUDE_DIR})
+target_link_libraries(EditorRhiPresentationTest PRIVATE
+    EditorRhiPresentation
     GTest::gtest_main
     Qt6::Core
 )
-alcedo_ui_gtest_discover_tests(EditorRhiContractsTest TEST_PREFIX "EditorRhiContractsTest.")
-alcedo_register_test_target(EditorRhiContractsTest ui)
+alcedo_ui_gtest_discover_tests(EditorRhiPresentationTest TEST_PREFIX "EditorRhiPresentationTest.")
+alcedo_register_test_target(EditorRhiPresentationTest ui)
 
 # Phase 0: maintained GPU presentation harness (manual / CI GPU workers).
 if(TARGET EditorRhiHarness)

@@ -56,7 +56,7 @@ auto ImportAndWait(ApplicationModuleHost& host, const std::vector<std::filesyste
 
 auto LibraryElementIds(ApplicationModuleHost& host) -> std::vector<sl_element_id_t> {
   std::vector<sl_element_id_t> ids;
-  for (const auto& item : host.library()->view_state().all_images_) {
+  for (const auto& item : host.library()->model().items()) {
     ids.push_back(item.element_id);
   }
   std::sort(ids.begin(), ids.end());

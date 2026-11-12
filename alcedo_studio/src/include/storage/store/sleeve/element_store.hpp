@@ -171,6 +171,8 @@ struct AlbumQueryRead {
   /// Read the file id of every occurrence in occurrence order (AlbumQueryResult::
   /// occurrence_file_ids_), in the same transaction as the counts and the groups.
   bool    read_occurrence_file_ids_ = false;
+  /// Read the complete minimal display stream for retained-page relocation, without metadata.
+  bool                               read_display_items        = false;
   AlbumReadMode mode                      = AlbumReadMode::kPhotos;
   /// Display offsets never use the raw occurrence offset. limit_ bounds either page mode.
   int64_t       display_offset            = 0;
@@ -195,6 +197,8 @@ struct AlbumQueryResult {
   int64_t                           display_count = 0;
   int64_t                           first_display = 0;
   std::vector<AlbumDisplayRow>      display_rows;
+  /// Empty unless read_display_items; independent algorithm output, never a second GUI cache.
+  std::vector<AlbumDisplayItem>     display_items;
 };
 
 /// Position of one file's occurrence in the ordered occurrence stream.

@@ -45,6 +45,9 @@ class ThumbnailManager {
   [[nodiscard]] bool IsThumbnailPinned(sl_element_id_t elementId) const;
   void               RemoveThumbnailState(sl_element_id_t elementId, image_id_t imageId);
   void               ReleaseVisibleThumbnailPins();
+  /// Release only pins whose photo values left the accepted display pages. Existing cache
+  /// entries stay available; no source invalidation or decode is requested. GUI thread only.
+  void               ReleaseUnloadedThumbnailPins();
 
   /// Drop a store entry only when the library grid/filmstrip is not pinning that key.
   void ReleaseStoreImageIfUnpinned(const ThumbnailCacheKey& key);

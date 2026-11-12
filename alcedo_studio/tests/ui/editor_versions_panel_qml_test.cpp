@@ -35,10 +35,7 @@ class RecordingAlbumCatalog final : public IAlbumCatalog {
     QString                     version_name;
   };
 
-  auto FindAlbumItem(sl_element_id_t) -> AlbumItem* override { return nullptr; }
   auto FindAlbumItem(sl_element_id_t) const -> const AlbumItem* override { return nullptr; }
-  void AddOrUpdateAlbumItem(sl_element_id_t, image_id_t, sl_element_id_t, const QString&,
-                            const file_name_t&, const std::filesystem::path&) override {}
   void SetAlbumItemHdrFlag(sl_element_id_t, image_id_t, bool) override {}
   void SetAlbumItemEditState(sl_element_id_t element_id, image_id_t image_id,
                              std::optional<std::int64_t> edited_at_ns,
@@ -480,7 +477,7 @@ TEST_F(EditorVersionsPanelQmlTest, VersionListPreservesContentYAcrossCreateRenam
   ASSERT_NE(window_, nullptr) << warnings_.join('\n').toStdString();
   OpenVersionsPage();
 
-  // Seed enough named Versions that the list content exceeds the viewport so a
+  // Create enough named Versions that the list content exceeds the viewport so a
   // non-zero contentY is meaningful (drives real ListView + model reset path).
   constexpr int kFillCount = 18;
   for (int i = 0; i < kFillCount; ++i) {
@@ -606,7 +603,7 @@ TEST_F(EditorVersionsPanelQmlTest, BranchFromCurrentButtonBranchesFromActiveHead
   ASSERT_NE(window_, nullptr) << warnings_.join('\n').toStdString();
   OpenVersionsPage();
 
-  // Fixture seeds the active "Base Look" Version at a non-root head commit, so
+  // Fixture creates the active "Base Look" Version at a non-root head commit, so
   // the Branch-from-current affordance is enabled and submits through the real
   // model path using that active head commit (not an arbitrary card commit).
   auto* branch_button = Find(QStringLiteral("editorBranchFromCurrentButton"));
@@ -810,7 +807,7 @@ TEST_F(EditorVersionsPanelQmlTest, DisabledRootVersionActionDoesNotConsumeCtrlA)
   ASSERT_NE(fork_button, nullptr);
   QTRY_VERIFY_WITH_TIMEOUT(fork_button->isEnabled(), 1000);
 
-  // The command shares the fork-from-root gate; disable checkout so the
+  // The command shares the fork-from-root precondition; disable checkout so the
   // action is unavailable and the key must not be consumed into an action.
   ASSERT_TRUE(page->setProperty("versionCheckoutEnabled", false));
   ProcessEvents();

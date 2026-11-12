@@ -36,6 +36,7 @@ class QQmlEngine;
 #include "ui/alcedo_main/album_backend/image_controller.hpp"
 #include "ui/alcedo_main/album_backend/import_export.hpp"
 #include "ui/alcedo_main/album_backend/interaction_policy_controller.hpp"
+#include "ui/alcedo_main/album_backend/library_display_model.hpp"
 #include "ui/alcedo_main/album_backend/library_module.hpp"
 #include "ui/alcedo_main/album_backend/library_mutation_operations.hpp"
 #include "ui/alcedo_main/album_backend/library_view_preferences.hpp"
@@ -60,6 +61,7 @@ class ApplicationModuleHost final : public QObject {
   Q_OBJECT
   Q_PROPERTY(ProjectModule* project READ project CONSTANT)
   Q_PROPERTY(LibraryModule* library READ library CONSTANT)
+  Q_PROPERTY(LibraryDisplayModel* libraryDisplayModel READ library_display CONSTANT)
   Q_PROPERTY(FolderController* folders READ folders CONSTANT)
   Q_PROPERTY(ImageController* images READ images CONSTANT)
   Q_PROPERTY(StatsEngine* stats READ stats CONSTANT)
@@ -136,6 +138,8 @@ class ApplicationModuleHost final : public QObject {
   [[nodiscard]] auto project() const -> const ProjectModule* { return project_.get(); }
   [[nodiscard]] auto library() -> LibraryModule* { return library_.get(); }
   [[nodiscard]] auto library() const -> const LibraryModule* { return library_.get(); }
+  /// The library-owned display model, registered once for all layouts.
+  [[nodiscard]] auto library_display() -> LibraryDisplayModel* { return library_->display_model(); }
   [[nodiscard]] auto folders() -> FolderController* { return folders_.get(); }
   [[nodiscard]] auto images() -> ImageController* { return images_.get(); }
   [[nodiscard]] auto stats() -> StatsEngine* { return stats_.get(); }

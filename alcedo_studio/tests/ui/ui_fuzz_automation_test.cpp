@@ -121,7 +121,7 @@ auto UniqueSocketName() -> QString {
   return QStringLiteral("alcedo_phase1_%1").arg(QUuid::createUuid().toString(QUuid::WithoutBraces));
 }
 
-void SeedLibraryThumbnails(alcedo::ui::ApplicationModuleHost& host, int count) {
+void PopulateLibraryThumbnails(alcedo::ui::ApplicationModuleHost& host, int count) {
   std::vector<alcedo::ui::AlbumItem> items;
   items.reserve(static_cast<size_t>(count));
   for (int i = 0; i < count; ++i) {
@@ -134,7 +134,6 @@ void SeedLibraryThumbnails(alcedo::ui::ApplicationModuleHost& host, int count) {
     item.thumb_url      = QString();
     items.push_back(item);
   }
-  host.library()->view_state().all_images_  = items;
   host.library()->view_state().total_count_ = items.size();
   host.library()->model().resetModel(items, items.size());
   host.library()->NotifyThumbnailsChanged();
@@ -354,7 +353,7 @@ TEST_F(UiFuzzAutomationFixture, InputClickReturnsFromEditorToLibrary) {
   ASSERT_TRUE(LoadAutomationWindow());
   ASSERT_TRUE(CreateTestProject(host_));
   ASSERT_TRUE(host_.project()->ServiceReady());
-  SeedLibraryThumbnails(host_, 4);
+  PopulateLibraryThumbnails(host_, 4);
   alcedo::ui::test::ProcessEvents(80);
 
   alcedo::ui::TestProbe probe(&engine_, window_);

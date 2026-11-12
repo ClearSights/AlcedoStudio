@@ -545,10 +545,7 @@ ApplicationModuleHost::ApplicationModuleHost(QObject* parent, LifecycleObserver 
   lifecycle_hooks.clear_project_ui_state = [library = library_.get(), folders = folders_.get(),
                                             import_export = import_export_.get()] {
     if (library) {
-      library->thumbs().ReleaseVisibleThumbnailPins();
-      library->view_state().all_images_.clear();
-      library->view_state().total_count_ = 0;
-      library->model().resetModel({}, 0);
+      library->ClearProjectPresentation();
     }
     if (folders) {
       folders->ClearState();

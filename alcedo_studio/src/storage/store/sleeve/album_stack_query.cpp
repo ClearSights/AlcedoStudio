@@ -149,25 +149,50 @@ struct GroupRow {
   using Columns = duckorm::RowColumns<&GroupRow::key, &GroupRow::count, &GroupRow::first>;
 };
 
-/// Shared photo columns followed by the required new display result scalars only.
-struct PageRow : album_query_rows::SearchResultDbRow {
+/// Scalar SQL output shared by bounded pages and metadata-free relocation reads.
+struct ItemRow {
   std::optional<std::string> key;
-  std::optional<uint64_t>    edited_at;
-  std::optional<std::string> version;
   std::optional<std::string> stack;
   std::optional<int64_t>     saved_cover;
-  int64_t                    total_count     = 0;
-  int64_t                    query_count     = 0;
-  int64_t                    fragment_count  = 0;
-  int64_t                    displayed_cover = 0;
-  bool                       expanded        = false;
+  int64_t                    total_count = 0, query_count = 0, fragment_count = 0;
+  int64_t                    displayed_file = 0, displayed_cover = 0;
+  bool                       expanded = false;
   using Columns =
-      duckorm::AppendRowColumns<album_query_rows::SearchResultDbRow::Columns, &PageRow::key,
-                                &PageRow::edited_at, &PageRow::version, &PageRow::stack,
-                                &PageRow::saved_cover, &PageRow::total_count, &PageRow::query_count,
-                                &PageRow::fragment_count, &PageRow::displayed_cover,
-                                &PageRow::expanded>;
+      duckorm::RowColumns<&ItemRow::key, &ItemRow::stack, &ItemRow::saved_cover,
+                          &ItemRow::total_count, &ItemRow::query_count, &ItemRow::fragment_count,
+                          &ItemRow::displayed_file, &ItemRow::displayed_cover, &ItemRow::expanded>;
 };
+inline constexpr const char* kItemColumns =
+    "d.group_key, d.stack_id, d.cover_file_id, d.total_count, d.query_count, "
+    "d.fragment_count, d.file_id, d.displayed_cover, d.expanded";
+/// One bounded metadata row plus the display item's scalar fields. Metadata does not leave
+/// this result for full-stream reads; GUI owners receive the two components separately.
+struct PageRow : ItemRow, album_query_rows::SearchResultDbRow {
+  std::optional<uint64_t>    edited_at;
+  std::optional<std::string> version;
+  using PhotoColumns =
+      duckorm::AppendRowColumns<album_query_rows::SearchResultDbRow::Columns, &PageRow::edited_at,
+                                &PageRow::version, &PageRow::key, &PageRow::stack,
+                                &PageRow::saved_cover, &PageRow::total_count, &PageRow::query_count,
+                                &PageRow::fragment_count, &PageRow::displayed_file,
+                                &PageRow::displayed_cover, &PageRow::expanded>;
+  using Columns = PhotoColumns;
+};
+/// Convert only required scalar values, preserving the stable representative identity.
+auto DisplayItem(const ItemRow& row, sl_element_id_t folder, AlbumGroupField group)
+    -> AlbumDisplayItem {
+  AlbumDisplayItem item;
+  item.file_id  = FileId(row.displayed_file);
+  item.identity = Identity(folder, group, GroupKey(group, row.key), row.stack.value_or(""),
+                           item.file_id, FileId(row.displayed_cover));
+  item.saved_cover_file_id  = row.saved_cover ? FileId(*row.saved_cover) : 0;
+  item.stack_total          = row.total_count;
+  item.query_match_count    = row.query_count;
+  item.fragment_match_count = row.fragment_count;
+  item.temporary_cover      = row.stack && row.displayed_cover != *row.saved_cover;
+  item.expanded             = row.expanded;
+  return item;
+}
 struct PositionRow {
   int64_t                    position = 0;
   std::optional<std::string> key;
@@ -241,36 +266,35 @@ void ReadDisplay(duckorm::Connection connection, sl_element_id_t folder_id,
     counts.sql_.append("SELECT COUNT(*) FROM display");
     result.display_count = duckorm::scalar<int64_t>(connection, counts).value();
   }
+  if (read.read_display_items) {
+    auto items = Projection(options, model, has_relevance, sql::EditStateProjection::kNotRead,
+                            read.expanded_fragments);
+    items.sql_.append("SELECT ");
+    items.sql_.append(kItemColumns);
+    items.sql_.append(" FROM display d ORDER BY d.display_position");
+    for (const auto& row : duckorm::query<ItemRow>(connection, items)) {
+      result.display_items.push_back(DisplayItem(row, folder_id, options.group_field_));
+    }
+  }
   if (read.limit_ == 0) return;
   auto page = Projection(options, model, has_relevance, sql::EditStateProjection::kRead,
                          read.expanded_fragments);
   page.sql_.append("SELECT ");
   page.sql_.append(album_query_rows::kMatchSetResultColumns);
+  page.sql_.append(", es.edited_at_ns, es.version_name, ");
+  page.sql_.append(kItemColumns);
   page.sql_.append(
-      ", d.group_key, es.edited_at_ns, es.version_name, d.stack_id, d.cover_file_id, "
-      "d.total_count, d.query_count, d.fragment_count, d.displayed_cover, d.expanded "
-      "FROM display d JOIN SearchMatchSet s ON s.file_id = d.file_id "
+      " FROM display d JOIN SearchMatchSet s ON s.file_id = d.file_id "
       "LEFT JOIN edit_state es ON es.file_id = d.file_id ORDER BY d.display_position");
   page.append(
       duckorm::clause::limit_offset(read.limit_, read.display_offset, kMaxAlbumQueryPageRows));
   for (auto& row : duckorm::query<PageRow>(connection, page)) {
-    const auto      file = FileId(row.file_id);
     AlbumDisplayRow output;
-    output.file_id          = file;
-    output.photo.photo_     = album_query_rows::ToSearchResultRow(row);
+    static_cast<AlbumDisplayItem&>(output) = DisplayItem(row, folder_id, options.group_field_);
+    output.photo.photo_                    = album_query_rows::ToSearchResultRow(row);
     output.photo.group_key_ = GroupKey(options.group_field_, row.key);
     if (row.edited_at) output.photo.edited_at_ns_ = static_cast<int64_t>(*row.edited_at);
     output.photo.edit_version_name_ = std::move(row.version).value_or(std::string{});
-    output.identity =
-        Identity(folder_id, options.group_field_, output.photo.group_key_,
-                 std::move(row.stack).value_or(std::string{}), file, FileId(row.displayed_cover));
-    const bool stacked          = !output.identity.fragment.stack_id.empty();
-    output.expanded             = row.expanded;
-    output.saved_cover_file_id  = row.saved_cover ? FileId(*row.saved_cover) : 0;
-    output.stack_total          = row.total_count;
-    output.query_match_count    = row.query_count;
-    output.fragment_match_count = row.fragment_count;
-    output.temporary_cover      = stacked && row.displayed_cover != *row.saved_cover;
     result.display_rows.push_back(std::move(output));
   }
 }

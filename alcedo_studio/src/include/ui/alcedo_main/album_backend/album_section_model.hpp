@@ -145,6 +145,10 @@ class AlbumSectionModel final : public QAbstractListModel {
   void ApplyResultChange(std::vector<AlbumGroupDescriptor> groups, int64_t unique_file_count,
                          int64_t occurrence_count, PageMap pages);
 
+  /// Apply only geometry during shared-owner publication. The caller installs display pages
+  /// and photo values before this call and publishes the display model afterward.
+  void ApplyGroupResultChange(std::vector<AlbumGroupDescriptor> groups, int64_t unique_file_count,
+                              int64_t display_count);
   /// First occurrence in [@p begin, @p end) that no loaded page covers; -1 when all are loaded.
   [[nodiscard]] auto FirstUnloadedOccurrence(int64_t begin, int64_t end) const -> int64_t;
   /// First occurrence of the first loaded page that starts after @p occurrence; the occurrence

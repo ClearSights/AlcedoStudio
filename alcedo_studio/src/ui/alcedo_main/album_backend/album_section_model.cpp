@@ -363,6 +363,12 @@ auto AlbumSectionModel::RetainedPagesInResult(
 void AlbumSectionModel::ApplyResultChange(std::vector<AlbumGroupDescriptor> groups,
                                           int64_t unique_file_count, int64_t occurrence_count,
                                           PageMap pages) {
+  ApplyGroupResultChange(std::move(groups), unique_file_count, occurrence_count);
+  display_->InstallPhotoPages(occurrence_count, std::move(pages));
+}
+void AlbumSectionModel::ApplyGroupResultChange(std::vector<AlbumGroupDescriptor> groups,
+                                               int64_t                           unique_file_count,
+                                               int64_t                           occurrence_count) {
   if (mode_ == AlbumReadMode::kPhotos) {
     for (auto& group : groups) {
       group.display_count = group.photo_count_;
@@ -449,7 +455,6 @@ void AlbumSectionModel::ApplyResultChange(std::vector<AlbumGroupDescriptor> grou
   unique_file_count_ = unique_file_count;
   occurrence_count_  = occurrence_count;
   changed            = true;
-  display_->InstallPhotoPages(occurrence_count, std::move(pages), owned_display_ != nullptr);
   RebuildRowStarts();
   if (changed && row_count_ > 0) {
     emit dataChanged(index(0), index(static_cast<int>(row_count_) - 1));

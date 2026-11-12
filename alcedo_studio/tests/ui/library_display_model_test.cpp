@@ -148,5 +148,17 @@ TEST(LibraryDisplayModelTest, InvalidPageInstallationKeepsTheAcceptedPagesAndCou
   EXPECT_EQ(display.FileIdAt(0), 1);
   EXPECT_EQ(display.FileIdAt(1), 2);
 }
+TEST(LibraryDisplayModelTest, InvalidRetainedPhotoOrderDoesNotMoveTheAcceptedThumbnailState) {
+  AlbumThumbnailModel photos;
+  AlbumItem           item;
+  item.element_id = item.file_id = 1;
+  item.image_id                  = 1;
+  item.thumb_url                 = "image://accepted";
+  photos.resetModel({item}, 1);
+  EXPECT_THROW(photos.installPageItems({}, {1, 99}, 2, false), std::invalid_argument);
+  ASSERT_NE(photos.itemByFile(1), nullptr);
+  EXPECT_EQ(photos.itemByFile(1)->thumb_url, "image://accepted");
+  EXPECT_EQ(photos.count(), 1);
+}
 }  // namespace
 }  // namespace alcedo::ui::test

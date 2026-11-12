@@ -7,6 +7,7 @@
 #include <iterator>
 #include <limits>
 #include <stdexcept>
+#include <tuple>
 #include <unordered_set>
 #include <utility>
 
@@ -162,11 +163,50 @@ void LibraryDisplayModel::InstallPhotoPages(int64_t total, PhotoPageMap pages, b
   Install(total, std::move(converted));
   if (notify) EndReplace();
 }
-void LibraryDisplayModel::ResetSession() {
-  BeginReplace();
+auto LibraryDisplayModel::RetainedPages(std::vector<AlbumDisplayItem>& result) const -> PageMap {
+  const auto less = [](const AlbumDisplayIdentity& a, const AlbumDisplayIdentity& b) {
+    const auto parts = [](const AlbumDisplayIdentity& id) {
+      return std::tie(id.fragment.folder_id, id.fragment.group_field, id.fragment.group_key,
+                      id.fragment.stack_id, id.kind, id.file_id);
+    };
+    return parts(a) < parts(b);
+  };
+  std::map<AlbumDisplayIdentity, int64_t, decltype(less)> positions(less);
+  for (const auto& [start, items] : pages_)
+    for (const auto& item : items) positions.try_emplace(item.identity, -1);
+  for (size_t i = 0; i < result.size(); ++i) {
+    auto found = positions.find(result[i].identity);
+    if (found != positions.end()) found->second = static_cast<int64_t>(i);
+  }
+  std::vector<std::pair<int64_t, int64_t>> ranges;
+  for (const auto& [start, items] : pages_) {
+    int64_t begin = -1, end = -1;
+    for (const auto& item : items) {
+      const auto at = positions.find(item.identity)->second;
+      if (at >= 0) {
+        begin = begin < 0 ? at : std::min(begin, at);
+        end   = std::max(end, at + 1);
+      }
+    }
+    if (begin >= 0) ranges.emplace_back(begin, end);
+  }
+  std::sort(ranges.begin(), ranges.end());
+  PageMap pages;
+  for (size_t i = 0; i < ranges.size();) {
+    auto [begin, end] = ranges[i++];
+    while (i < ranges.size() && ranges[i].first < end) end = std::max(end, ranges[i++].second);
+    pages.emplace(begin,
+                  std::vector<AlbumDisplayItem>(std::make_move_iterator(result.begin() + begin),
+                                                std::make_move_iterator(result.begin() + end)));
+  }
+  return pages;
+}
+
+void LibraryDisplayModel::ResetSession(bool notify) {
+  if (notify) BeginReplace();
   Install(0, {});
   expanded_.clear();
-  EndReplace();
+  if (notify) EndReplace();
 }
 auto LibraryDisplayModel::SetStackExpanded(const AlbumStackFragmentKey& key, bool expanded)
     -> bool {
@@ -191,8 +231,12 @@ auto LibraryDisplayModel::ExpandedFragments(sl_element_id_t folder, AlbumGroupFi
   return keys;
 }
 auto LibraryDisplayModel::ItemAt(int64_t position) const -> const AlbumDisplayItem* {
-  auto it = pages_.upper_bound(position);
-  if (it == pages_.begin()) return nullptr;
+  return ItemAt(pages_, position);
+}
+auto LibraryDisplayModel::ItemAt(const PageMap& pages, int64_t position)
+    -> const AlbumDisplayItem* {
+  auto it = pages.upper_bound(position);
+  if (it == pages.begin()) return nullptr;
   --it;
   const auto offset = position - it->first;
   return offset < static_cast<int64_t>(it->second.size()) ? &it->second[static_cast<size_t>(offset)]

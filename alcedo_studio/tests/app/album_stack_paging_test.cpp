@@ -403,5 +403,27 @@ TEST_F(AlbumStackPagingTest, SqlFailureReleasesTheReadTransactionAndPreservesSav
   EXPECT_EQ(DisplayIds(Page({}, {}, scope)), Files({0}));
   EXPECT_EQ(browse->ReadAlbumMatchingFragmentIds(scope, {}, {}, model, key), Files({0, 1, 2, 3}));
 }
+TEST_F(AlbumStackPagingTest,
+       RelocationReadsReturnOnlyMinimalItemsAndPreserveRepresentativeIdentity) {
+  auto           browse = project->GetAlbumBrowseService();
+  AlbumQueryRead read{.limit_ = 1, .read_display_items = true, .mode = AlbumReadMode::kDisplay};
+  const auto     before = browse->ReadAlbumQuery(0, {}, {}, model, read);
+  ASSERT_EQ(before.display_items.size(), 3);
+  ASSERT_EQ(before.display_rows.size(), 1);
+  const auto identity = before.display_items[0].identity;
+  ASSERT_TRUE(Stacks().SetCover(stack, files[2]).Changed());
+  read.expanded_fragments = {identity.fragment};
+  const auto expanded     = browse->ReadAlbumQuery(0, {}, {}, model, read);
+  ASSERT_EQ(expanded.display_items.size(), 6);
+  EXPECT_EQ(expanded.display_rows.size(), 1);
+  EXPECT_TRUE(expanded.rows_.empty());
+  EXPECT_EQ(expanded.display_items[0].identity, identity);
+  std::vector<sl_element_id_t> ids;
+  for (const auto& item : expanded.display_items) ids.push_back(item.file_id);
+  EXPECT_EQ(ids, Files({2, 0, 1, 3, 4, 5}));
+  read.mode = AlbumReadMode::kPhotos;
+  read.expanded_fragments.clear();
+  EXPECT_THROW((void)browse->ReadAlbumQuery(0, {}, {}, model, read), std::invalid_argument);
+}
 }  // namespace
 }  // namespace alcedo

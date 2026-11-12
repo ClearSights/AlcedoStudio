@@ -5,7 +5,7 @@
 /// @file workspace_shell_test.cpp
 /// @brief Verifies Phase 1B workspace routing, lazy load teardown, filmstrip shell
 /// prefs, project-switch session seal, library view-state restore, real QML
-/// interaction entrypoints, and Phase 4C visual/motion contracts.
+/// interaction entrypoints, and Phase 4C visual and motion requirements.
 
 #include <QColor>
 #include <QEasingCurve>
@@ -153,7 +153,8 @@ auto InstallTestFrameProducer(ApplicationModuleHost&             host,
   return true;
 }
 
-void SeedLibraryThumbnails(ApplicationModuleHost& host, int count, int content_height_hint = 0) {
+void PopulateLibraryThumbnails(ApplicationModuleHost& host, int count,
+                               int content_height_hint = 0) {
   std::vector<AlbumItem> items;
   items.reserve(static_cast<size_t>(count));
   for (int i = 0; i < count; ++i) {
@@ -169,7 +170,6 @@ void SeedLibraryThumbnails(ApplicationModuleHost& host, int count, int content_h
     item.thumb_url      = QString();
     items.push_back(item);
   }
-  host.library()->view_state().all_images_  = items;
   host.library()->view_state().total_count_ = items.size();
   host.library()->model().resetModel(items, items.size());
   host.library()->NotifyThumbnailsChanged();
@@ -743,7 +743,7 @@ TEST_F(WorkspaceShellTests, LibraryGridPinsSurviveEditorSwitchDuringZoom) {
   ASSERT_NE(loaded, nullptr);
   ASSERT_NE(loaded->window, nullptr);
 
-  SeedLibraryThumbnails(loaded->host, 4);
+  PopulateLibraryThumbnails(loaded->host, 4);
   ProcessEvents(50);
 
   auto* grid = loaded->window->findChild<QObject*>(QStringLiteral("libraryThumbnailGridView"));
@@ -781,7 +781,7 @@ TEST_F(WorkspaceShellTests, RealQmlEntrypointsDriveRoutingFocusAndFilmstripHeigh
   ASSERT_NE(loaded, nullptr);
   ASSERT_NE(loaded->window, nullptr);
 
-  SeedLibraryThumbnails(loaded->host, 6);
+  PopulateLibraryThumbnails(loaded->host, 6);
   ProcessEvents(80);
 
   auto* grid_item =
@@ -1155,7 +1155,7 @@ TEST_F(WorkspaceShellTests, EditorViewportReceivesRealPointerAndWheelEvents) {
   ASSERT_NE(viewport_item, nullptr);
   EXPECT_TRUE(viewport_item->isVisible());
 
-  // Seed non-zero image geometry so pan/zoom math is defined.
+  // Set non-zero image geometry so pan/zoom math is defined.
   interaction->setDisplayedMaskGeometry(
       alcedo::MaskEditGeometry::MakeIdentityPhotographGeometry(alcedo::Extent2D{4000, 3000}));
   interaction->setRenderReferenceSize(4000, 3000);
@@ -1352,7 +1352,7 @@ TEST_F(WorkspaceShellTests, MainNavigationDoesNotDuplicateOrLeakAcrossSwitches) 
   ASSERT_NE(library_nav, nullptr);
   ASSERT_NE(editor_nav, nullptr);
 
-  // Seed non-default library view state through the live library surface; it
+  // Set non-default library view state through the live library surface; it
   // writes through to the shell and must survive the workspace switches.
   auto* library = loaded->window->findChild<QObject*>(QStringLiteral("libraryWorkspace"));
   ASSERT_NE(library, nullptr);
@@ -1450,8 +1450,8 @@ TEST_F(WorkspaceShellTests, WorkspaceRouteRoundTripPreservesLastEditedTarget) {
   auto loaded = LoadMainWindow();
   ASSERT_NE(loaded, nullptr);
   ASSERT_NE(loaded->window, nullptr);
-  // Seed the library model so the list check finds lastEl among the loaded rows.
-  SeedLibraryThumbnails(loaded->host, 8);
+  // Populate the library model so the list check finds lastEl among the loaded rows.
+  PopulateLibraryThumbnails(loaded->host, 8);
   ProcessEvents(80);
 
   auto* router  = loaded->host.workspace_router();
@@ -1632,7 +1632,7 @@ TEST_F(WorkspaceShellTests, LibraryScrollPositionSurvivesEditorRoundTrip) {
   ASSERT_NE(loaded, nullptr);
   ASSERT_NE(loaded->window, nullptr);
   // Many thumbnails so the grid overflows and a non-zero contentY is valid.
-  SeedLibraryThumbnails(loaded->host, 80);
+  PopulateLibraryThumbnails(loaded->host, 80);
   ProcessEvents(80);
 
   auto* grid = loaded->window->findChild<QQuickItem*>(QStringLiteral("libraryThumbnailGridView"));

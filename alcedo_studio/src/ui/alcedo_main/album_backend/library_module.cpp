@@ -82,8 +82,25 @@ LibraryModule::LibraryModule(ProjectModule* project, QObject* parent)
       thumbs_(*this),
       query_worker_(std::make_unique<SearchRequestWorker>()) {
   LoadThumbnailDiskCacheSettings();
+  connect(&display_model_, &LibraryDisplayModel::ExpansionChanged, this, [this] {
+    if (stack_display_enabled_) RequestLibraryRefresh();
+  });
   connect(&selection_, &LibrarySelection::SelectionChanged, this,
           [this]() { ScheduleSelectionMarksRead(); });
+}
+
+void LibraryModule::SetStackDisplayEnabled(bool enabled) {
+  if (stack_display_enabled_ == enabled) return;
+  stack_display_enabled_ = enabled;
+  RequestLibraryRefresh();
+}
+void LibraryModule::ClearProjectPresentation() {
+  for (auto kind : {SearchRequestKind::kApply, SearchRequestKind::kLibraryPage,
+                    SearchRequestKind::kLibraryIds, SearchRequestKind::kEditorList,
+                    SearchRequestKind::kSelectAll, SearchRequestKind::kStatistics}) {
+    query_worker_->Invalidate(kind);
+  }
+  ResetThumbnailWindow(true);
 }
 
 LibraryModule::~LibraryModule() { query_worker_.reset(); }
@@ -169,15 +186,15 @@ bool LibraryModule::LoadMoreThumbnails() {
   if (accepted_options_.group_field_ != AlbumGroupField::kNone) {
     // Grouped mode: the page after the last loaded page.
     const auto next = section_model_.LoadedEnd();
-    if (next >= occurrence_count_) {
+    if (next >= display_model_.DisplayCount()) {
       return false;
     }
     requested_begin_ = next;
-    requested_end_   = std::min(occurrence_count_, next + accepted_input_->page_size_);
+    requested_end_   = std::min(display_model_.DisplayCount(), next + accepted_input_->page_size_);
     SubmitPage(next);
     return true;
   }
-  SubmitPage(loaded_occurrence_end_);
+  SubmitPage(loaded_display_end_);
   return true;
 }
 
@@ -186,18 +203,19 @@ bool LibraryModule::LoadThumbnailsThroughIndex(int index) {
     return false;
   }
   load_through_ = std::max<int64_t>(load_through_, index);
-  if (accepted_options_.group_field_ != AlbumGroupField::kNone) {
+  if (accepted_options_.group_field_ != AlbumGroupField::kNone ||
+      (accepted_input_ && accepted_input_->read_.mode == AlbumReadMode::kDisplay)) {
     // Grouped mode: load the page that holds the occurrence, not every earlier page.
-    if (accepted_input_ && index < occurrence_count_) {
+    if (accepted_input_ && index < display_model_.DisplayCount()) {
       const auto page  = accepted_input_->page_size_;
       requested_begin_ = (index / page) * page;
-      requested_end_   = std::min(occurrence_count_, requested_begin_ + page);
+      requested_end_   = std::min(display_model_.DisplayCount(), requested_begin_ + page);
       ContinuePaging();
       return true;
     }
     return false;
   }
-  if (loaded_occurrence_end_ > index) {
+  if (loaded_display_end_ > index) {
     return false;
   }
   return LoadMoreThumbnails();
@@ -285,16 +303,25 @@ bool LibraryModule::LoadThumbnailWindow(const std::optional<FilterNode>& /*stats
   return LoadMoreThumbnails();
 }
 
-void LibraryModule::ResetThumbnailWindow() {
+void LibraryModule::ResetThumbnailWindow(bool close_session) {
+  thumbnail_model_.beginReplace();
+  section_model_.BeginReplace();
+  display_model_.BeginReplace();
   thumbs().ReleaseVisibleThumbnailPins();
-  view_state_.all_images_.clear();
   view_state_.total_count_ = 0;
-  occurrence_count_        = 0;
-  loaded_occurrence_end_   = 0;
-  load_through_            = -1;
+  occurrence_count_ = loaded_display_end_ = 0;
+  load_through_                           = -1;
   accepted_input_.reset();
-  thumbnail_model_.resetModel({}, 0);
-  section_model_.Clear();
+  thumbnail_model_.installItems({}, 0, false);
+  if (close_session)
+    display_model_.ResetSession(false);
+  else
+    display_model_.Install(0, {});
+  section_model_.InstallGroups({}, 0, 0, false, AlbumReadMode::kDisplay);
+  if (stats_) stats_->ApplyFolderStats({}, false);
+  thumbnail_model_.endReplace();
+  section_model_.EndReplace();
+  display_model_.EndReplace();
   emit CountsChanged();
 }
 
@@ -375,14 +402,48 @@ auto GroupFieldFromName(const QString& name) -> std::optional<AlbumGroupField> {
 }
 
 /// Runs on the query worker: the pending search WHERE build, then one library read.
+/// Convert producer photo results into ordinary display items without retaining another
+/// photo representation. Full-ID relocation output contains only identities and scalar IDs.
+void NormalizePhotoResult(const LibraryQueryInput& input, AlbumQueryResult& result) {
+  if (input.read_.mode != AlbumReadMode::kPhotos) return;
+  result.display_count = result.occurrence_count_;
+  result.first_display = result.first_occurrence_;
+  for (auto& group : result.groups_) {
+    group.display_count = group.photo_count_;
+    group.first_display = group.first_occurrence_;
+  }
+  const auto ordinary = [&](sl_element_id_t file, const AlbumGroupKey& key) {
+    AlbumDisplayItem item;
+    item.file_id = item.identity.file_id = file;
+    item.identity.fragment               = {input.folder_id_, input.options_.group_field_, key, {}};
+    return item;
+  };
+  size_t group = 0;
+  for (size_t i = 0; i < result.occurrence_file_ids_.size(); ++i) {
+    while (group + 1 < result.groups_.size() &&
+           result.groups_[group + 1].first_display <= static_cast<int64_t>(i))
+      ++group;
+    const AlbumGroupKey key = result.groups_.empty() ? AlbumGroupKey{} : result.groups_[group].key_;
+    result.display_items.push_back(ordinary(result.occurrence_file_ids_[i], key));
+  }
+  result.occurrence_file_ids_.clear();
+  for (auto& photo : result.rows_) {
+    AlbumDisplayRow row;
+    static_cast<AlbumDisplayItem&>(row) = ordinary(photo.photo_.file_id_, photo.group_key_);
+    row.photo                           = std::move(photo);
+    result.display_rows.push_back(std::move(row));
+  }
+  result.rows_.clear();
+}
+
 /// Fill output.row_display_ for the rows of output.result_ on the query worker: the image pool
 /// fields that SQL does not return and the semantic label text. A cold image pool reads each
 /// Image from the database, so doing this on the UI thread stalled the window for large folders.
 void ReadRowDisplayValues(const LibraryQueryInput& input, LibraryQueryOutput& output) {
-  const auto& rows = output.result_.rows_;
+  const auto& rows = output.result_.display_rows;
   output.row_display_.assign(rows.size(), AlbumItem{});
   for (std::size_t i = 0; i < rows.size(); ++i) {
-    const auto& row     = rows[i].photo_;
+    const auto& row     = rows[i].photo.photo_;
     auto&       display = output.row_display_[i];
     if (row.file_id_ == 0 || row.image_id_ == 0) {
       continue;
@@ -444,6 +505,7 @@ auto RunLibraryQuery(const LibraryQueryInput& input) -> LibraryQueryOutput {
     output.result_ = input.browse_->ReadAlbumQuery(
         input.folder_id_, MergeFilterNodes(input.stats_filter_, output.search_filter_),
         input.options_, input.active_model_key_, input.read_, output.semantic_query_);
+    NormalizePhotoResult(input, output.result_);
     ReadRowDisplayValues(input, output);
   } catch (const std::exception& e) {
     output.error_ = QString::fromUtf8(e.what());
@@ -764,7 +826,10 @@ void LibraryModule::SubmitPendingRefresh() {
   // the views keep their position and animate.
   const bool in_place =
       requested_kind == RefreshKind::kInPlace && !unpublished_replace_ && accepted_input_ &&
-      !pending_options_.has_value() && accepted_input_->folder_id_ == input->folder_id_ &&
+      !pending_options_.has_value() &&
+      accepted_input_->read_.mode ==
+          (stack_display_enabled_ ? AlbumReadMode::kDisplay : AlbumReadMode::kPhotos) &&
+      accepted_input_->folder_id_ == input->folder_id_ &&
       SamePresentation(accepted_input_->options_, input->options_) &&
       accepted_input_->options_.local_day_time_zone_ == input->options_.local_day_time_zone_ &&
       accepted_input_->active_model_key_ == input->active_model_key_ &&
@@ -780,6 +845,14 @@ void LibraryModule::SubmitPendingRefresh() {
                                   .read_occurrence_file_ids_ = true};
   } else {
     unpublished_replace_ = true;
+  }
+
+  input->read_.mode = stack_display_enabled_ ? AlbumReadMode::kDisplay : AlbumReadMode::kPhotos;
+  if (stack_display_enabled_) {
+    input->read_.read_display_items        = in_place;
+    input->read_.read_occurrence_file_ids_ = false;
+    input->read_.expanded_fragments =
+        display_model_.ExpandedFragments(input->folder_id_, input->options_.group_field_);
   }
 
   // A different scope must not show the previous scope's photos while the new read runs.
@@ -822,8 +895,13 @@ auto LibraryModule::ItemFromRow(const AlbumQueryRow& query_row, const AlbumItem&
   const QString scope_type  = folderId == 0 ? QStringLiteral("root") : QStringLiteral("album");
   const auto    folder_path = folders_ ? folders_->CurrentFolderFsPath() : std::filesystem::path{};
   const auto    file_name   = conv::FromBytes(row.file_name_);
-  auto& item = UpsertAlbumItem(row.file_id_, row.image_id_, folderId, scope_type, file_name,
-                               folder_path / file_name);
+  AlbumItem     item;
+  item.element_id = item.file_id = row.file_id_;
+  item.image_id                  = row.image_id_;
+  item.folder_id                 = folderId;
+  item.scope_type                = scope_type;
+  item.file_path_                = folder_path / file_name;
+  item.accent                    = AccentForIndex(static_cast<size_t>(row.file_id_));
   // The query worker read these from the image pool and the label store (row_display_).
   item.extension    = display.extension;
   item.iso          = display.iso;
@@ -862,10 +940,7 @@ void LibraryModule::FailRefresh(const QString& error) {
   SetQueryError(error);
 }
 
-void LibraryModule::FinishRefresh(const LibraryQueryOutput& output, bool search_changed) {
-  if (output.result_.statistics_.has_value()) {
-    stats_->ApplyFolderStats(ToAlbumStatsView(*output.result_.statistics_), false);
-  }
+void LibraryModule::FinishRefresh(bool search_changed) {
   emit CountsChanged();
   emit PresentationChanged();
   emit QueryStateChanged();
@@ -888,37 +963,29 @@ void LibraryModule::PublishRefresh(const LibraryQueryInput& input, LibraryQueryO
     FailRefresh(output.error_);
     return;
   }
-  unpublished_replace_     = false;
-  auto&      result        = output.result_;
-  const bool grouped       = input.options_.group_field_ != AlbumGroupField::kNone;
+  auto&                  result        = output.result_;
+  const bool             grouped       = input.options_.group_field_ != AlbumGroupField::kNone;
   const bool same_grouping = input.options_.group_field_ == accepted_options_.group_field_;
-
-  // Begin the resets while every owner still exposes the previous accepted result.
+  std::vector<AlbumItem> items;
+  std::vector<AlbumDisplayItem>       display_items;
+  std::unordered_set<sl_element_id_t> seen;
+  for (size_t i = 0; i < result.display_rows.size(); ++i) {
+    auto& row = result.display_rows[i];
+    if (seen.insert(row.file_id).second)
+      items.push_back(ItemFromRow(row.photo, output.row_display_[i], input.folder_id_));
+    display_items.push_back(std::move(static_cast<AlbumDisplayItem&>(row)));
+  }
   thumbnail_model_.beginReplace();
   section_model_.BeginReplace();
+  display_model_.BeginReplace();
   thumbs().ReleaseVisibleThumbnailPins();
-  view_state_.all_images_.clear();
-
-  std::vector<sl_element_id_t> page_ids;
-  page_ids.reserve(result.rows_.size());
-  std::vector<AlbumItem>              items;
-  std::unordered_set<sl_element_id_t> seen;
-  for (std::size_t i = 0; i < result.rows_.size(); ++i) {
-    const auto& row = result.rows_[i];
-    page_ids.push_back(row.photo_.file_id_);
-    if (row.photo_.file_id_ == 0 || row.photo_.image_id_ == 0 ||
-        !seen.insert(row.photo_.file_id_).second) {
-      continue;
-    }
-    items.push_back(ItemFromRow(row, output.row_display_[i], input.folder_id_));
-  }
-
+  unpublished_replace_ = false;
   accepted_options_ = input.options_;
   // A change requested after this read was submitted stays pending for its own refresh.
   if (pending_options_.has_value() && SamePresentation(*pending_options_, input.options_)) {
     pending_options_.reset();
   }
-  accepted_input_ = std::make_shared<const LibraryQueryInput>(LibraryQueryInput{
+  accepted_input_          = std::make_shared<const LibraryQueryInput>(LibraryQueryInput{
       .folder_id_        = input.folder_id_,
       .stats_filter_     = input.stats_filter_,
       .search_           = LibrarySearchInput{.display_query_  = input.search_.display_query_,
@@ -928,88 +995,81 @@ void LibraryModule::PublishRefresh(const LibraryQueryInput& input, LibraryQueryO
                                               .field_mask_     = input.search_.field_mask_},
       .options_          = input.options_,
       .active_model_key_ = input.active_model_key_,
+      .read_             = AlbumQueryRead{.mode               = input.read_.mode,
+                                          .expanded_fragments = input.read_.expanded_fragments},
       .page_size_        = input.page_size_});
-  const bool search_changed =
-      search_->AcceptLibrarySearch(input.search_, output.search_filter_, output.semantic_query_);
   occurrence_count_        = result.occurrence_count_;
-  loaded_occurrence_end_   = static_cast<int64_t>(result.rows_.size());
+  loaded_display_end_      = static_cast<int64_t>(display_items.size());
   load_through_            = -1;
   view_state_.total_count_ = static_cast<size_t>(result.unique_file_count_);
-  section_model_.InstallGroups(grouped ? result.groups_ : std::vector<AlbumGroupDescriptor>{},
-                               result.unique_file_count_, grouped ? result.occurrence_count_ : 0,
-                               same_grouping);
-  view_state_.all_images_ = items;
+  LibraryDisplayModel::PageMap pages;
+  if (!display_items.empty()) pages.emplace(0, std::move(display_items));
+  display_model_.Install(result.display_count, std::move(pages));
+  thumbnail_model_.installItems(std::move(items), view_state_.total_count_,
+                                loaded_display_end_ < result.display_count);
+  section_model_.InstallGroups(std::move(result.groups_), result.unique_file_count_,
+                               grouped ? result.display_count : 0, same_grouping,
+                               AlbumReadMode::kDisplay);
+  if (result.statistics_) stats_->ApplyFolderStats(ToAlbumStatsView(*result.statistics_), false);
+  const bool search_changed =
+      search_->AcceptLibrarySearch(input.search_, output.search_filter_, output.semantic_query_);
   query_error_.clear();
   refresh_in_flight_ = refresh_scheduled_;
-
-  // End the resets after every owner holds the new result, then notify.
-  thumbnail_model_.endReplace(std::move(items), view_state_.total_count_,
-                              loaded_occurrence_end_ < occurrence_count_);
+  requested_begin_   = 0;
+  requested_end_     = loaded_display_end_;
+  thumbnail_model_.endReplace();
   section_model_.EndReplace();
-  if (grouped) {
-    section_model_.StorePage(0, page_ids, kMaxRetainedSectionPages);
-    requested_begin_ = 0;
-    requested_end_   = static_cast<int64_t>(page_ids.size());
-  }
-  FinishRefresh(output, search_changed);
+  display_model_.EndReplace();
+  FinishRefresh(search_changed);
 }
 
-auto LibraryModule::PlanInPlaceChange(const LibraryQueryInput&  input,
-                                      const LibraryQueryOutput& output) const -> InPlaceChange {
-  const auto&   ids      = output.result_.occurrence_file_ids_;
-  const int64_t id_count = static_cast<int64_t>(ids.size());
-  const auto&   loaded   = thumbnail_model_.items();
+auto LibraryModule::PlanInPlaceChange(const LibraryQueryInput& input,
+                                      LibraryQueryOutput&      output) const -> InPlaceChange {
+  auto&         items = output.result_.display_items;
   InPlaceChange change;
-  if (accepted_options_.group_field_ != AlbumGroupField::kNone) {
-    change.pages_ = section_model_.RetainedPagesInResult(output.result_.groups_, ids);
-    std::unordered_set<sl_element_id_t> page_ids;
-    for (const auto& [start, page] : change.pages_) {
-      page_ids.insert(page.begin(), page.end());
-    }
-    // The item store of the cells: the loaded photos that stay keep their rows; the photos
-    // that are new in the moved pages follow.
-    for (const auto& item : loaded) {
-      if (page_ids.contains(item.element_id)) {
+  if (input.options_.group_field_ == AlbumGroupField::kNone &&
+      input.read_.mode == AlbumReadMode::kPhotos) {
+    int64_t end = 0;
+    for (size_t i = 0; i < items.size(); ++i)
+      if (thumbnail_model_.itemByFile(items[i].file_id)) end = static_cast<int64_t>(i + 1);
+    if (end == 0 || loaded_display_end_ >= display_model_.DisplayCount())
+      end = std::min<int64_t>(items.size(), end + input.page_size_);
+    if (end > 0)
+      change.pages_.emplace(
+          0, std::vector<AlbumDisplayItem>(std::make_move_iterator(items.begin()),
+                                           std::make_move_iterator(items.begin() + end)));
+  } else
+    change.pages_ = display_model_.RetainedPages(items);
+  if (change.pages_.empty() && !items.empty()) {
+    const auto end = std::min<int64_t>(items.size(), input.page_size_);
+    change.pages_.emplace(
+        0, std::vector<AlbumDisplayItem>(std::make_move_iterator(items.begin()),
+                                         std::make_move_iterator(items.begin() + end)));
+  }
+  std::unordered_set<sl_element_id_t> wanted, ordered;
+  for (const auto& [start, page] : change.pages_)
+    for (const auto& item : page) wanted.insert(item.file_id);
+  if (input.options_.group_field_ != AlbumGroupField::kNone) {
+    for (const auto& item : thumbnail_model_.items())
+      if (wanted.contains(item.element_id)) {
         change.loaded_order_.push_back(item.element_id);
+        ordered.insert(item.element_id);
+      }
+  }
+  for (const auto& [start, page] : change.pages_)
+    for (size_t i = 0; i < page.size(); ++i) {
+      const auto id = page[i].file_id;
+      if (ordered.insert(id).second) {
+        change.loaded_order_.push_back(id);
+        if (!thumbnail_model_.itemByFile(id))
+          change.unread_occurrences_.push_back(start + static_cast<int64_t>(i));
       }
     }
-    std::unordered_set<sl_element_id_t> unread;
-    for (const auto& [start, page] : change.pages_) {
-      for (size_t offset = 0; offset < page.size(); ++offset) {
-        const auto id = page[offset];
-        if (thumbnail_model_.rowByElementId(id) < 0 && unread.insert(id).second) {
-          change.unread_occurrences_.push_back(start + static_cast<int64_t>(offset));
-          change.loaded_order_.push_back(id);
-        }
-      }
-    }
-    return change;
-  }
-
-  // Flat mode: the loaded prefix ends after the last loaded photo that stays. A complete prefix
-  // also takes up to one page of the photos after it (an import at the end of the order).
-  std::unordered_set<sl_element_id_t> loaded_ids;
-  for (const auto& item : loaded) {
-    loaded_ids.insert(item.element_id);
-  }
-  int64_t end = 0;
-  for (int64_t occurrence = 0; occurrence < id_count; ++occurrence) {
-    if (loaded_ids.contains(ids[static_cast<size_t>(occurrence)])) {
-      end = occurrence + 1;
-    }
-  }
-  if (end == 0) {
-    end = std::min(id_count, input.page_size_);
-  } else if (loaded_occurrence_end_ >= occurrence_count_) {
-    end = std::min(id_count, end + input.page_size_);
-  }
-  change.loaded_end_ = end;
-  change.loaded_order_.assign(ids.begin(), ids.begin() + end);
-  for (int64_t occurrence = 0; occurrence < end; ++occurrence) {
-    if (!loaded_ids.contains(ids[static_cast<size_t>(occurrence)])) {
-      change.unread_occurrences_.push_back(occurrence);
-    }
-  }
+  if (!change.pages_.empty())
+    change.loaded_end_ =
+        change.pages_.rbegin()->first + static_cast<int64_t>(change.pages_.rbegin()->second.size());
+  std::vector<AlbumDisplayItem>().swap(
+      items);  // Relocation no longer needs the full SQL ID stream.
   return change;
 }
 
@@ -1044,14 +1104,20 @@ void LibraryModule::PublishInPlaceRefresh(std::shared_ptr<const LibraryQueryInpu
         LibraryQueryOutput rows;
         for (const auto& [begin, end] : ranges) {
           auto range_input  = *input;
-          range_input.read_ = AlbumQueryRead{.offset_ = begin, .limit_ = end - begin};
+          range_input.read_ = AlbumQueryRead{
+              .offset_            = input->read_.mode == AlbumReadMode::kPhotos ? begin : 0,
+              .limit_             = end - begin,
+              .mode               = input->read_.mode,
+              .display_offset     = input->read_.mode == AlbumReadMode::kDisplay ? begin : 0,
+              .expanded_fragments = input->read_.expanded_fragments};
           auto range_output = RunLibraryQuery(range_input);
           if (!range_output.error_.isEmpty()) {
             rows.error_ = range_output.error_;
             break;
           }
-          std::move(range_output.result_.rows_.begin(), range_output.result_.rows_.end(),
-                    std::back_inserter(rows.result_.rows_));
+          std::move(range_output.result_.display_rows.begin(),
+                    range_output.result_.display_rows.end(),
+                    std::back_inserter(rows.result_.display_rows));
           std::move(range_output.row_display_.begin(), range_output.row_display_.end(),
                     std::back_inserter(rows.row_display_));
         }
@@ -1070,12 +1136,12 @@ void LibraryModule::PublishInPlaceRefresh(std::shared_ptr<const LibraryQueryInpu
               // left between the two reads was removed by a write that requests its own refresh;
               // read the change again so it is planned against one state.
               std::unordered_set<sl_element_id_t> read_ids;
-              for (const auto& row : rows.result_.rows_) {
-                read_ids.insert(row.photo_.file_id_);
+              for (const auto& row : rows.result_.display_rows) {
+                read_ids.insert(row.photo.photo_.file_id_);
               }
-              const auto& ids = output.result_.occurrence_file_ids_;
               for (const auto occurrence : change.unread_occurrences_) {
-                if (!read_ids.contains(ids[static_cast<size_t>(occurrence)])) {
+                const auto* item = LibraryDisplayModel::ItemAt(change.pages_, occurrence);
+                if (!item || !read_ids.contains(item->file_id)) {
                   RequestLibraryContentRefresh();
                   return;
                 }
@@ -1097,46 +1163,45 @@ void LibraryModule::ApplyInPlaceChange(const LibraryQueryInput& input, LibraryQu
   emit                                           libraryChangeAboutToApply();
 
   std::unordered_map<sl_element_id_t, AlbumItem> new_items;
-  for (size_t index = 0; index < rows.result_.rows_.size(); ++index) {
-    const auto& row = rows.result_.rows_[index];
-    const auto  id  = row.photo_.file_id_;
-    if (id == 0 || row.photo_.image_id_ == 0 || new_items.contains(id) ||
+  for (size_t index = 0; index < rows.result_.display_rows.size(); ++index) {
+    const auto& row = rows.result_.display_rows[index];
+    const auto  id  = row.photo.photo_.file_id_;
+    if (id == 0 || row.photo.photo_.image_id_ == 0 || new_items.contains(id) ||
         thumbnail_model_.rowByElementId(id) >= 0) {
       continue;
     }
-    new_items.emplace(id, ItemFromRow(row, rows.row_display_[index], input.folder_id_));
+    new_items.emplace(id, ItemFromRow(row.photo, rows.row_display_[index], input.folder_id_));
   }
   // A row without an image has no item, as in a replacement; its cell shows no photo.
   std::erase_if(change.loaded_order_, [&](sl_element_id_t id) {
     return !new_items.contains(id) && thumbnail_model_.rowByElementId(id) < 0;
   });
 
-  occurrence_count_        = result.occurrence_count_;
-  view_state_.total_count_ = static_cast<size_t>(result.unique_file_count_);
-  load_through_            = -1;
-  if (grouped) {
-    const int64_t loaded_end =
-        change.pages_.empty() ? 0
-                              : change.pages_.rbegin()->first +
-                                    static_cast<int64_t>(change.pages_.rbegin()->second.size());
-    thumbnail_model_.applyOrder(change.loaded_order_, new_items, view_state_.total_count_,
-                                loaded_end < occurrence_count_);
-    section_model_.ApplyResultChange(std::move(result.groups_), result.unique_file_count_,
-                                     result.occurrence_count_, std::move(change.pages_));
-  } else {
-    loaded_occurrence_end_ = change.loaded_end_;
-    thumbnail_model_.applyOrder(change.loaded_order_, new_items, view_state_.total_count_,
-                                loaded_occurrence_end_ < occurrence_count_);
-  }
-  view_state_.all_images_ = thumbnail_model_.items();
-  requested_begin_        = std::min(requested_begin_, occurrence_count_);
-  requested_end_          = std::min(requested_end_, occurrence_count_);
-  query_error_.clear();
-  refresh_in_flight_ = refresh_scheduled_;
+  display_model_.BeginReplace();
+  thumbnail_model_.applyOrder(
+      change.loaded_order_, new_items, static_cast<size_t>(result.unique_file_count_),
+      change.loaded_end_ < result.display_count, [&] {
+        occurrence_count_        = result.occurrence_count_;
+        view_state_.total_count_ = static_cast<size_t>(result.unique_file_count_);
+        loaded_display_end_      = change.loaded_end_;
+        load_through_            = -1;
+        display_model_.Install(result.display_count, std::move(change.pages_));
+        if (result.statistics_)
+          stats_->ApplyFolderStats(ToAlbumStatsView(*result.statistics_), false);
+        requested_begin_ = std::min(requested_begin_, result.display_count);
+        requested_end_   = std::min(requested_end_, result.display_count);
+        query_error_.clear();
+        refresh_in_flight_ = refresh_scheduled_;
+        if (grouped)
+          section_model_.ApplyGroupResultChange(std::move(result.groups_),
+                                                result.unique_file_count_, result.display_count);
+      });
+  thumbs().ReleaseUnloadedThumbnailPins();
+  display_model_.EndReplace();
 
   emit LibraryChangeApplied();
   emit libraryChangeApplied();
-  FinishRefresh(output, false);
+  FinishRefresh(false);
   ContinuePaging();
 }
 
@@ -1150,6 +1215,12 @@ auto LibraryModule::AcceptedReadInput(AlbumQueryRead read) const
   // open. Each read takes the services of the open project when it is submitted.
   auto input             = std::make_shared<LibraryQueryInput>(*accepted_input_);
   input->read_           = read;
+  input->read_.mode               = accepted_input_->read_.mode;
+  input->read_.expanded_fragments = accepted_input_->read_.expanded_fragments;
+  if (input->read_.mode == AlbumReadMode::kDisplay) {
+    input->read_.display_offset = input->read_.offset_;
+    input->read_.offset_        = 0;
+  }
   input->browse_         = proj->GetAlbumBrowseService();
   input->filter_service_ = proj->GetSleeveFilterService();
   input->image_pool_     = proj->GetImagePoolService();
@@ -1162,11 +1233,13 @@ auto LibraryModule::AcceptedReadInput(AlbumQueryRead read) const
 }
 
 void LibraryModule::SubmitPage(int64_t offset, int64_t limit) {
-  if (refresh_in_flight_ || !accepted_input_ || offset < 0 || offset >= occurrence_count_) {
+  if (refresh_in_flight_ || !accepted_input_ || offset < 0 ||
+      offset >= display_model_.DisplayCount()) {
     return;
   }
   const auto page  = accepted_input_->page_size_;
-  limit            = std::min(limit > 0 ? std::min(limit, page) : page, occurrence_count_ - offset);
+  limit =
+      std::min(limit > 0 ? std::min(limit, page) : page, display_model_.DisplayCount() - offset);
   auto input       = AcceptedReadInput(AlbumQueryRead{.offset_ = offset, .limit_ = limit});
   page_in_flight_  = true;
   thumbnail_model_.setLoading(true);
@@ -1191,60 +1264,49 @@ void LibraryModule::PublishPage(const LibraryQueryInput& input, LibraryQueryOutp
     SetQueryError(output.error_);
     return;
   }
-  const auto& rows = output.result_.rows_;
-  if (accepted_options_.group_field_ == AlbumGroupField::kNone) {
-    // Flat mode: append the next part of the ordered unique stream.
-    std::vector<AlbumItem> batch;
-    batch.reserve(rows.size());
-    for (std::size_t i = 0; i < rows.size(); ++i) {
-      const auto& row = rows[i];
-      if (row.photo_.file_id_ == 0 || row.photo_.image_id_ == 0 ||
-          FindAlbumItem(row.photo_.file_id_) != nullptr) {
-        continue;
-      }
-      batch.push_back(ItemFromRow(row, output.row_display_[i], input.folder_id_));
-    }
-    loaded_occurrence_end_ = input.read_.offset_ + static_cast<int64_t>(rows.size());
-    if (!batch.empty()) {
-      thumbnail_model_.appendPage(batch);
-    }
-    thumbnail_model_.setHasMore(loaded_occurrence_end_ < occurrence_count_);
-    emit CountsChanged();
-    if (load_through_ >= loaded_occurrence_end_ && thumbnail_model_.hasMore()) {
-      LoadMoreThumbnails();
-    }
-    return;
+  std::vector<AlbumItem>              photos;
+  std::vector<AlbumDisplayItem>       items;
+  std::unordered_set<sl_element_id_t> seen;
+  for (size_t i = 0; i < output.result_.display_rows.size(); ++i) {
+    auto& row = output.result_.display_rows[i];
+    if (seen.insert(row.file_id).second)
+      photos.push_back(ItemFromRow(row.photo, output.row_display_[i], input.folder_id_));
+    items.push_back(std::move(static_cast<AlbumDisplayItem&>(row)));
   }
-
-  // Grouped mode: keep the pages near the requested rows; the photo rows are the unique
-  // files of those pages in occurrence order.
-  std::vector<sl_element_id_t> ids;
-  ids.reserve(rows.size());
-  for (std::size_t i = 0; i < rows.size(); ++i) {
-    const auto& row = rows[i];
-    ids.push_back(row.photo_.file_id_);
-    if (row.photo_.file_id_ != 0 && row.photo_.image_id_ != 0) {
-      (void)ItemFromRow(row, output.row_display_[i], input.folder_id_);
-    }
+  const auto first    = output.result_.first_display;
+  loaded_display_end_ = first + static_cast<int64_t>(items.size());
+  const bool raw_flat = input.read_.mode == AlbumReadMode::kPhotos &&
+                        input.options_.group_field_ == AlbumGroupField::kNone;
+  display_model_.BeginReplace();
+  if (raw_flat) {
+    const auto install = [&] {
+      display_model_.StorePage(first, std::move(items), std::numeric_limits<size_t>::max(), false);
+    };
+    if (!photos.empty())
+      thumbnail_model_.appendPage(std::move(photos), install);
+    else
+      install();
+    thumbnail_model_.setHasMore(loaded_display_end_ < display_model_.DisplayCount());
+  } else {
+    thumbnail_model_.beginReplace();
+    display_model_.StorePage(first, std::move(items), kMaxRetainedSectionPages, false);
+    thumbnail_model_.installPageItems(std::move(photos), display_model_.LoadedUniqueFileIds(),
+                                      view_state_.total_count_,
+                                      loaded_display_end_ < display_model_.DisplayCount());
+    thumbs().ReleaseUnloadedThumbnailPins();
+    thumbnail_model_.endReplace();
   }
-  section_model_.StorePage(input.read_.offset_, ids, kMaxRetainedSectionPages);
-  std::vector<AlbumItem> items;
-  for (const auto id : section_model_.LoadedUniqueFileIds()) {
-    if (const auto* item = FindAlbumItem(id)) {
-      items.push_back(*item);
-    }
-  }
-  view_state_.all_images_ = items;
-  const bool has_more     = section_model_.LoadedEnd() < occurrence_count_;
-  thumbnail_model_.beginReplace();
-  thumbnail_model_.endReplace(std::move(items), view_state_.total_count_, has_more);
+  display_model_.EndReplace();
   emit CountsChanged();
-  ContinuePaging();
+  if (raw_flat && load_through_ >= loaded_display_end_ && thumbnail_model_.hasMore())
+    LoadMoreThumbnails();
+  if (!raw_flat) ContinuePaging();
 }
 
 void LibraryModule::ContinuePaging() {
   if (page_in_flight_ || refresh_in_flight_ || !accepted_input_ ||
-      accepted_options_.group_field_ == AlbumGroupField::kNone) {
+      (accepted_options_.group_field_ == AlbumGroupField::kNone &&
+       accepted_input_->read_.mode != AlbumReadMode::kDisplay)) {
     return;
   }
   // The first occurrence of the requested range (from its page boundary) that no page holds.
@@ -1473,87 +1535,7 @@ void LibraryModule::SetOccurrenceThumbnailVisible(const QString& groupTitle, boo
       visible, maxEdge);
 }
 
-auto LibraryModule::UpsertAlbumItem(sl_element_id_t elementId, image_id_t imageId,
-                                    sl_element_id_t folderId, const QString& scopeType,
-                                    const file_name_t&           fallbackName,
-                                    const std::filesystem::path& filePath) -> AlbumItem& {
-  AlbumItem* item = FindAlbumItem(elementId);
-
-  if (!item) {
-    AlbumItem next;
-    next.element_id = elementId;
-    next.file_id    = elementId;
-    next.image_id   = imageId;
-    next.folder_id  = folderId;
-    next.scope_type = scopeType;
-    next.file_path_ = filePath;
-    next.file_name  = WStringToQString(fallbackName);
-    next.extension  = ExtensionFromFileName(next.file_name);
-    next.accent     = AccentForIndex(view_state_.all_images_.size());
-
-    view_state_.all_images_.push_back(std::move(next));
-    item = &view_state_.all_images_.back();
-  }
-
-  item->element_id = elementId;
-  item->file_id    = elementId;
-  item->image_id   = imageId;
-  item->folder_id  = folderId;
-  item->scope_type = scopeType;
-  item->file_path_ = filePath;
-  return *item;
-}
-
-void LibraryModule::AddOrUpdateAlbumItem(sl_element_id_t elementId, image_id_t imageId,
-                                        sl_element_id_t folderId, const QString& scopeType,
-                                        const file_name_t&           fallbackName,
-                                        const std::filesystem::path& filePath) {
-  AlbumItem* item =
-      &UpsertAlbumItem(elementId, imageId, folderId, scopeType, fallbackName, filePath);
-
-  auto proj        = project_->handler().project();
-  if (proj) {
-    try {
-      proj->GetImagePoolService()->Read<void>(imageId, [item](std::shared_ptr<Image> image) {
-        if (!image) return;
-        if (!image->image_name_.empty()) {
-          item->file_name = WStringToQString(image->image_name_);
-        }
-        if (!image->image_path_.empty()) {
-          item->extension = ExtensionUpper(image->image_path_);
-        }
-
-        const auto& exif        = image->exif_display_;
-        item->camera_model      = QString::fromUtf8(exif.model_.c_str());
-        item->lens              = QString::fromUtf8(exif.lens_.c_str());
-        item->iso               = static_cast<int>(exif.iso_);
-        item->aperture          = static_cast<double>(exif.aperture_);
-        item->focal_length      = static_cast<double>(exif.focal_);
-        item->rating            = exif.rating_;
-        item->color_labels      = image->color_labels_;
-        item->delete_mark       = image->delete_mark_;
-        item->is_hdr            = exif.is_hdr_;
-        const QDate captureDate = DateFromExifString(exif.date_time_str_);
-        if (captureDate.isValid()) {
-          item->capture_date = captureDate;
-        }
-      });
-    } catch (...) {
-    }
-  }
-
-  if (item->extension.isEmpty()) {
-    item->extension = ExtensionFromFileName(item->file_name);
-  }
-  item->tags = semantic_label_provider_ ? semantic_label_provider_(elementId) : QString{};
-}
-
-
 void LibraryModule::SetAlbumItemHdrFlag(sl_element_id_t elementId, image_id_t imageId, bool isHdr) {
-  if (auto* item = FindAlbumItem(elementId);
-      item != nullptr && (imageId == 0 || item->image_id == imageId)) {
-    item->is_hdr = isHdr;
-  }
   thumbnail_model_.updateHdrFlag(elementId, imageId, isHdr);
 }
 
@@ -1561,11 +1543,6 @@ void LibraryModule::SetAlbumItemEditState(sl_element_id_t elementId, image_id_t 
                                           std::optional<std::int64_t> editedAtNs,
                                           const QString&              versionName) {
   const QString name = editedAtNs.has_value() ? versionName : QString{};
-  if (auto* item = FindAlbumItem(elementId);
-      item != nullptr && (imageId == 0 || item->image_id == imageId)) {
-    item->edited_at_ns      = editedAtNs;
-    item->edit_version_name = name;
-  }
   thumbnail_model_.updateEditState(elementId, imageId, editedAtNs, name);
 }
 
@@ -1587,30 +1564,8 @@ void LibraryModule::PersistImageHdrFlag(sl_element_id_t elementId, image_id_t im
   }
 }
 
-
-auto LibraryModule::FindAlbumItem(sl_element_id_t elementId) -> AlbumItem* {
-  for (auto& item : view_state_.all_images_) {
-    if (item.element_id == elementId) {
-      return &item;
-    }
-  }
-  return nullptr;
-}
-
 auto LibraryModule::FindAlbumItem(sl_element_id_t elementId) const -> const AlbumItem* {
-  for (const auto& item : view_state_.all_images_) {
-    if (item.element_id == elementId) {
-      return &item;
-    }
-  }
-
-  const auto& visible_items = thumbnail_model_.items();
-  for (const auto& item : visible_items) {
-    if (item.element_id == elementId) {
-      return &item;
-    }
-  }
-  return nullptr;
+  return thumbnail_model_.itemByFile(elementId);
 }
 
 // ── Phase 4: Thumbnail disk cache settings ─────────────────────────────────

@@ -2,10 +2,10 @@
 
 Date: 2026-11-11
 
-Status: PS1, PS2A, PS2B, PS3, and PS4 complete (2026-11-11). PS5A is in progress. All later phases remain planned.
-The latest Windows Release verification has 113 distinct passes, three skips, and no unresolved
-test failures after fixture preparation and reruns. One GPU rendering comparison was excluded.
-See the PS1 and PS2A review-fix records and the original PS2B completion record.
+Status: PS1, PS2A, PS2B, PS3, PS4, and PS5A complete (2026-11-11). All later phases remain planned.
+The latest Windows Release verification for PS5A has 148 passes, five skips, and no failures.
+See the PS5A.2 completion record. The earlier PR1 verification had 113 distinct passes, three
+skips, and no unresolved failures. Its records remain under PS1, PS2A, and PS2B.
 
 Feature request: [#486](https://github.com/zidage/AlcedoStudio/issues/486), stacking section only.
 
@@ -758,7 +758,8 @@ Do not add a second close coordinator or copy stack membership for a discard ope
 ## 7. Phase summary
 
 Every estimate includes production code, tests, build registration, localization, and phase write-back.
-Each phase stays below 2000 changed lines. Split again before implementation if its upper bound grows.
+Each phase or its documented internal steps stays below 2000 changed lines.
+Split again before implementation if its upper bound grows.
 Do not place the complete implementation in one PR if its added diff can exceed the repository limit.
 
 | Phase | Result | Dependency | Expected changed lines | Split reason | Status |
@@ -768,7 +769,7 @@ Do not place the complete implementation in one PR if its added diff can exceed 
 | PS2B | Migration, package preservation, and diagnostics | PS1 | 750-1250 | Keep format and package evidence separate from deletion changes. | complete |
 | PS3 | Filter-first fragments, covers, and collapsed display reads | PS1 | 1200-1800 | Isolate query semantics from expansion and UI. | complete |
 | PS4 | Expansion, bounded pages, positions, and matching-member reads | PS3 | 1100-1750 | Paging and three position spaces need dedicated tests. | complete |
-| PS5A | C++ display owner and complete query publication | PS4 | 800-1300 | Separate display state from command and save state. | planned |
+| PS5A | C++ display owner and complete query publication | PS4 | 2400-3750 in two internal steps | Separate page ownership from publication; see PS5A.1 and PS5A.2. | complete |
 | PS5B | Command controller, task policy, and save outcomes | PS2A, PS2B, PS5A | 700-1200 | Keep command task behavior independent from close decisions. | planned |
 | PS5C | Pending stack saves and application/project close | PS5B | 900-1500 | Add the lifecycle behavior that audited main does not provide. | planned |
 | PS6 | Selection, bulk actions, and editor navigation | PS5C | 1000-1600 | Verify target semantics through existing callers. | planned |
@@ -793,7 +794,7 @@ Put the phase IDs and this plan link under Changes in the PR body.
 | --- | --- | --- | ---: |
 | 1 | PS1, PS2A, PS2B | Stack persistence, atomic deletion, compatibility, and packaging | 3250-4950 |
 | 2 | PS3, PS4 | Filter-first fragments, temporary covers, expansion, and paging | 2300-3550 |
-| 3 | PS5A | Display models and complete query publication | 800-1300 |
+| 3 | PS5A | Display models and complete query publication | 2400-3750 in two internal steps |
 | 4 | PS5B, PS5C, PS6 | Commands, save and close handling, selection, and editor navigation | 2600-4300 |
 | 5 | PS7, PS8, PS9 | All Library layouts, localization, and integrated acceptance | 2750-4650 |
 
@@ -807,7 +808,8 @@ PR 1 is upstream [#828](https://github.com/zidage/AlcedoStudio/pull/828), with h
 so the complete UI can provide real screenshots before upstream review finishes.
 Create PR 2 as `feature/library-photo-stacking-PR2` from that PR 1 head. Use
 `feature/library-photo-stacking-PRn` for subsequent branches, each based on the preceding PR branch.
-Keep this dependency chain in the fork. The current request implements PS3 and PS4 only.
+PR2 contains PS3 and PS4 at `4f3f0b8f`. PR3 is `feature/library-photo-stacking-PR3`,
+based on that PR2 head, and contains PS5A only. Keep this dependency chain in the fork.
 Search for competing work before opening a PR. Upstream submissions must follow CONTRIBUTING.md:
 wait for overlapping open work to close. The fork branch chain does not change that submission rule.
 Use the current alcedo-create-pr skill and its fixed Why, Changes, and Verification sections.
@@ -1740,8 +1742,8 @@ An expansion choice made after submission remains the live choice for its reques
 - `DisplayPagesHaveOneOwnerAndReleaseHiddenThumbnailPins`: verify loaded counts and owner notifications.
 
 **Build and run.** V5A: LibraryDisplayModelTest, AlbumSectionModelTest, and AlbumBackendLibraryQueryTest.
-**Exit criteria.** [ ] One owner per state category. [ ] QAbstractItemModelTester accepts every transition.
-[ ] GUI publication performs no SQL. [ ] No duplicate display-page cache remains.
+**Exit criteria.** [x] One owner per state category. [x] QAbstractItemModelTester accepts every transition.
+[x] GUI publication performs no SQL. [x] No duplicate display-page cache remains.
 **Implementation split (2026-11-11).** Source audit at PR2 `4f3f0b8f` found a 770-line section
 model with its own page map and a 1788-line library facade with separate publication paths.
 The estimate has a material risk of exceeding 2000 changed lines. Keep PS5A as the PR3 scope,
@@ -1750,7 +1752,7 @@ with these independently tested internal steps. Neither step starts PS5B or a la
 | Step | Exact scope | Expected changed lines | Completion |
 | --- | --- | ---: | --- |
 | PS5A.1 | Minimal display-item representation, LibraryDisplayModel page/expansion owner, section-model scoped reads and geometry, model tests | 1200-1850 | complete |
-| PS5A.2 | LibraryModule worker/publication, photo-value owner, host registration, notification/worker/failure tests | 1200-1900 | planned |
+| PS5A.2 | LibraryModule worker/publication, photo-value owner, host registration, notification/worker/failure tests | 1200-1900 | complete |
 
 PS5A.1 moves the existing section page storage into LibraryDisplayModel. Keep legacy photo-ID
 operation inputs as transient algorithm outputs, never as a second stored page cache. Tests
@@ -1799,6 +1801,184 @@ The section implementation shrinks after its page storage moves. This internal s
 **PS5A remaining:** integrate complete worker publication, shared host registration, eliminate the
 legacy duplicate photo values, and execute the remaining named publication/pin/failure assertions.
 Full-suite, macOS, and manual GUI checks were not run.
+
+
+#### PS5A.2 completion record (2026-11-11)
+
+**Status:** complete. PS5A.1 and PS5A.2 complete the PS5A scope on
+`feature/library-photo-stacking-PR3`, based on PR2 `4f3f0b8f`.
+No stack command, save policy, selection policy, or QML layout was added.
+
+**Owner and publication changes.** LibraryDisplayModel owns display pages and session expansion.
+AlbumThumbnailModel owns each loaded photo value. AlbumSectionModel owns group descriptors,
+collapse choices, and geometry. Its scoped reads use the display owner. LibraryModule installs
+counts, statistics, photo values, display pages, and group geometry before completion notifications.
+ApplicationModuleHost exposes the library-owned model as `libraryDisplayModel`.
+Project close clears all presentation owners and expansion choices through LibraryModule.
+
+The duplicate `AlbumViewState::all_images_` cache and unused catalog insertion API were removed.
+ImageController and ThumbnailManager use focused photo-owner operations. Retained photo values
+and thumbnail state move through the owner. Eviction releases only the pins of unloaded photos.
+No duplicate display-page or photo-value cache remains.
+
+**Design details selected.** In-place relocation needs the complete ordered identity stream.
+The existing ID-only read now supports minimal display items from the same SQL projection.
+These items contain no photo metadata or member list. The GUI consumes retained ranges and releases
+the remaining stream. Metadata reads stay bounded. Photo-mode results become ordinary display items
+at the worker boundary; the service default and existing photo navigation remain unchanged.
+
+The existing worker request captures minimal expansion keys. An accepted result does not write
+those keys back over live choices. The worker's existing request replacement handles newer choices.
+The C++ composition setting `SetStackDisplayEnabled` permits owner tests; production keeps photo
+mode until all Library layouts support stacks. It is not a QML command.
+
+**Primary success chain:**
+
+```text
+Filter, grouping, content refresh, or C++ expansion choice
+  -> LibraryModule captures its typed read on the GUI thread
+  -> SearchRequestWorker -> AlbumBrowseService -> SQL read transactions
+  -> minimal display items and bounded photo values return to the GUI
+  -> install each component in its owner -> publish completion notifications
+  -> sections read display geometry and retain matching-photo captions
+```
+
+**Primary failure chain:**
+
+```text
+Invalid saved cover or SQL failure -> worker returns the actual query error
+  -> accepted photo values, display identities, and section state remain
+  -> QueryError and Retry -> successful read installs one complete result
+```
+
+Malformed retained-photo order is rejected before thumbnail state moves. An absent fragment keeps
+its expansion choice. A choice made while a query runs survives that older request's completion.
+No new generation, cancellation protocol, backend, or substitute query path was added.
+
+**Observed regression and fix.** The additional in-place notification test initially found section
+counts of 5 versus 6 display items, and 6 versus 7 matching photos, at a photo-count notification.
+The photo owner's synchronous publication callback now installs the other accepted owners before
+its property completion signals. The same regression passes after the fix.
+The first build also caught a test-access namespace typo; the corrected test source builds.
+
+**Executed acceptance evidence:**
+
+| Acceptance criterion | Executed assertion | Result |
+| --- | --- | --- |
+| Complete accepted publication and no GUI SQL | `PublicationObserversSeeOneCompletePhotoAndDisplayResult` checks model/property/statistics notifications and the service's query-thread observer. | PASS |
+| In-place count and geometry publication | `InPlaceCompletionNotificationsExposeTheNewCountsAndSectionGeometryTogether` adds a new day and checks completion observers. | PASS |
+| Stable temporary-cover identity and File selection | `TemporaryCoverChangeKeepsFragmentIdentityWithoutSelectingTheNewCover` keeps the original File selected. | PASS |
+| Filter clearing and multi-group expansion | `ClearingFilterRestoresSavedCoverAndPreviousExpansion` covers flat and date groups, including an absent fragment. | PASS |
+| Display geometry versus matching-photo caption | `SectionGeometryReadsDisplayCountsButReportsMatchingPhotoCounts` checks row geometry, collapse, and caption values separately. | PASS |
+| One display-page owner and hidden-pin release | `DisplayPagesHaveOneOwnerAndReleaseHiddenThumbnailPins` checks owners, loaded values, and pins after collapse. | PASS |
+| Bounded page ownership and eviction | `DisplayPageEvictionReleasesOnlyTheUnloadedPhotoPins` uses 3503 display items and retains at most three pages and 3000 photo values. | PASS |
+| Failure retention and Retry | `QueryFailureRetainsAcceptedOwnersAndRetryPublishesTheValidResult` uses a real invalid saved cover. | PASS |
+| Worker replacement preserves a later choice | `ExpansionChangedAfterSubmissionSurvivesTheOlderWorkerResult` pauses the real query worker while the GUI submits a new choice. | PASS |
+| Minimal relocation data and stable representative | `RelocationReadsReturnOnlyMinimalItemsAndPreserveRepresentativeIdentity` reads the whole minimal stream but only one metadata row. | PASS |
+| Reject invalid retained values before mutation | `InvalidRetainedPhotoOrderDoesNotMoveTheAcceptedThumbnailState` verifies the accepted thumbnail URL remains. | PASS |
+
+QAbstractItemModelTester checks all three owners across the integration fixture's filter, grouping,
+cover, in-place, failure/retry, expansion, paging, and eviction transitions. Core geometry tests also
+check model transitions. The host property points to the same library-owned display model.
+The direct caller suites preserve raw-photo paging, in-place import/delete, marks, ratings, editor
+list reads, project close/reopen, and host lifetime behavior.
+
+**Build and test commands:**
+
+```powershell
+$env:VCVARS_USER_VERSION = '14.44'
+$env:PATH = "C:/Qt/6.12.0/msvc2022_64/bin;$PWD/build/dependencies/duckdb-v1.5.6;$PWD/vcpkg/installed/x64-windows/debug/bin;$PWD/vcpkg/installed/x64-windows/bin;$env:PATH"
+cmd /c scripts\msvc_env.cmd --build --preset win_release --target LibraryDisplayModelTest AlbumSectionModelTest AlbumBackendLibraryQueryTest AlbumStackQueryTest AlbumStackPagingTest AlbumQueryTest AlbumBackendLibraryMarksTest AlbumBackendThumbnailTest AlbumBackendRatingTest ProjectModuleTest ApplicationModuleHostLifecycleTest EditorRhiPresentationTest --parallel 4
+cmd /c scripts\msvc_env.cmd --build --preset win_release --target LibraryDisplayModelTest --parallel 4
+$env:PATH = "$PWD/build/release/vcpkg_installed/x64-windows/debug/bin;$PWD/vcpkg/installed/x64-windows/bin;$env:PATH"
+ctest --test-dir build/release -R '^LibraryDisplayModelTest\.' --output-on-failure
+ctest --test-dir build/release -R '^(LibraryDisplayModelTest|AlbumSectionModelTest|AlbumBackendLibraryQueryTest|AlbumStackQueryTest|AlbumStackPagingTest|AlbumQueryTest|AlbumBackendLibraryMarksTest|AlbumBackendThumbnailTest|AlbumBackendRatingTest|ProjectModuleTest|ApplicationModuleHostLifecycleTest|EditorRhiPresentationTest)\.' --output-on-failure
+```
+
+The final builds and test runs exit 0. The narrow display run passes 15/15. The final run discovers
+153 cases: **148 passed, five skipped, no failures**. Do not add the earlier 48 passes again.
+
+| Target | Passed | Skipped |
+| --- | ---: | ---: |
+| LibraryDisplayModelTest | 15 | 0 |
+| AlbumSectionModelTest | 12 | 0 |
+| AlbumBackendLibraryQueryTest | 31 | 0 |
+| AlbumStackQueryTest | 10 | 0 |
+| AlbumStackPagingTest | 12 | 0 |
+| AlbumQueryTest | 34 | 1 |
+| AlbumBackendLibraryMarksTest | 6 | 0 |
+| AlbumBackendThumbnailTest | 2 | 4 |
+| AlbumBackendRatingTest | 10 | 0 |
+| ProjectModuleTest | 4 | 0 |
+| ApplicationModuleHostLifecycleTest | 2 | 0 |
+| EditorRhiPresentationTest | 10 | 0 |
+
+One thumbnail case needs Metal. Three need RAW fixtures absent from the configured fixture path:
+`MissingSourceThumbnailStopsLoadingAndSetsMissingFlag`, `VisibleThumbnailRerequestsWhenMaxEdgeChanges`,
+and `ReleasingOneTierKeepsTheOtherConsumersPinnedTier`. The large-library timing case needs explicit
+opt-in. These five cases were skipped, not passed. The new owner pin/eviction assertions passed.
+The full suite, macOS, sanitizer builds, manual GUI checks, and screenshots were not run.
+WorkspaceShell and other synthetic QML input suites were not run under the repository's test rule.
+Their cache assignments and catalog stub were updated mechanically for the removed API.
+
+**Maintainability review.** The new production display owner is 293 lines; its header is 96.
+Focused owner tests are separate from the 395-line real-host publication tests.
+LibraryModule remains the existing query/worker/publication coordinator. Its pages and expansion
+live in LibraryDisplayModel; photo values live in AlbumThumbnailModel; group geometry lives in
+AlbumSectionModel; pins and request lifetimes live in ThumbnailManager. No new mutable state is
+shared across these owners. Worker messages hold minimal independent request values.
+
+LibraryModule remains above 1000 lines but shrinks from its PR2 size. A further split would need
+an independent query-request owner with its worker and accepted input; moving methods alone would
+not create that boundary. No such additional refactor is needed for this scoped publication change.
+ImageController only loses duplicate-cache writes. ElementStore adds read-mode validation.
+The large UI test manifest and WorkspaceShell fixture have registration or mechanical edits only.
+These files keep their current responsibilities. No new forward declaration was added.
+
+Required terminology cleanup renamed the touched RHI presentation target and its test consistently.
+Its ten assertions pass. This changes names, not RHI behavior. Touched fixture helpers and comments
+use operation names. Source, test, document, and roadmap terminology searches were reviewed.
+All touched files use LF. New code and changed C++ lines are formatted. The final edits after the
+regression run change documentation, formatting, explicit includes, and fixture helper names only.
+
+**Changed-file LOC review for PS5A.2:** paths below are relative to `alcedo_studio/`.
+The source/test step changes 1499 lines, excluding this completion record. PS5A.1 changed 831 lines.
+Each internal step remains below 2000 changed lines with its plan write-back.
+
+| File | Total lines | Added / removed |
+| --- | ---: | ---: |
+| `src/include/storage/store/sleeve/element_store.hpp` | 481 | 4 / 0 |
+| `src/include/ui/alcedo_main/album_backend/album_catalog.hpp` | 42 | 0 / 5 |
+| `src/include/ui/alcedo_main/album_backend/album_section_model.hpp` | 256 | 4 / 0 |
+| `src/include/ui/alcedo_main/album_backend/album_thumbnail_model.hpp` | 184 | 27 / 5 |
+| `src/include/ui/alcedo_main/album_backend/album_types.hpp` | 86 | 1 / 2 |
+| `src/include/ui/alcedo_main/album_backend/application_module_host.hpp` | 279 | 4 / 0 |
+| `src/include/ui/alcedo_main/album_backend/library_display_model.hpp` | 96 | 8 / 1 |
+| `src/include/ui/alcedo_main/album_backend/library_module.hpp` | 499 | 28 / 26 |
+| `src/include/ui/alcedo_main/album_backend/thumbnail_manager.hpp` | 93 | 3 / 0 |
+| `src/storage/store/sleeve/album_stack_query.cpp` | 360 | 53 / 29 |
+| `src/storage/store/sleeve/element_store.cpp` | 1415 | 3 / 0 |
+| `src/ui/alcedo_main/album_backend/album_section_model.cpp` | 710 | 6 / 1 |
+| `src/ui/alcedo_main/album_backend/album_thumbnail_model.cpp` | 542 | 78 / 15 |
+| `src/ui/alcedo_main/album_backend/application_module_host.cpp` | 841 | 1 / 4 |
+| `src/ui/alcedo_main/album_backend/image_controller.cpp` | 2328 | 4 / 40 |
+| `src/ui/alcedo_main/album_backend/library_display_model.cpp` | 293 | 49 / 5 |
+| `src/ui/alcedo_main/album_backend/library_module.cpp` | 1743 | 262 / 307 |
+| `src/ui/alcedo_main/album_backend/thumbnail_manager.cpp` | 629 | 15 / 9 |
+| `src/ui/editor_rhi/CMakeLists.txt` | 235 | 8 / 8 |
+| `tests/app/album_stack_paging_test.cpp` | 429 | 22 / 0 |
+| `tests/ui/CMakeLists.txt` | 3137 | 8 / 7 |
+| `tests/ui/editor_rhi_presentation_test.cpp` | 155 | 2 / 2 |
+| `tests/ui/editor_versions_panel_qml_test.cpp` | 842 | 3 / 6 |
+| `tests/ui/library_display_model_test.cpp` | 164 | 12 / 0 |
+| `tests/ui/library_display_publication_test.cpp` | 395 | 395 / 0 |
+| `tests/ui/project_module_close_test.cpp` | 139 | 1 / 1 |
+| `tests/ui/ui_fuzz_automation_test.cpp` | 523 | 2 / 3 |
+| `tests/ui/workspace_shell_test.cpp` | 2890 | 10 / 10 |
+
+**Completion criteria:** all PS5A items are complete. No persisted schema or stack organization
+changed. PS5B through PS9 remain unstarted. No unresolved observed test failure remains.
+Temporary logs and review captures under `build/tmp/photo_stack_pr3/` are removed after this record.
 
 
 ### PS5B - Command tasks and save outcomes

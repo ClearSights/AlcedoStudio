@@ -67,9 +67,8 @@ struct ExistingFolderEntry {
   bool                  expanded_ = false;
 };
 
-/// UI-only display cache state. No filesystem or DB ownership.
+/// Accepted matching-photo total, owned by LibraryModule. Photo values belong to the model.
 struct AlbumViewState {
-  std::vector<AlbumItem> all_images_{};
   size_t                 total_count_ = 0;
 };
 
