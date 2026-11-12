@@ -6,7 +6,7 @@ Status: PS1 through PS9, including all PS2 and PS5 sub-phases, complete (2026-11
 PS7 through PS9 are implemented on `feature/library-photo-stacking-PR5`, based on PR4.
 Windows Release targeted verification has 344 passes, 15 skips, and one existing private-fixture
 failure linked to #826. The final six-suite recheck passed 90/90. Native UI review is complete.
-The final EXE linked and runs; its post-build PowerShell icon check still exits -1 without output.
+The final EXE linked and runs; antivirus blocked its post-build PowerShell icon check.
 See the PS9 completion record for this local build limitation and the complete evidence.
 Prior-phase verification records remain under their respective phase headings.
 
@@ -2842,9 +2842,12 @@ this repository check after earlier antivirus blocks. A prior direct check and a
 build passed all six icon images. After the final retained-page correction, both the build
 hook and its exact absolute-path direct invocation returned -1 without verifier output.
 The final application-only retry linked successfully, then failed at post-build.bat line 5
-with the same result. The user reported no antivirus alert. No matching Windows PowerShell
-startup or Application crash event was found. The cause remains unconfirmed, and this record
-does not claim a successful final post-build step. Further verifier attempts are stopped.
+with the same result. The user initially reported no antivirus alert. The subsequent antivirus
+history supplied by the user confirms that PowerShell process 51824 was blocked while running
+this exact repository check. Its parent Ninja process 26452 matches the final application-only
+retry. No matching Windows PowerShell startup or Application crash event was found. This record
+does not claim a successful final post-build step. Further verifier attempts remain paused
+until the user confirms that this specific check is allowed and they are ready for a retry.
 No antivirus settings, interpreter, or build checks were changed to avoid the failure.
 The completed sample package is available at `build/review/library_photo_stacks_review.alcd`;
 open it from this Release EXE because the machine's file association can select another build.
