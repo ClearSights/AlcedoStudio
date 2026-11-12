@@ -65,7 +65,7 @@ class ProjectHandler {
   /// - Running kPreview load: changes the load to kEnter; the completion enters the project.
   /// Returns false and changes nothing in every other state.
   bool RequestEnterLoadedProject();
-  bool PersistCurrentProjectState();
+  bool               PersistCurrentProjectState(QString* error = nullptr);
   /// Saves the loaded project before it closes. For an entered project: Mini-Git sync and
   /// garbage collection of unreachable commits, the purge of uninstalled semantic models, the
   /// metadata save, and the package write. A project that the user did not enter has no user

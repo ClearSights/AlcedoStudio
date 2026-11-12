@@ -116,7 +116,7 @@ InteractionPolicyController::Answer InteractionPolicyController::EvalTargets(
     const QVariantList&    targets) const {
   Answer out;
   if (targets.isEmpty()) {
-    return out;  // nothing to block; the caller gates on non-empty targets too.
+    return out;  // nothing to block; the caller checks non-empty targets too.
   }
   const auto    eids = TargetElementIds(targets);
   QSet<QString> seen;
@@ -230,7 +230,7 @@ bool InteractionPolicyController::CanChangeModelDownloadSettings() const {
 }
 
 bool InteractionPolicyController::CanChangeSearchFieldFilters() const {
-  // UI-only mutual-exclusion gate: natural-language search and field filters
+  // UI-only mutual-exclusion rule: natural-language search and field filters
   // cannot be active together. This does NOT consult the task-lock model (no
   // InteractionCapability::ChangeSearchFieldFilters); the only input is the
   // QML-pushed natural-language toggle. See the header comment.
@@ -336,6 +336,14 @@ QVariantMap InteractionPolicyController::EvaluateCheckoutVersion() const {
 
 QVariantMap InteractionPolicyController::EvaluatePasteAdjustments() const {
   return ToVariantMap(EvalGlobal(InteractionCapability::PasteAdjustments));
+}
+
+QVariantMap InteractionPolicyController::EvaluateEditPhotoStacks() const {
+  // Deletion and other project writes already publish this lock. A stack command must wait
+  // for their save too, so metadata save and package creation stay in one command lifetime.
+  const auto project = EvalGlobal(InteractionCapability::CloseProject);
+  if (!project.allowed_) return ToVariantMap(project);
+  return ToVariantMap(EvalGlobal(InteractionCapability::EditPhotoStacks));
 }
 
 QVariantMap InteractionPolicyController::EvaluateChangeStateAsUser() const {

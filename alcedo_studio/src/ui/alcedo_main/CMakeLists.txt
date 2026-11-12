@@ -79,6 +79,8 @@ add_library(AlbumBackendLib STATIC
     "${ALCEDO_UI_SHELL_ROOT}/album_backend/library_module_edit_state.cpp"
     "${ALCEDO_UI_SHELL_ROOT}/album_backend/album_section_model.cpp"
     "${ALCEDO_UI_SHELL_ROOT}/album_backend/library_display_model.cpp"
+    "${ALCEDO_UI_SHELL_ROOT}/album_backend/photo_stack_controller.cpp"
+    "${ALCEDO_INCLUDE_ROOT}/ui/alcedo_main/album_backend/photo_stack_controller.hpp"
     "${ALCEDO_UI_SHELL_ROOT}/album_backend/album_thumbnail_model.cpp"
     "${ALCEDO_UI_SHELL_ROOT}/album_backend/justified_row_layout.cpp"
     "${ALCEDO_UI_SHELL_ROOT}/album_backend/justified_layout_model.cpp"

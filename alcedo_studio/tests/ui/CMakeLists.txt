@@ -541,6 +541,9 @@ alcedo_register_test_target(AlbumBackendSearchWorkerTest ui)
 # Library sort, group, and import time (album_sort_group_and_import_time_plan.md, Phase 2):
 # section projection geometry, and the one library query path of LibraryModule.
 def_ui_test(AlbumSectionModelTest album_section_model_test.cpp)
+def_ui_test(PhotoStackControllerTest photo_stack_controller_test.cpp)
+alcedo_register_test_target(PhotoStackControllerTest ui)
+
 def_ui_test(LibraryDisplayModelTest library_display_model_test.cpp)
 target_sources(LibraryDisplayModelTest PRIVATE ${ALCEDO_TEST_ROOT}/ui/library_display_publication_test.cpp)
 alcedo_register_test_target(LibraryDisplayModelTest ui)

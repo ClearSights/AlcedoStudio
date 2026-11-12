@@ -17,6 +17,7 @@ namespace alcedo::ui {
 
 /// Kind of a background task surfaced to the UI.
 enum class BackgroundTaskKind {
+  PhotoStackUpdate,  ///< Persisted photo organization and its project save.
   SemanticGeneration,
   ModelDownload,
   ModelActivation,
@@ -59,6 +60,7 @@ enum class BackgroundTaskShutdownPolicy {
 /// snapshots already carry a `locks` field; no controller publishes locks in
 /// Phase 1.
 enum class InteractionCapability {
+  EditPhotoStacks,  ///< Project-wide photo stack mutation.
   EditImageDescription,
   EditImageRating,
   EditImageRatingReason,

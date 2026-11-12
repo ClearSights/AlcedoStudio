@@ -153,6 +153,9 @@ ApplicationModuleHost::ApplicationModuleHost(QObject* parent, LifecycleObserver 
   project_->SetLutResources(lut_library_->Resources());
   library_ = std::make_unique<LibraryModule>(project_.get(), this);
   RecordConstruction("LibraryModule", library_.get());
+  photo_stacks_ = std::make_unique<PhotoStackController>(
+      project_.get(), library_.get(), background_tasks_.get(), interaction_policy_.get(), this);
+  RecordConstruction("PhotoStackController", photo_stacks_.get());
   folders_ =
       std::make_unique<FolderController>(project_.get(), library_.get(), project_.get(), this);
   RecordConstruction("FolderController", folders_.get());
@@ -511,7 +514,12 @@ ApplicationModuleHost::ApplicationModuleHost(QObject* parent, LifecycleObserver 
   nikon_he_recovery_->BindCollaborators(import_export_.get(), semantic_generation_.get());
 
   ProjectLifecycleHooks lifecycle_hooks;
-  lifecycle_hooks.project_switch_block_reason = [import_export = import_export_.get()] {
+  lifecycle_hooks.stack_command_busy = [stacks = photo_stacks_.get()] {
+    return stacks && stacks->Busy();
+  };
+  lifecycle_hooks.project_switch_block_reason = [import_export = import_export_.get(),
+                                                 stacks        = photo_stacks_.get()] {
+    if (stacks && stacks->Busy()) return QStringLiteral("A photo stack command is running.");
     // ImportRunning() stays true while the finished import is written to the project.
     if (import_export && (import_export->ImportRunning() ||
                           (import_export->current_import_job() &&
@@ -764,6 +772,7 @@ ApplicationModuleHost::~ApplicationModuleHost() {
   destroy(stats_, "StatsEngine");
   destroy(images_, "ImageController");
   destroy(folders_, "FolderController");
+  destroy(photo_stacks_, "PhotoStackController");
   destroy(library_, "LibraryModule");
   const auto project_services = WatchProjectServices(project_.get());
   destroy(project_, "ProjectModule");
