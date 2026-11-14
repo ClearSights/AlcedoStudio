@@ -87,6 +87,44 @@ Those products explain the comparison; they do not define Alcedo's selected beha
 Sources: [Bridge filtering](https://helpx.adobe.com/bridge/desktop/organize-and-find-files/organize-files-and-folders/sort-and-filter-files-and-folders.html),
 [Lightroom Classic report](https://community.adobe.com/questions-675/lightroom-classic-not-finding-photos-in-closed-stacks-977686).
 
+### 1.4 Potential direction: photo dragging for stack operations
+
+Decision recorded on 2026-11-14, on the merged PR5 branch at `eeab1698`.
+This is a possible extension, not approved implementation work for PR5.
+Keep the current rubber-band selection interaction unchanged. PR5 adds no photo drag source,
+stack drop target, or new pointer action for this direction.
+
+The possible extension would let users:
+
+- Drag a member to another position within its stack.
+- Drag a photo into a specific position in another stack.
+- Drag a member out of its stack, keeping the photo in the Library and its albums.
+
+The current source provides related operations, but no internal Library photo dragging:
+
+- `ThumbnailGridView.qml` uses pointer movement for rubber-band selection in both flat layouts.
+- `LibraryWorkspace.qml` accepts external file drops for import.
+- `CollectionsPanel.qml` moves collection folders by drag. It also accepts external file drops.
+- `PhotoStackService::MoveMember` moves a member one position earlier or later.
+- `PhotoStackService::AddMembers` transfers explicit Files and appends them to the target stack.
+- `PhotoStackService::RemoveMembers` removes membership and repairs the saved cover or dissolves
+  a stack with fewer than two members.
+- `PhotoStackController` already owns command execution, interaction locks, save outcomes,
+  and the Library refresh after a committed change.
+
+A later proposal must define how users start a photo drag without replacing rubber-band
+selection. It must distinguish saved member order from filtered, grouped display positions.
+It must specify drop targets, multi-photo order, auto-scroll, cancellation, and cover changes.
+All layouts must use logical File IDs and the existing occurrence identity for target lookup.
+
+Arbitrary placement needs one focused storage operation for movement or insertion at a target
+position. Validate the complete input before mutation. Commit destination order, source repair,
+and cover changes together. Do not implement one drop as repeated adjacent-move transactions.
+Keep membership and saved order in `PhotoStackStore`; do not copy live stack state into QML.
+Reuse the controller's save and error reporting. A failed database operation must keep all
+affected stacks unchanged. A failed package save must retain the committed change and offer
+Retry Save. This note adds no schema change, implementation phase, or completion claim.
+
 ## 2. Product specification
 
 ### 2.1 Filter, group, and stack order
