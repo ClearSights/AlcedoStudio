@@ -3266,6 +3266,76 @@ and submenu contents are demonstrated by executed tests and the native review ab
 | `alcedo_studio/tests/ui/photo_stack_disclosure_test.cpp` | 245 | 8 | 13 |
 | `docs/VI/README.md` | 701 | 7 | 4 |
 
+#### PR5 upstream integration verification (2026-11-14)
+
+Verified `feature/library-photo-stacking-PR5` at `86e610c1`, after merge `eeab1698`.
+The parent chain includes upstream `main` at `e86edddb`. Commit `86e610c1` adds only
+the possible dragging direction in section 1.4. This verification changed no product code.
+The existing rubber-band selection interaction remains unchanged.
+
+**Application build:** Windows Release passed in `build/release`, with MSVC 14.44.35207,
+CUDA 12.8, Qt 6.12.0, and the existing `win_release` preset. The executable linked, all six
+embedded icon comparisons passed, and the runtime-copy steps completed.
+
+Two local environment adjustments were necessary:
+
+- The cached compiler was MSVC 14.44, but the default developer environment selected 14.51
+  headers. The initial compile stopped with STL1001. Set `VCToolsVersion=14.44.35207` before
+  the wrapper invocation. The subsequent compilation and linking passed.
+- The generated post-build command's Windows PowerShell invocation exited with `-1` without
+  a diagnostic. The unchanged icon verifier passed in PowerShell 7.6.9. For this local build,
+  its generated `post-build.bat` command invoked that host with `-NoLogo -NoProfile
+  -NonInteractive -Command` and the same script, executable, and ICO paths. The complete build
+  then returned zero. No source CMake file or verifier changed. Reconfiguration regenerates
+  this local command.
+
+**Targeted tests:** 146 distinct cases were discovered. Final outcomes were **141 passed,
+five skipped, and zero unresolved failures** across the following targets:
+
+| Target | Passed | Skipped |
+| --- | ---: | ---: |
+| PhotoStackStoreTest | 24 | 0 |
+| LibraryDisplayModelTest | 18 | 0 |
+| PhotoStackControllerTest | 13 | 0 |
+| LibraryStackLayoutTest | 12 | 0 |
+| LibraryPhotoStackIntegrationTest | 8 | 0 |
+| JustifiedLayoutTest | 24 | 0 |
+| AlbumBackendLibraryQueryTest | 32 | 0 |
+| AlbumBackendI18nTest | 2 | 0 |
+| PhotoStackDisclosureTest | 4 | 0 |
+| AlbumBackendThumbnailTest | 4 | 5 |
+
+The first CTest run took 279.34 seconds. It had 137 passes, five skips, and four failures.
+The four disclosure cases could not load Qt Quick Controls plugin dependencies. Add
+`C:/Qt/6.12.0/msvc2022_64/bin` to PATH and rerun only `PhotoStackDisclosureTest`.
+All four then passed in 0.74 seconds. No test assertion or product behavior changed.
+
+The thumbnail suite skipped its Metal case because this Windows build does not enable Metal.
+Four cases skipped because their RAW fixtures were absent: missing-source handling, zoom-tier
+requests, two-tier pin retention, and display-destination URL updates.
+
+Commands, from the repository root in PowerShell:
+
+```powershell
+$env:VCToolsVersion = '14.44.35207'
+$env:PATH = "C:/Qt/6.12.0/msvc2022_64/bin;$PWD/vcpkg/installed/x64-windows/bin;$env:PATH"
+cmd /c scripts\msvc_env.cmd --build --preset win_release --parallel 4
+$targets = @('PhotoStackStoreTest', 'LibraryDisplayModelTest', 'PhotoStackControllerTest',
+    'LibraryStackLayoutTest', 'LibraryPhotoStackIntegrationTest', 'JustifiedLayoutTest',
+    'AlbumBackendLibraryQueryTest', 'AlbumBackendI18nTest', 'PhotoStackDisclosureTest',
+    'AlbumBackendThumbnailTest')
+cmd /c scripts\msvc_env.cmd --build --preset win_release --target $targets --parallel 4
+$pattern = '^(' + ($targets -join '|') + ')\.'
+ctest --test-dir build/release -N -R $pattern
+ctest --test-dir build/release -j 1 -R $pattern --output-on-failure
+ctest --test-dir build/release -j 1 -R '^PhotoStackDisclosureTest\.' --output-on-failure
+```
+
+The application and targeted test builds both returned zero after the environment adjustments.
+The full test suite, Debug and macOS builds, sanitizers, and native GUI review were not run.
+Temporary logs and the local helper under `build/tmp/stacking_pr5_upstream_verify/` were
+removed after this record was written. Earlier completion records remain historical evidence.
+
 ## 9. Cross-phase acceptance matrix
 
 | Behavior | Primary evidence | Required observable result |
