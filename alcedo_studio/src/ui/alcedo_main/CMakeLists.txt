@@ -3,6 +3,12 @@
 set(ALCEDO_UI_ROOT "${ALCEDO_SRC_ROOT}/ui")
 set(ALCEDO_UI_SHELL_ROOT "${ALCEDO_UI_ROOT}/alcedo_main")
 
+# Personal Release binaries stay separate from feature-branch builds.
+set(ALCEDO_MAIN_RUNTIME_DIR "${ALCEDO_BINARY_ROOT}")
+if(WIN32 AND CMAKE_BUILD_TYPE STREQUAL "Release")
+    set(ALCEDO_MAIN_RUNTIME_DIR "${CMAKE_BINARY_DIR}/dev")
+endif()
+
 def_library(UiLocalization
     SOURCES
         "${ALCEDO_INCLUDE_ROOT}/ui/alcedo_main/i18n.hpp"
@@ -592,7 +598,7 @@ if(WIN32)
     target_link_libraries(alcedo_update_installer PRIVATE UpdateInstallerWindows)
 endif()
 set_target_properties(alcedo_update_installer PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY "${ALCEDO_BINARY_ROOT}"
+    RUNTIME_OUTPUT_DIRECTORY "${ALCEDO_MAIN_RUNTIME_DIR}"
 )
 if(APPLE)
     set_property(TARGET alcedo_update_installer APPEND PROPERTY
@@ -605,16 +611,16 @@ add_executable(alcedo_update_signer
 )
 target_link_libraries(alcedo_update_signer PRIVATE Qt6::Core unofficial::ed25519::ed25519)
 set_target_properties(alcedo_update_signer PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY "${ALCEDO_BINARY_ROOT}"
+    RUNTIME_OUTPUT_DIRECTORY "${ALCEDO_MAIN_RUNTIME_DIR}"
 )
 alcedo_copy_linked_runtime_dlls(alcedo_update_signer)
 
 if(WIN32)
-    # Keep the development executable at the historical, stable location.
+    # Keep the development executable in the configured runtime directory.
     # CMake Tools and developers launching from the build tree must use the
     # same executable that receives the first-party CUDA runtime DLLs.
     set_target_properties(alcedo_main PROPERTIES
-        RUNTIME_OUTPUT_DIRECTORY "${ALCEDO_BINARY_ROOT}"
+        RUNTIME_OUTPUT_DIRECTORY "${ALCEDO_MAIN_RUNTIME_DIR}"
     )
 
     # Ship as a GUI-subsystem app so launching Alcedo does not pop a console
@@ -636,7 +642,7 @@ if(WIN32)
         "${Qt6_DIR}/../../.." ABSOLUTE
     )
     file(GENERATE
-        OUTPUT "${ALCEDO_BINARY_ROOT}/qt.conf"
+        OUTPUT "${ALCEDO_MAIN_RUNTIME_DIR}/qt.conf"
         CONTENT
 "[Paths]
 Prefix = ${_alcedo_qt_runtime_prefix}
@@ -1056,7 +1062,7 @@ set(ALCEDO_TEST_HOST_SOURCES
 )
 add_executable(alcedo_studio_test_host ${ALCEDO_TEST_HOST_SOURCES})
 set_target_properties(alcedo_studio_test_host PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY "${ALCEDO_BINARY_ROOT}"
+    RUNTIME_OUTPUT_DIRECTORY "${ALCEDO_MAIN_RUNTIME_DIR}"
 )
 target_include_directories(alcedo_studio_test_host
     PRIVATE
