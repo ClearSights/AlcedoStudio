@@ -54,7 +54,7 @@ QVariant AlbumThumbnailModel::data(const QModelIndex& index, int role) const {
   return roleValue(rows_[static_cast<size_t>(index.row())], role);
 }
 
-QVariant AlbumThumbnailModel::roleValue(const AlbumItem& item, int role) const {
+QVariant AlbumThumbnailModel::roleValue(const AlbumItem& item, int role) {
   switch (role) {
     case ElementId:
       return static_cast<uint>(item.element_id);
