@@ -9339,19 +9339,15 @@ CLIP / SigLIP 这类视觉语言模型会把图像和文字映射到同一语义
     <message><source>Remove selected photos from stacks</source><translation>将选中照片移出堆叠</translation></message>
     <message><source>Ungroup entire stack</source><translation>解散整个堆叠</translation></message>
     <message><source>Set as stack cover</source><translation>设为堆叠封面</translation></message>
-    <message><source>Changes the saved cover throughout this project.</source><translation>更改整个项目中保存的堆叠封面。</translation></message>
+    <message><source>Moves this photo to the top and makes it the stack cover throughout this project.</source><translation>将此照片移至堆叠顶部并设为整个项目中的堆叠封面。</translation></message>
     <message><source>Moves this photo in saved stack order throughout this project.</source><translation>在整个项目的已保存堆叠顺序中移动此照片。</translation></message>
     <message><source>Move earlier in stack</source><translation>在堆叠中前移</translation></message>
     <message><source>Move later in stack</source><translation>在堆叠中后移</translation></message>
-    <message><source>Select matching photos in this stack</source><translation>选择此堆叠中匹配的照片</translation></message>
-    <message><source>Select entire stack (%1 photos)</source><translation>选择整个堆叠（%1 张照片）</translation></message>
     <message><source>Collapse this stack</source><translation>收起此堆叠</translation></message>
     <message><source>Expand this stack</source><translation>展开此堆叠</translation></message>
     <message><source>Expand all matching stacks</source><translation>展开所有匹配堆叠</translation></message>
     <message><source>Collapse all matching stacks</source><translation>收起所有匹配堆叠</translation></message>
-    <message><source>Select entire stack</source><translation>选择整个堆叠</translation></message>
     <message><source>Ungroup all %1 photos? This changes every group and album. Photos outside the current filter are included.</source><translation>解散共 %1 张照片的整个堆叠？此操作影响所有分组和相册，也包括当前筛选结果之外的照片。</translation></message>
-    <message><source>Select all %1 photos in this stack? Photos outside the current filter or album are included.</source><translation>选择此堆叠的全部 %1 张照片？也包括当前筛选结果或相册之外的照片。</translation></message>
     <message><source>Cancel</source><translation>取消</translation></message>
     <message><source>Confirm</source><translation>确认</translation></message>
     <message><source>Group into Stack</source><translation>编组为堆叠</translation></message>

@@ -6855,19 +6855,15 @@ CLIP / SigLIP 这类视觉语言模型会把图像和文字映射到同一语义
     <message><source>Remove selected photos from stacks</source><translation>Remove selected photos from stacks</translation></message>
     <message><source>Ungroup entire stack</source><translation>Ungroup entire stack</translation></message>
     <message><source>Set as stack cover</source><translation>Set as stack cover</translation></message>
-    <message><source>Changes the saved cover throughout this project.</source><translation>Changes the saved cover throughout this project.</translation></message>
+    <message><source>Moves this photo to the top and makes it the stack cover throughout this project.</source><translation>Moves this photo to the top and makes it the stack cover throughout this project.</translation></message>
     <message><source>Moves this photo in saved stack order throughout this project.</source><translation>Moves this photo in saved stack order throughout this project.</translation></message>
     <message><source>Move earlier in stack</source><translation>Move earlier in stack</translation></message>
     <message><source>Move later in stack</source><translation>Move later in stack</translation></message>
-    <message><source>Select matching photos in this stack</source><translation>Select matching photos in this stack</translation></message>
-    <message><source>Select entire stack (%1 photos)</source><translation>Select entire stack (%1 photos)</translation></message>
     <message><source>Collapse this stack</source><translation>Collapse this stack</translation></message>
     <message><source>Expand this stack</source><translation>Expand this stack</translation></message>
     <message><source>Expand all matching stacks</source><translation>Expand all matching stacks</translation></message>
     <message><source>Collapse all matching stacks</source><translation>Collapse all matching stacks</translation></message>
-    <message><source>Select entire stack</source><translation>Select entire stack</translation></message>
     <message><source>Ungroup all %1 photos? This changes every group and album. Photos outside the current filter are included.</source><translation>Ungroup all %1 photos? This changes every group and album. Photos outside the current filter are included.</translation></message>
-    <message><source>Select all %1 photos in this stack? Photos outside the current filter or album are included.</source><translation>Select all %1 photos in this stack? Photos outside the current filter or album are included.</translation></message>
     <message><source>Cancel</source><translation>Cancel</translation></message>
     <message><source>Confirm</source><translation>Confirm</translation></message>
     <message><source>Group into Stack</source><translation>Group into Stack</translation></message>

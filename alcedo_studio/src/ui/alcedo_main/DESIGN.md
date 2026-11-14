@@ -541,11 +541,13 @@ The displayed File opens in the editor, including a temporary cover.
 - Context commands use one `Stack` submenu in the existing Basic menu family: Group into
   Stack, Ungroup Stack, Add Selected to Stack, Remove from Stack, Set as Stack Cover,
   Move Up/Down in Stack, Split Stack, Expand/Collapse Stack, Expand/Collapse All Stacks
-  (All Matched Stacks with a filter), then the two explicit stack selection actions.
+  (All Matched Stacks with a filter). The two stack-selection entries were removed by the
+  user review of 2026-11-14.
   Stack captions stay on one line; submenu width follows actual row font and padding.
-  Split uses the right-clicked member in saved order; singleton sides become unstacked.
-  Whole-stack selection always
-  confirms its saved total; ungrouping confirms when the clicked fragment hides members.
+  Split uses the right-clicked member in cover-first order; singleton sides become unstacked,
+  and both surviving stacks expand in the accepted view before display publication.
+  Set as Stack Cover moves the photo first. Moving across the first position updates the cover.
+  Ungrouping confirms when the clicked fragment hides members.
   Cover changes explain their project-wide scope in the tooltip.
 - Query, command, and save errors use `AlertBadge`; Retry Save calls the project owner.
   Expansion and cover replacement retain the first surviving occurrence using its opaque

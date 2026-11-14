@@ -118,7 +118,7 @@ auto PhotoStackController::Start(PhotoStackCommand command) -> QString {
     }
     QMetaObject::invokeMethod(
         this,
-        [this, result = std::move(result)] {
+        [this, result = std::move(result), operation = command.operation] {
           SetError(result.error);
           tasks_->FinishTask(task_id_,
                              result.outcome == PhotoStackCommandResult::Outcome::kFailed ||
@@ -133,7 +133,12 @@ auto PhotoStackController::Start(PhotoStackCommand command) -> QString {
           } else if (result.outcome == PhotoStackCommandResult::Outcome::kSaved) {
             project_->SetStackSaveState(false);
           }
-          if (result.change.Changed() && library_) library_->RequestLibraryContentRefresh();
+          if (result.change.Changed() && library_) {
+            if (operation == PhotoStackCommand::Operation::kSplit)
+              library_->ExpandSplitStacks(result.change.changed_stack_ids);
+            else
+              library_->RequestLibraryContentRefresh();
+          }
           task_id_.clear();
           emit BusyChanged();
           emit Finished(result);

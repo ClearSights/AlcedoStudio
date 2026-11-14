@@ -255,6 +255,9 @@ class LibraryModule final : public QObject, public IAlbumCatalog {
   /// Expand all accepted matching fragments if any is collapsed, otherwise collapse them all.
   /// Read unloaded keys on the existing query worker; selection and saved rows are unchanged.
   Q_INVOKABLE void       ToggleAllStacksExpanded();
+  /// Expand matching fragments of the split result, including unloaded groups, then refresh.
+  /// GUI-thread entry; the query worker reads keys only. Selection and stored rows are unchanged.
+  void                   ExpandSplitStacks(std::vector<std::string> stack_ids);
   /// Select exact fragment or entire saved stack from a loaded occurrence; no implicit selection.
   Q_INVOKABLE void       SelectStack(const QString& occurrence_key, bool entire);
   /// Capture minimal query input and explicit IDs for command ordering on a worker. No GUI SQL.
@@ -402,7 +405,7 @@ class LibraryModule final : public QObject, public IAlbumCatalog {
 
  private:
   /// Queue one complete expansion update. nullopt toggles from the live choices after key read.
-  void ChangeAllStackExpansion(std::optional<bool> expanded);
+  void ChangeStackExpansion(std::optional<bool> expanded, std::vector<std::string> stack_ids = {});
   /// How a submitted refresh changes the shown result.
   enum class RefreshKind : std::uint8_t {
     kReplace,  ///< A new result replaces the shown one (model reset).

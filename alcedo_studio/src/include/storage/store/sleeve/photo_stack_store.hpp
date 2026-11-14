@@ -27,7 +27,8 @@ class PhotoStackStore {
  public:
   explicit PhotoStackStore(Database& database) : database_(database) {}
   /// Create from first-occurrence ordered IDs (at least two live Files). A complete existing
-  /// stack is a no-op. Otherwise reassign only these Files and repair their source stacks.
+  /// stack is a no-op. Otherwise move the selected cover first, retain other input order,
+  /// reassign only these Files, and repair their source stacks.
   auto CreateStack(const std::string& stack_id, std::span<const sl_element_id_t> file_ids,
                    sl_element_id_t cover_file_id) -> PhotoStackChange;
   /// Append only new members in input order, retaining the target cover and existing order.
@@ -37,9 +38,11 @@ class PhotoStackStore {
   auto RemoveMembers(std::span<const sl_element_id_t> file_ids) -> PhotoStackChange;
   /// Remove an entire stack's organization, preserving all photos and album links.
   auto UngroupStack(const std::string& stack_id) -> PhotoStackChange;
-  /// Persist a member as cover; unchanged cover returns a no-op. Reject nonmembers.
+  /// Move a member to the front and persist it as cover, retaining the other members' order.
+  /// Unchanged cover returns a no-op. Reject nonmembers; order and cover commit together.
   auto SetCover(const std::string& stack_id, sl_element_id_t file_id) -> PhotoStackChange;
-  /// Swap a member with its saved neighbor. An endpoint or unstacked File is a no-op.
+  /// Swap a member with its neighbor; the first member becomes cover in the same transaction.
+  /// An endpoint or unstacked File is a no-op.
   auto MoveMember(sl_element_id_t file_id, PhotoStackMove direction) -> PhotoStackChange;
   /// Split saved order before file_id. The left retains its ID/cover when possible; the right
   /// uses new_stack_id and file_id as cover. Singleton sides become ordinary photos. The first
@@ -51,7 +54,8 @@ class PhotoStackStore {
                          sl_element_id_t clicked) -> PhotoStackActionOptions;
   /// Order validated explicit targets by stack UUID, saved position, then unstacked File ID.
   auto OrderCommandFiles(std::span<const sl_element_id_t> ids) -> std::vector<sl_element_id_t>;
-  /// Read validated, saved member order; unknown stacks are errors, never empty successes.
+  /// Read validated cover-first member order; accept older independent cover positions.
+  /// Unknown stacks are errors, never empty successes. This read changes no stored rows.
   auto ReadMemberIds(const std::string& stack_id) -> std::vector<sl_element_id_t>;
   /// Validate every stored stack and detect orphan memberships under one read transaction.
   /// Project open calls this before exposing services. Throws the persisted-data diagnostic;

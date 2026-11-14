@@ -8,6 +8,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <iterator>
 #include <limits>
 #include <stdexcept>
 #include <unordered_set>
@@ -68,15 +69,28 @@ auto FileId(std::int64_t id) -> sl_element_id_t {
   return static_cast<sl_element_id_t>(id);
 }
 
-/// Read ordered ID output only; the caller validates the header and relations first.
+/// Read the cover first, then saved order. This also reads projects saved before cover moves
+/// changed member positions, without mutating their rows during a read.
 auto MemberIds(duckdb_connection conn, const std::string& id) -> std::vector<sl_element_id_t> {
   std::vector<sl_element_id_t> result;
   for (const auto& row : duckorm::query<FileIdRow>(
-           conn, {"SELECT file_id FROM PhotoStackMember WHERE stack_id = ? ORDER BY member_order",
-                  {id}})) {
+           conn,
+           {"SELECT m.file_id FROM PhotoStackMember m JOIN PhotoStack s USING (stack_id) "
+            "WHERE m.stack_id = ? ORDER BY (m.file_id = s.cover_file_id) DESC, m.member_order",
+            {id}})) {
     result.push_back(FileId(row.file_id));
   }
   return result;
+}
+
+/// Apply an order of validated member IDs on the caller's transaction. Reinsert avoids unique
+/// position conflicts during shifts. Only IDs are read; no photo or stack state is mirrored.
+void WriteMemberOrder(duckdb_connection& conn, const std::string& stack,
+                      std::span<const sl_element_id_t> ids) {
+  PhotoStackMemberMapper members(conn);
+  members.RemoveStack(stack);
+  for (std::size_t i = 0; i < ids.size(); ++i)
+    members.Insert(ids[i], stack, static_cast<std::int64_t>(i));
 }
 
 /// Require every target to be a live File with exactly one binding to an existing Image.
@@ -249,7 +263,7 @@ auto PhotoStackStore::CreateStack(const std::string&               stack_id,
                                   sl_element_id_t cover_file_id) -> PhotoStackChange {
   return InTransaction(database_, [&](duckdb_connection& conn) {
     ValidateStackId(stack_id);
-    const auto ids = UniqueFiles(file_ids);
+    auto ids = UniqueFiles(file_ids);
     if (ids.size() < 2 || std::find(ids.begin(), ids.end(), cover_file_id) == ids.end()) {
       throw std::invalid_argument("A photo stack requires two unique Files and a selected cover");
     }
@@ -273,6 +287,8 @@ auto PhotoStackStore::CreateStack(const std::string&               stack_id,
       change.RecordStack(conn, source);
     }
     Detach(conn, ids, sources);
+    const auto cover = std::find(ids.begin(), ids.end(), cover_file_id);
+    std::rotate(ids.begin(), cover, std::next(cover));
     PhotoStackMapper(conn).Insert(stack_id, cover_file_id);
     PhotoStackMemberMapper members(conn);
     for (std::size_t i = 0; i < ids.size(); ++i) {
@@ -348,13 +364,16 @@ auto PhotoStackStore::SetCover(const std::string& stack_id, sl_element_id_t file
     -> PhotoStackChange {
   return InTransaction(database_, [&](duckdb_connection& conn) {
     const auto cover = ValidateStack(conn, stack_id);
-    const auto ids   = MemberIds(conn, stack_id);
-    if (std::find(ids.begin(), ids.end(), file_id) == ids.end()) {
+    auto       ids    = MemberIds(conn, stack_id);
+    const auto member = std::find(ids.begin(), ids.end(), file_id);
+    if (member == ids.end()) {
       throw std::invalid_argument("Photo stack cover must belong to that stack");
     }
     PhotoStackChangeBuilder change(stack_id);
     if (cover != file_id) {
       change.RecordStack(conn, stack_id);
+      std::rotate(ids.begin(), member, std::next(member));
+      WriteMemberOrder(conn, stack_id, ids);
       PhotoStackMapper(conn).SetCover(stack_id, file_id);
     }
     return change.Finish();
@@ -375,28 +394,18 @@ auto PhotoStackStore::MoveMember(sl_element_id_t file_id, PhotoStackMove directi
     }
     const auto&             stack_id = sources.front();
     PhotoStackChangeBuilder change(stack_id);
-    const auto              ordered = MemberIds(conn, stack_id);
+    auto                    ordered = MemberIds(conn, stack_id);
     auto       index = static_cast<std::size_t>(std::find(ordered.begin(), ordered.end(), file_id) -
                                                 ordered.begin());
     if ((direction == PhotoStackMove::kEarlier && index == 0) ||
         (direction == PhotoStackMove::kLater && index + 1 == ordered.size())) {
       return change.Finish();
     }
-    const auto neighbor = ordered[direction == PhotoStackMove::kEarlier ? index - 1 : index + 1];
-    const auto order_of = [&](sl_element_id_t id) {
-      return duckorm::select_int64(conn,
-                                   {"SELECT member_order FROM PhotoStackMember WHERE file_id = ?",
-                                    {static_cast<std::int64_t>(id)}})
-          .value();
-    };
-    const auto first_order  = order_of(file_id);
-    const auto second_order = order_of(neighbor);
+    const auto neighbor = direction == PhotoStackMove::kEarlier ? index - 1 : index + 1;
     change.RecordStack(conn, stack_id);
-    const std::array       pair{file_id, neighbor};
-    PhotoStackMemberMapper members(conn);
-    members.RemoveFiles(pair);
-    members.Insert(file_id, stack_id, second_order);
-    members.Insert(neighbor, stack_id, first_order);
+    std::swap(ordered[index], ordered[neighbor]);
+    WriteMemberOrder(conn, stack_id, ordered);
+    PhotoStackMapper(conn).SetCover(stack_id, ordered.front());
     return change.Finish();
   });
 }
@@ -475,9 +484,12 @@ auto PhotoStackStore::OrderCommandFiles(std::span<const sl_element_id_t> ids)
     auto files = UniqueFiles(ids);
     ValidateFiles(conn, files);
     auto query = expr::raw(
-        "SELECT e.id FROM Element e LEFT JOIN PhotoStackMember m ON m.file_id = e.id WHERE ");
+        "SELECT e.id FROM Element e LEFT JOIN PhotoStackMember m ON m.file_id = e.id "
+        "LEFT JOIN PhotoStack s ON s.stack_id = m.stack_id WHERE ");
     query.append(expr::in_list(expr::col("e.id"), std::span<const sl_element_id_t>(files)));
-    query.sql_.append(" ORDER BY m.stack_id NULLS LAST, m.member_order, e.id");
+    query.sql_.append(
+        " ORDER BY m.stack_id NULLS LAST, "
+        "(m.file_id = s.cover_file_id) DESC, m.member_order, e.id");
     std::vector<sl_element_id_t> result;
     for (const auto& row : duckorm::query<FileIdRow>(conn, query))
       result.push_back(FileId(row.file_id));

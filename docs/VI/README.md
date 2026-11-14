@@ -520,11 +520,14 @@ labels.
   collapse remains a separate action.
 - All stack actions live in one `Stack` submenu. Group into Stack, Ungroup Stack,
   Add Selected to Stack, Remove from Stack, Set as Stack Cover, Move Up/Down in Stack,
-  Split Stack, and the two Expand/Collapse actions precede explicit selection actions.
+  Split Stack, and the two Expand/Collapse actions. The two stack-selection entries were
+  removed by the user review of 2026-11-14.
   The all-stacks action says All Matched Stacks with a filter. Split uses the right-clicked
-  member in saved order; singleton sides become ordinary photos.
-- Menu validity comes from the C++ command owner. Confirm full saved totals before selecting
-  an entire stack or ungrouping hidden members. Cover tooltips explain project-wide scope.
+  member in cover-first order; singleton sides become ordinary photos. Both surviving stacks
+  expand after a split. Set as Stack Cover moves the photo first, and moving across the first
+  position updates the cover.
+- Menu validity comes from the C++ command owner. Confirm full saved totals before ungrouping
+  hidden members. Cover tooltips explain project-wide scope.
 - Review classic and justified flat layouts and grouped classic, both themes, English and
   Chinese, all eight zoom levels, a narrow window, pointer and keyboard, `reduceMotion`,
   temporary covers, hidden selection, command refusal, and failed save with Retry Save.

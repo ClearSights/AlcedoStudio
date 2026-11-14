@@ -137,13 +137,16 @@ class PhotoStackStoreTest : public ::testing::Test {
   }
 };
 
-TEST_F(PhotoStackStoreTest, CreateStackPersistsMembersOrderAndSelectedCover) {
+TEST_F(PhotoStackStoreTest, CreateStackPersistsCoverFirstAndOtherMembersInInputOrder) {
   const auto stack = Create({2, 0, 2, 1}, 0);
-  EXPECT_EQ(Stacks().ReadMemberIds(stack), Files({2, 0, 1}));
+  EXPECT_EQ(Stacks().ReadMemberIds(stack), Files({0, 2, 1}));
   EXPECT_EQ(Cover(stack), files[0]);
+  EXPECT_EQ(Number(duckorm::expr::raw("SELECT file_id FROM PhotoStackMember "
+                                      "ORDER BY member_order LIMIT 1")),
+            files[0]);
   const auto rows = StackRows();
   Reopen();
-  EXPECT_EQ(Stacks().ReadMemberIds(stack), Files({2, 0, 1}));
+  EXPECT_EQ(Stacks().ReadMemberIds(stack), Files({0, 2, 1}));
   EXPECT_EQ(Cover(stack), files[0]);
   EXPECT_EQ(StackRows(), rows);
 }
@@ -297,9 +300,11 @@ TEST_F(PhotoStackStoreTest, CoverAndMemberMovePreserveImageHistoryMarksAndAlbumL
     history_heads.push_back(label.head_commit_hash);
   }
   EXPECT_TRUE(Stacks().SetCover(stack, files[2]).Changed());
-  EXPECT_TRUE(Stacks().MoveMember(files[2], PhotoStackMove::kEarlier).Changed());
+  EXPECT_EQ(Stacks().ReadMemberIds(stack), Files({2, 0, 1}));
+  EXPECT_FALSE(Stacks().MoveMember(files[2], PhotoStackMove::kEarlier).Changed());
+  EXPECT_TRUE(Stacks().MoveMember(files[0], PhotoStackMove::kEarlier).Changed());
   EXPECT_EQ(Stacks().ReadMemberIds(stack), Files({0, 2, 1}));
-  EXPECT_EQ(Cover(stack), files[2]);
+  EXPECT_EQ(Cover(stack), files[0]);
   EXPECT_TRUE(Stacks().MoveMember(files[0], PhotoStackMove::kLater).Changed());
   EXPECT_EQ(Stacks().ReadMemberIds(stack), Files({2, 0, 1}));
   EXPECT_FALSE(Stacks().MoveMember(files[2], PhotoStackMove::kEarlier).Changed());
@@ -334,16 +339,16 @@ TEST_F(PhotoStackStoreTest, DuplicateAdditionAndUnchangedCoverPerformNoMembershi
   EXPECT_FALSE(regroup.Changed());
   EXPECT_EQ(regroup.stack_id, stack);
   EXPECT_EQ(StackRows(), rows);
-  EXPECT_EQ(Stacks().ReadMemberIds(stack), Files({2, 0, 1}));
+  EXPECT_EQ(Stacks().ReadMemberIds(stack), Files({0, 2, 1}));
 }
 
-TEST_F(PhotoStackStoreTest, NewStackMovesOnlySelectedFilesAndKeepsTheirExplicitOrder) {
+TEST_F(PhotoStackStoreTest, NewStackMovesOnlySelectedFilesAndKeepsOtherMembersInExplicitOrder) {
   const auto source = Create({0, 1, 2}, 0);
   // Equal source/selection sizes do not mean the selection is the complete source stack.
   const auto target = Create({1, 5, 4}, 5);
   EXPECT_NE(source, target);
   EXPECT_EQ(Stacks().ReadMemberIds(source), Files({0, 2}));
-  EXPECT_EQ(Stacks().ReadMemberIds(target), Files({1, 5, 4}));
+  EXPECT_EQ(Stacks().ReadMemberIds(target), Files({5, 1, 4}));
   EXPECT_EQ(Cover(target), files[5]);
   EXPECT_TRUE(Stacks().RemoveMembers(Files({0})).Changed());
   EXPECT_THROW(Stacks().ReadMemberIds(source), std::invalid_argument);
@@ -353,7 +358,7 @@ TEST_F(PhotoStackStoreTest, NewStackMovesOnlySelectedFilesAndKeepsTheirExplicitO
   EXPECT_EQ(Number(duckorm::expr::raw("SELECT COUNT(*) FROM FileImage")), 8);
 }
 
-TEST_F(PhotoStackStoreTest, RemoveCoverPromotesEarliestRemainingSavedMemberAndKeepsOrderGaps) {
+TEST_F(PhotoStackStoreTest, RemoveAndMoveKeepTheFirstRemainingMemberAsCover) {
   const auto stack = Create({0, 1, 2, 3}, 0);
   EXPECT_TRUE(Stacks().RemoveMembers(Files({0, 2, 0})).Changed());
   EXPECT_EQ(Cover(stack), files[1]);
@@ -362,7 +367,7 @@ TEST_F(PhotoStackStoreTest, RemoveCoverPromotesEarliestRemainingSavedMemberAndKe
   EXPECT_EQ(Stacks().ReadMemberIds(stack), Files({3, 1}));
   EXPECT_TRUE(Stacks().AddMembers(stack, Files({4, 4, 5})).Changed());
   EXPECT_EQ(Stacks().ReadMemberIds(stack), Files({3, 1, 4, 5}));
-  EXPECT_EQ(Cover(stack), files[1]);
+  EXPECT_EQ(Cover(stack), files[3]);
   Reopen();
   EXPECT_EQ(Stacks().ReadMemberIds(stack), Files({3, 1, 4, 5}));
 }
@@ -499,20 +504,20 @@ TEST_F(PhotoStackStoreTest, SplitPreservesBothSavedPartitionsAndPersistsTheirCov
   ASSERT_EQ(change.changed_stack_ids.size(), 2);
   const auto right = change.changed_stack_ids[1];
   EXPECT_EQ(change.stack_id, source);
-  EXPECT_EQ(change.changed_file_ids, Files({0, 1, 2, 3, 4, 5}));
-  EXPECT_EQ(Stacks().ReadMemberIds(source), Files({0, 1, 2}));
+  EXPECT_EQ(change.changed_file_ids, Files({1, 0, 2, 3, 4, 5}));
+  EXPECT_EQ(Stacks().ReadMemberIds(source), Files({1, 0, 2}));
   EXPECT_EQ(Stacks().ReadMemberIds(right), Files({3, 4, 5}));
   EXPECT_EQ(Cover(source), files[1]);
   EXPECT_EQ(Cover(right), files[3]);
   Reopen();
-  EXPECT_EQ(Stacks().ReadMemberIds(source), Files({0, 1, 2}));
+  EXPECT_EQ(Stacks().ReadMemberIds(source), Files({1, 0, 2}));
   EXPECT_EQ(Stacks().ReadMemberIds(right), Files({3, 4, 5}));
   EXPECT_EQ(Cover(source), files[1]);
   EXPECT_EQ(Cover(right), files[3]);
 }
 
-TEST_F(PhotoStackStoreTest, SplitPromotesLeftCoverAndLeavesSingletonSidesUnstacked) {
-  const auto source = Create({0, 1, 2, 3}, 3);
+TEST_F(PhotoStackStoreTest, SplitTwoMemberSidesLeaveEveryPhotoUnstacked) {
+  const auto source = Create({0, 1, 2, 3}, 0);
   const auto split  = Stacks().SplitStack(source, files[2]);
   ASSERT_EQ(split.changed_stack_ids.size(), 2);
   EXPECT_EQ(Cover(source), files[0]);
@@ -545,7 +550,7 @@ TEST_F(PhotoStackStoreTest, SplitSingletonDissolvesOnlyItsSideAndKeepsTheOtherSt
   EXPECT_EQ(Stacks().ReadMemberIds(left_single.changed_stack_ids[1]), Files({1, 2, 3}));
   EXPECT_EQ(Cover(left_single.changed_stack_ids[1]), files[1]);
   Stacks().UngroupStack(left_single.changed_stack_ids[1]);
-  const auto second       = Create({0, 1, 2, 3}, 3);
+  const auto second       = Create({0, 1, 2, 3}, 0);
   const auto right_single = Stacks().SplitStack(second, files[3]);
   EXPECT_EQ(right_single.changed_stack_ids, std::vector{second});
   EXPECT_EQ(Stacks().ReadMemberIds(second), Files({0, 1, 2}));
@@ -555,14 +560,75 @@ TEST_F(PhotoStackStoreTest, SplitSingletonDissolvesOnlyItsSideAndKeepsTheOtherSt
 }
 
 TEST_F(PhotoStackStoreTest, SplitSqlFailureRestoresMembershipAndCoverAfterDetach) {
-  const auto stack = Create({0, 1, 2, 3}, 3);
+  const auto stack = Create({0, 1, 2, 3}, 0);
   const auto rows  = StackRows();
-  // The right header insert fails after suffix removal and left cover repair.
+  // The right header insert fails after suffix removal.
   Execute("CREATE UNIQUE INDEX one_stack_id_length ON PhotoStack(length(stack_id))");
   EXPECT_THROW(Stacks().SplitStack(stack, files[2]), duckorm::StatementError);
   EXPECT_EQ(StackRows(), rows);
   EXPECT_EQ(Stacks().ReadMemberIds(stack), Files({0, 1, 2, 3}));
-  EXPECT_EQ(Cover(stack), files[3]);
+  EXPECT_EQ(Cover(stack), files[0]);
+}
+
+TEST_F(PhotoStackStoreTest, CoverShortcutAndNeighborMovesPersistTheFirstMemberAsCover) {
+  const auto stack = Create({0, 1, 2, 3}, 0);
+  ASSERT_TRUE(Stacks().SetCover(stack, files[2]).Changed());
+  EXPECT_EQ(Stacks().ReadMemberIds(stack), Files({2, 0, 1, 3}));
+  EXPECT_EQ(Cover(stack), files[2]);
+  EXPECT_EQ(Number(duckorm::expr::raw("SELECT file_id FROM PhotoStackMember "
+                                      "ORDER BY member_order LIMIT 1")),
+            files[2]);
+  ASSERT_TRUE(Stacks().MoveMember(files[0], PhotoStackMove::kEarlier).Changed());
+  EXPECT_EQ(Stacks().ReadMemberIds(stack), Files({0, 2, 1, 3}));
+  EXPECT_EQ(Cover(stack), files[0]);
+  ASSERT_TRUE(Stacks().MoveMember(files[0], PhotoStackMove::kLater).Changed());
+  EXPECT_EQ(Stacks().ReadMemberIds(stack), Files({2, 0, 1, 3}));
+  EXPECT_EQ(Cover(stack), files[2]);
+  ASSERT_TRUE(Stacks().MoveMember(files[3], PhotoStackMove::kEarlier).Changed());
+  EXPECT_EQ(Stacks().ReadMemberIds(stack), Files({2, 0, 3, 1}));
+  EXPECT_EQ(Cover(stack), files[2]);
+  EXPECT_EQ(Number(duckorm::expr::raw("SELECT file_id FROM PhotoStackMember "
+                                      "ORDER BY member_order LIMIT 1")),
+            files[2]);
+  Reopen();
+  EXPECT_EQ(Stacks().ReadMemberIds(stack), Files({2, 0, 3, 1}));
+  EXPECT_EQ(Cover(stack), files[2]);
+}
+
+TEST_F(PhotoStackStoreTest, OlderIndependentCoverReadsFirstWithoutWritesAndMovesInThatOrder) {
+  const auto stack = Create({0, 1, 2, 3}, 0);
+  Execute(std::format("UPDATE PhotoStack SET cover_file_id = {}", files[2]));
+  const auto rows = StackRows();
+  EXPECT_EQ(Stacks().ReadMemberIds(stack), Files({2, 0, 1, 3}));
+  EXPECT_EQ(Stacks().OrderCommandFiles(Files({3, 1, 0, 2})), Files({2, 0, 1, 3}));
+  const auto options = Stacks().ReadActionOptions(Files({2}), stack, files[2]);
+  EXPECT_FALSE(options.earlier);
+  EXPECT_FALSE(options.split);
+  EXPECT_TRUE(options.later);
+  EXPECT_EQ(StackRows(), rows);
+  ASSERT_TRUE(Stacks().MoveMember(files[0], PhotoStackMove::kEarlier).Changed());
+  EXPECT_EQ(Stacks().ReadMemberIds(stack), Files({0, 2, 1, 3}));
+  EXPECT_EQ(Cover(stack), files[0]);
+  Reopen();
+  EXPECT_EQ(Stacks().ReadMemberIds(stack), Files({0, 2, 1, 3}));
+}
+
+TEST_F(PhotoStackStoreTest, CoverWriteFailureRollsBackBothShortcutAndNeighborReordering) {
+  const auto stack = Create({0, 1, 2, 3}, 0);
+  Execute("ALTER TABLE PhotoStack RENAME TO HeadersBeforeFailure");
+  Execute(
+      std::format("CREATE TABLE PhotoStack (stack_id VARCHAR PRIMARY KEY, "
+                  "cover_file_id BIGINT NOT NULL CHECK (cover_file_id = {}))",
+                  files[0]));
+  Execute("INSERT INTO PhotoStack SELECT * FROM HeadersBeforeFailure");
+  Execute("DROP TABLE HeadersBeforeFailure");
+  const auto rows = StackRows();
+  EXPECT_THROW(Stacks().SetCover(stack, files[2]), duckorm::StatementError);
+  EXPECT_EQ(StackRows(), rows);
+  EXPECT_THROW(Stacks().MoveMember(files[1], PhotoStackMove::kEarlier), duckorm::StatementError);
+  EXPECT_EQ(StackRows(), rows);
+  EXPECT_EQ(Stacks().ReadMemberIds(stack), Files({0, 1, 2, 3}));
+  EXPECT_EQ(Cover(stack), files[0]);
 }
 
 }  // namespace

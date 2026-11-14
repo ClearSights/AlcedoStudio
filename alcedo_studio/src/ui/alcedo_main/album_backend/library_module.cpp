@@ -270,22 +270,34 @@ void LibraryModule::SelectStack(const QString& key, bool entire) {
   else
     SelectMatchingStackPhotos(item->identity.fragment);
 }
-void LibraryModule::SetAllStacksExpanded(bool expanded) { ChangeAllStackExpansion(expanded); }
-void LibraryModule::ToggleAllStacksExpanded() { ChangeAllStackExpansion(std::nullopt); }
-void LibraryModule::ChangeAllStackExpansion(std::optional<bool> expanded) {
+void LibraryModule::SetAllStacksExpanded(bool expanded) { ChangeStackExpansion(expanded); }
+void LibraryModule::ToggleAllStacksExpanded() { ChangeStackExpansion(std::nullopt); }
+void LibraryModule::ExpandSplitStacks(std::vector<std::string> stack_ids) {
+  ChangeStackExpansion(true, std::move(stack_ids));
+}
+void LibraryModule::ChangeStackExpansion(std::optional<bool>      expanded,
+                                         std::vector<std::string> stack_ids) {
   if (refresh_in_flight_) {
-    RunAfterRefresh([this, expanded] { ChangeAllStackExpansion(expanded); });
+    RunAfterRefresh([this, expanded, stack_ids = std::move(stack_ids)]() mutable {
+      ChangeStackExpansion(expanded, std::move(stack_ids));
+    });
     return;
   }
   auto input = AcceptedReadInput({});
   if (!input) return;
-  query_worker_->Submit(SearchRequestKind::kLibraryIds, [this, input, expanded](auto generation) {
+  query_worker_->Submit(SearchRequestKind::kLibraryIds, [this, input, expanded,
+                                                         stack_ids = std::move(stack_ids)](
+                                                            auto generation) {
     std::vector<AlbumStackFragmentKey> keys;
     QString                            error;
     try {
       keys = input->browse_->ReadAlbumStackFragmentKeys(
           input->folder_id_, MergeFilterNodes(input->stats_filter_, input->search_.filter_),
           input->options_, input->active_model_key_, input->search_.semantic_query_);
+      if (!stack_ids.empty())
+        std::erase_if(keys, [&](const auto& key) {
+          return std::find(stack_ids.begin(), stack_ids.end(), key.stack_id) == stack_ids.end();
+        });
     } catch (const std::exception& failure) {
       error = QString::fromUtf8(failure.what());
     }

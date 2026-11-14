@@ -2,11 +2,11 @@
 
 Date: 2026-11-11
 
-Status: PS1 through PS9, including all PS2 and PS5 sub-phases, complete; UI review revision
-complete (2026-11-13).
+Status: PS1 through PS9, including all PS2 and PS5 sub-phases, complete; both UI review
+revisions are complete (2026-11-14).
 PS7 through PS9 are implemented on `feature/library-photo-stacking-PR5`, based on PR4.
-The UI revision passed 154/154 targeted Windows Release tests and the final four component
-checks. Native review confirmed the badge, submenu, multi-photo addition, and Split Stack.
+The latest UI revision passed 159/159 targeted Windows Release tests and native review.
+Cover-first ordering, expanded split results, and the ten-command Stack submenu are verified.
 The final Release build and all six post-build icon comparisons passed.
 See the dated PS9 completion records for commands, evidence, and prior fixture limitations.
 Prior-phase verification records remain under their respective phase headings.
@@ -15,7 +15,7 @@ Feature request: [#486](https://github.com/zidage/AlcedoStudio/issues/486), stac
 
 Parent plan: none. This file is the master plan and the detailed phase plan.
 
-Last source review: 2026-11-13.
+Last source review: 2026-11-14.
 
 Source audit: upstream `main` at `e59529c66d2d0bfdc53c5c5cf2d88e6e68d9138d`.
 A fresh upstream fetch confirmed this revision. Local `main` and the planning branch
@@ -215,9 +215,8 @@ These rules replace the earlier separate-count caption design after the UI revie
 - Clicking the disclosure changes expansion only. It does not change photo selection or open the editor.
 - Ctrl-click changes one photo's selection. Shift selection follows displayed cards and deduplicates File IDs.
 - Ctrl+A selects every unique matching File, including members of collapsed stacks and collapsed groups.
-- `Select matching photos in this stack` selects `M(S,g)` for the clicked fragment.
-- `Select entire stack` is an explicit project-wide action. It can include files outside this result.
-  Show its total before application. Show the count outside the current result in the selection summary.
+- The Stack submenu has no separate matching-member or entire-stack selection command
+  after the user review of 2026-11-14.
 - A filter or scope replacement intersects the existing selection with the new match set.
   Ordinary collapse does not clear an explicit photo selection.
 - Rating, labels, deletion, export, adjustment paste, and collection linking use the explicit selection.
@@ -231,31 +230,33 @@ These rules replace the earlier separate-count caption design after the UI revie
   If it is outside the filter, report that fact. Do not substitute another member or clear the filter.
 
 Visible selected counts must include selected members hidden by collapse.
-Keep that count separate from selected photos outside the query after explicit whole-stack selection.
+Keep that count separate from selected photos outside the query.
 Selection remains owned by `LibrarySelection`.
 
 ### 2.6 Stack commands
 
 Put these text actions inside one `Stack` submenu in the Library image context menu, in this
-order. This order and the familiar command names follow the user's UI review of 2026-11-13.
+order. The reviews of 2026-11-13 and 2026-11-14 define these names and behavior.
 
 | Command | Preconditions | Effect |
 | --- | --- | --- |
-| Group into Stack | At least two unique selected Files; a valid selected cover | Create one stack from exactly those Files, in their current displayed order. |
+| Group into Stack | At least two unique selected Files; a valid selected cover | Create one stack from exactly those Files, with the selected cover first and other Files in displayed order. |
 | Ungroup Stack | Valid clicked stack | Remove that complete stack's organization. Keep every photo and album link. |
 | Add Selected to Stack | Valid clicked target stack; at least one selected File outside it | Append the selected Files in displayed order. Keep the target stack's saved cover. |
 | Remove from Stack | At least one selected stack member | Remove only the selected memberships. Keep the photos in the project and albums. |
-| Set as Stack Cover | Clicked File belongs to the saved stack | Persist that File as the saved cover. |
-| Move Up in Stack / Move Down in Stack | Selected single member has an adjacent saved member | Swap their member positions. Filtering does not limit the saved neighbor search. |
-| Split Stack | Clicked File is after the first saved member | Split saved order immediately before the clicked File; selection does not change the split point. |
+| Set as Stack Cover | Clicked File belongs to the saved stack | Move that File first and persist it as cover; retain the relative order of other members. |
+| Move Up in Stack / Move Down in Stack | Selected single member has an adjacent saved member | Swap their positions and make the first member the cover in the same transaction. Filtering does not limit the neighbor search. |
+| Split Stack | Clicked File is after the first saved member | Split immediately before the clicked File, then expand matching fragments of both surviving stacks. Selection does not change the split point. |
 | Expand/Collapse Stack | Valid clicked fragment | Change only that fragment's session expansion. |
 | Expand/Collapse All Stacks | No accepted filter | Expand all fragments in the accepted scope if any is collapsed; otherwise collapse all. |
 | Expand/Collapse All Matched Stacks | Accepted Inspector or search filter | The same operation, limited to matching fragments, including unloaded keys. |
-| Select matching photos in this stack | Clicked fragment has matches | Read and select its matching unique Files. |
-| Select entire stack | Valid clicked stack | Read and explicitly select every live member. |
 
 Choose the clicked selected File as the cover of a new stack.
 If no clicked selected File exists, use the first selected File in displayed order.
+The cover is always first. Set as Stack Cover is a shortcut for moving an arbitrary member
+to the front. Moving the second photo up makes it the cover; moving the cover down promotes
+the photo that becomes first. Existing projects with independently stored covers read that
+cover first, without a schema change or writes during reads.
 Deduplicate selected Files by their first displayed occurrence.
 Place explicitly selected Files outside the result after those displayed Files.
 Order those additional Files by their saved stack ID and member position, then by File ID.
@@ -276,6 +277,10 @@ a new stack ID and uses the clicked File as cover. Saved order within each side 
 The user approved leaving a one-photo side unstacked, so no singleton stack is persisted.
 Splitting before the first saved member is a no-op and is disabled in the menu. The operation
 uses saved order across the whole stack, including members outside a filter or group.
+Both surviving stacks expand in the accepted view before the updated display is published,
+including matching fragments in unloaded groups. A singleton remains an ordinary photo.
+Split expansion is session state and is not saved in the package. The two stack-selection
+menu entries were removed at the user's request on 2026-11-14; ordinary selection is unchanged.
 
 Ungroup Stack requires confirmation when the current result hides some members.
 The confirmation states the full member count and that it changes every fragment of that stack.
@@ -3074,6 +3079,154 @@ declaration, consistency counter, or mutable state copy was added.
 | `alcedo_studio/tests/ui/photo_stack_disclosure_test.cpp` | 250 | 156 | 0 |
 | `docs/VI/README.md` | 698 | 14 | 4 |
 | `alcedo_studio/src/config/panel_icons/photo-stack.svg` | 5 | 5 | 0 |
+
+#### Cover order and split expansion review (2026-11-14)
+
+**Status:** complete. All 159 targeted tests, native GUI checks, and the Release build passed.
+
+**Approved changes.** The first photo is always the saved cover. Set as Stack Cover moves
+the clicked member to the front and keeps the relative order of other members. Moving the
+second member up makes it the cover; moving the cover down promotes its new first neighbor.
+Creating a stack also puts the chosen cover first. Both surviving split stacks expand in
+the accepted view, including matching fragments in unloaded groups. Singletons remain ordinary
+photos. The two stack-selection menu entries and their unused confirmation copy are removed.
+Add/remove still operate on the explicit multi-photo selection.
+
+**Ownership.** The storage transaction owns cover and order together. Reads of older projects
+place their separately stored cover first, without changing rows or the project schema.
+Reordering writes only member IDs and their positions through the existing mapper, under the
+same transaction as the cover write. The Library owner reads matching fragment keys on its
+existing worker, selects only the split result IDs, updates session expansion, and requests
+one content refresh. No membership cache, new persisted representation, or consistency counter
+was introduced. Session expansion is not saved in the package.
+
+**Primary success call chains:**
+
+```text
+Stack menu -> RunAction -> PhotoStackService -> store transaction
+  -> cover-first positions and saved cover commit together -> package save -> display refresh
+Split -> store transaction -> package save -> ExpandSplitStacks -> worker reads matching keys
+  -> both result stacks expanded in session -> one accepted display publication
+```
+
+**Primary failure call chains:**
+
+```text
+Invalid member or failed cover write -> transaction rollback -> original order and cover
+Committed split + package failure -> both partitions remain pending and expanded
+  -> Retry Save -> package reopen with exact saved memberships
+```
+
+**Executed verification:** the 12-suite Release run passed **159/159** with no skips or failures
+in **363.69 seconds**. The focused review checks first passed **10/10** in 15.45 seconds;
+these repeats are not added to the 159 distinct cases.
+
+| Target | Passed |
+| --- | ---: |
+| `PhotoStackStoreTest` | 24 |
+| `PhotoStackControllerTest` | 13 |
+| `PhotoStackDisclosureTest` | 4 |
+| `LibraryStackLayoutTest` | 12 |
+| `LibraryPhotoStackIntegrationTest` | 8 |
+| `LibraryStackActionsTest` | 14 |
+| `ProjectStackSaveTest` | 6 |
+| `LibraryDisplayModelTest` | 18 |
+| `AlbumBackendLibraryQueryTest` | 31 |
+| `AlbumStackQueryTest` | 10 |
+| `AlbumStackPagingTest` | 13 |
+| `ProjectCompatibilityTest` | 6 |
+
+`CreateStackPersistsCoverFirstAndOtherMembersInInputOrder` and
+`CoverShortcutAndNeighborMovesPersistTheFirstMemberAsCover` independently read persisted
+positions with SQL, verify other members' relative order, move both directions across the
+first position, and reopen. `OlderIndependentCoverReadsFirstWithoutWritesAndMovesInThatOrder`
+checks old saved rows, menu availability, command ordering, no read mutation, and subsequent
+persisted movement. `CoverWriteFailureRollsBackBothShortcutAndNeighborReordering` fails the
+header update after position changes and asserts exact rollback of both tables.
+
+`SplitMenuUsesClickedMemberAndSavesBothSidesWithSelectionUnchanged` now also checks both
+results are expanded. `SplitExpandsEveryMatchingGroupOfBothResultStacks` checks every group,
+and `SplitCollapsedFilteredFragmentExpandsSurvivingNonsingletonSide` checks a collapsed
+temporary cover, unmatched members, and an unstacked singleton. The existing real package
+failure/retry/reopen test asserts both partitions remain expanded while unsaved and keeps
+the explicit selection. `StackSubmenuHasReviewOrderAndNoTopLevelStackCommands` checks exactly
+ten ordered rows and the absence of both removed action IDs. Existing owner tests still
+verify multi-photo add/remove, image history, photo marks, album links, and bounded pages
+with 50,000 photos.
+
+**Commands (PowerShell from the repository root):**
+
+```powershell
+$env:VCVARS_USER_VERSION = '14.44'
+$env:TEMP = Join-Path $PWD 'build/tmp/library_stack_cover_order/runtime'
+$env:TMP = $env:TEMP
+$env:PATH = "C:/Qt/6.12.0/msvc2022_64/bin;$PWD/build/dependencies/duckdb-v1.5.6;$PWD/vcpkg/installed/x64-windows/bin;$PWD/vcpkg/installed/x64-windows/debug/bin;$env:PATH"
+$targets = @('PhotoStackStoreTest', 'PhotoStackControllerTest', 'PhotoStackDisclosureTest',
+  'LibraryStackLayoutTest', 'LibraryPhotoStackIntegrationTest', 'LibraryStackActionsTest',
+  'ProjectStackSaveTest', 'LibraryDisplayModelTest', 'AlbumBackendLibraryQueryTest',
+  'AlbumStackQueryTest', 'AlbumStackPagingTest', 'ProjectCompatibilityTest')
+cmd /c scripts\msvc_env.cmd --build --preset win_release --target $targets --parallel 4
+$focused = '^(PhotoStackStoreTest.*(CreateStackPersistsCoverFirst|CoverShortcutAndNeighborMoves|OlderIndependentCover|CoverWriteFailure)|PhotoStackControllerTest.*(Split|MenuActionNames)|PhotoStackDisclosureTest.*StackSubmenu)'
+ctest --test-dir build/release -R $focused -j 1 --output-on-failure
+$pattern = '^(' + ($targets -join '|') + ')\.'
+ctest --test-dir build/release -R $pattern -j 1 --output-on-failure
+cmd /c scripts\msvc_env.cmd --build --preset win_release --target alcedo_main --parallel 4
+```
+
+**Native review:** passed in the compiled Release GUI, using the separate copy
+`build/review/library_photo_stack_order_review_2026-11-14.alcd`. Personal projects were not
+opened for stack mutations. The review used justified rows, Alcedo theme, and English:
+
+- The Stack submenu had exactly ten commands, with neither selection entry present.
+- Grouping four selected photos created one stack. Moving its second photo, DSC01175.ARW,
+  up made it first; collapsing the stack displayed that photo as its cover. Selection
+  remained one photo. Expanding restored the other three members in order.
+- Set as Stack Cover on the fourth photo, DSC06683.dng, moved it directly first. The other
+  three photos retained their relative order, and the selected photo stayed selected.
+- Splitting before the third saved member, DSC0027.ARW, produced two two-photo stacks.
+  All four photos remained visible with `1/2`, `2/2`, `1/2`, `2/2` controls. All four
+  accessible controls said Collapse stack, confirming both results stayed expanded.
+  The existing one-photo selection was preserved. No display preference was changed.
+- The application and the temporary headless fixture-opening session were closed after review.
+
+**Release artifact:** `build/release/alcedo_studio/src/alcedo_main.exe`, 55,147,008 bytes,
+linked on 2026-11-14 at 00:34:43 local time. The application build exited 0 and the existing
+PowerShell verifier matched all six embedded icons. The user was notified before that build.
+Temporary logs and tooling under `build/tmp/library_stack_cover_order/` are removed after
+the record is complete; the EXE and intentional review project remain.
+
+**Ownership and size review.** Ordered File-ID results are the minimal input needed for an
+atomic position change with unique positions; no live stack object or photo metadata is copied.
+Reordering uses O(n) ID reads and membership writes. No additional work is added to card reads.
+The existing Library query owner routes scoped expansion through its existing fragment-key
+worker and display owner; it adds no state or parallel membership representation. The large
+Library module receives a focused API and key filter, with no additional responsibility or
+method-only file split. DESIGN, VI, and the two centralized translation catalogs retain their
+existing roles. Tests stay in focused store, controller, and declarative component suites.
+
+The full suite, WorkspaceShellTest, private fixture cases, macOS, and sanitizers were not run.
+The original phase records and the 2026-11-13 revision remain historical evidence above.
+
+**Acceptance review:** no observed failure remains in these three requested improvements.
+Storage rollback and reopen, command entry points, filtered/grouped split expansion, selection,
+and submenu contents are demonstrated by executed tests and the native review above.
+
+| File | Total lines | Added | Deleted |
+| --- | ---: | ---: | ---: |
+| `alcedo_studio/src/include/app/photo_stack_service.hpp` | 59 | 3 | 2 |
+| `alcedo_studio/src/include/storage/store/sleeve/photo_stack_store.hpp` | 79 | 8 | 4 |
+| `alcedo_studio/src/include/ui/alcedo_main/album_backend/library_module.hpp` | 539 | 4 | 1 |
+| `alcedo_studio/src/storage/store/sleeve/photo_stack_store.cpp` | 562 | 35 | 23 |
+| `alcedo_studio/src/ui/alcedo_main/DESIGN.md` | 1537 | 6 | 4 |
+| `alcedo_studio/src/ui/alcedo_main/album_backend/library_module.cpp` | 1942 | 17 | 5 |
+| `alcedo_studio/src/ui/alcedo_main/album_backend/photo_stack_controller.cpp` | 232 | 7 | 2 |
+| `alcedo_studio/src/ui/alcedo_main/i18n/alcedo_main_en.ts` | 6895 | 1 | 5 |
+| `alcedo_studio/src/ui/alcedo_main/i18n/alcedo_main_zh_CN.ts` | 9379 | 1 | 5 |
+| `alcedo_studio/src/ui/alcedo_main/qml/PhotoStackActions.qml` | 86 | 6 | 15 |
+| `alcedo_studio/tests/app/photo_stack_store_test.cpp` | 635 | 85 | 19 |
+| `alcedo_studio/tests/ui/photo_stack_controller_test.cpp` | 388 | 92 | 2 |
+| `alcedo_studio/tests/ui/photo_stack_disclosure_test.cpp` | 245 | 8 | 13 |
+| `docs/VI/README.md` | 701 | 7 | 4 |
 
 ## 9. Cross-phase acceptance matrix
 

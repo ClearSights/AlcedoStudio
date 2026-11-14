@@ -195,19 +195,14 @@ ImageContextMenu {
   EXPECT_FALSE(stack->property("visible").toBool());
   EXPECT_FALSE(menu->property("visible").toBool());
   EXPECT_EQ(menu->property("count").toInt(), 6);  // Rating, Add to, Stack, separator, two actions.
-  EXPECT_EQ(stack->property("count").toInt(), 12);
-  const QStringList labels{"Group into Stack",
-                           "Ungroup Stack",
-                           "Add Selected to Stack",
-                           "Remove from Stack",
-                           "Set as Stack Cover",
-                           "Move Up in Stack",
-                           "Move Down in Stack",
-                           "Split Stack",
-                           "Expand/Collapse Stack",
-                           "Expand/Collapse All Stacks",
-                           "Select matching photos in this stack",
-                           "Select entire stack (4 photos)"};
+  EXPECT_EQ(stack->property("count").toInt(), 10);
+  EXPECT_FALSE(menu->findChild<QObject*>("imageContextAction_stack-select-matching"));
+  EXPECT_FALSE(menu->findChild<QObject*>("imageContextAction_stack-select-entire"));
+  const QStringList labels{"Group into Stack",      "Ungroup Stack",
+                           "Add Selected to Stack", "Remove from Stack",
+                           "Set as Stack Cover",    "Move Up in Stack",
+                           "Move Down in Stack",    "Split Stack",
+                           "Expand/Collapse Stack", "Expand/Collapse All Stacks"};
   for (int i = 0; i < labels.size(); ++i) {
     QQuickItem* item = nullptr;
     ASSERT_TRUE(

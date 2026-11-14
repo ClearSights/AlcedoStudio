@@ -36,9 +36,10 @@ class PhotoStackService {
   auto RemoveMembers(std::span<const sl_element_id_t> file_ids) -> PhotoStackChange;
   /// Remove organization only; unknown stacks report an error.
   auto UngroupStack(const std::string& stack_id) -> PhotoStackChange;
-  /// Persist a member as cover; a nonmember reports an error.
+  /// Move an existing member first and persist it as cover; a nonmember reports an error.
   auto SetCover(const std::string& stack_id, sl_element_id_t file_id) -> PhotoStackChange;
-  /// Move relative to saved order; an endpoint or unstacked File returns a no-op.
+  /// Move relative to cover-first order and update the cover when the first member changes.
+  /// An endpoint or unstacked File returns a no-op.
   auto MoveMember(sl_element_id_t file_id, PhotoStackMove direction) -> PhotoStackChange;
   /// Atomically split saved order before file_id; a one-photo side becomes unstacked.
   /// Generate the right stack's UUID here. Invalid input and storage errors propagate.
