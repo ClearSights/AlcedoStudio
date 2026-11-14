@@ -99,7 +99,8 @@ class AlbumBrowseService {
 
   /**
    * @brief The one library read: Inspector filters and search, sort, groups, statistics, and
-   *        one bounded page of the ordered photo occurrences of @p folder_id.
+   *        one bounded page of @p folder_id: photo occurrences or stack display items,
+   *        selected by read.mode. Counts and statistics always describe matching photos.
    *
    * @param filter Merged search and Inspector filter tree; compiled once here.
    * @param active_semantic_model_key Key the caller read once from its owner; the label
@@ -132,6 +133,43 @@ class AlbumBrowseService {
       sl_element_id_t folder_id, const std::optional<FilterNode>& filter,
       const AlbumQueryOptions& options, const std::string& active_semantic_model_key, int64_t begin,
       int64_t                                      end,
+      const std::optional<SemanticQueryEmbedding>& semantic_relevance = std::nullopt) const
+      -> std::vector<sl_element_id_t>;
+
+  /// Display position in the same stream as a display page. A preferred typed group wins
+  /// when present, otherwise use the first occurrence. A collapsed matching member returns
+  /// its representative with hidden_by_collapse; a nonmatching File returns nullopt.
+  /// Worker-safe, read-only, and throws like ReadAlbumQuery, including invalid fragment keys.
+  auto ReadAlbumDisplayPosition(
+      sl_element_id_t folder_id, const std::optional<FilterNode>& filter,
+      const AlbumQueryOptions& options, const std::string& active_semantic_model_key,
+      std::span<const AlbumStackFragmentKey> expanded_fragments, sl_element_id_t file_id,
+      const std::optional<AlbumGroupKey>&          preferred_group,
+      const std::optional<SemanticQueryEmbedding>& semantic_relevance = std::nullopt) const
+      -> std::optional<AlbumDisplayPosition>;
+  /// Unique represented Files in [display_begin, display_end), in first-use order. Hidden
+  /// members are excluded; the raw ID API still selects all matches. Reads no metadata.
+  /// Worker-safe; throws like ReadAlbumQuery and rejects negative or reversed bounds.
+  auto ReadAlbumDisplayFileIds(
+      sl_element_id_t folder_id, const std::optional<FilterNode>& filter,
+      const AlbumQueryOptions& options, const std::string& active_semantic_model_key,
+      std::span<const AlbumStackFragmentKey> expanded_fragments, int64_t display_begin,
+      int64_t                                      display_end,
+      const std::optional<SemanticQueryEmbedding>& semantic_relevance = std::nullopt) const
+      -> std::vector<sl_element_id_t>;
+  /// Every matching File in the exact scoped fragment, including unloaded members. Cover
+  /// first, then saved order. An absent valid key returns empty. Reads no metadata or writes.
+  /// Worker-safe; invalid scope/group/type throws invalid_argument; SQL failure throws.
+  /// Read typed keys of every matching stack fragment, without photo metadata. Worker-safe.
+  auto ReadAlbumStackFragmentKeys(
+      sl_element_id_t folder_id, const std::optional<FilterNode>& filter,
+      const AlbumQueryOptions& options, const std::string& model,
+      const std::optional<SemanticQueryEmbedding>& relevance = std::nullopt) const
+      -> std::vector<AlbumStackFragmentKey>;
+  auto ReadAlbumMatchingFragmentIds(
+      sl_element_id_t folder_id, const std::optional<FilterNode>& filter,
+      const AlbumQueryOptions& options, const std::string& active_semantic_model_key,
+      const AlbumStackFragmentKey&                 fragment,
       const std::optional<SemanticQueryEmbedding>& semantic_relevance = std::nullopt) const
       -> std::vector<sl_element_id_t>;
 

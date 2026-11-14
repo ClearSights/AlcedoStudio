@@ -20,12 +20,7 @@ class IAlbumCatalog {
  public:
   virtual ~IAlbumCatalog() = default;
 
-  virtual auto FindAlbumItem(sl_element_id_t elementId) -> AlbumItem*             = 0;
   virtual auto FindAlbumItem(sl_element_id_t elementId) const -> const AlbumItem* = 0;
-  virtual void AddOrUpdateAlbumItem(sl_element_id_t elementId, image_id_t imageId,
-                                    sl_element_id_t folderId, const QString& scopeType,
-                                    const file_name_t&           fallbackName,
-                                    const std::filesystem::path& filePath)        = 0;
   virtual void SetAlbumItemHdrFlag(sl_element_id_t elementId, image_id_t imageId, bool isHdr) = 0;
   /// Show a new edit state of a loaded photo (the edit mark of its card) without a library
   /// reload: @p editedAtNs is the head commit time of the active Version (UTC epoch

@@ -550,6 +550,49 @@ alcedo_register_test_target(AlbumBackendSearchWorkerTest ui)
 # Library sort, group, and import time (album_sort_group_and_import_time_plan.md, Phase 2):
 # section projection geometry, and the one library query path of LibraryModule.
 def_ui_test(AlbumSectionModelTest album_section_model_test.cpp)
+def_ui_test(LibraryStackLayoutTest library_stack_layout_test.cpp)
+alcedo_register_test_target(LibraryStackLayoutTest ui)
+def_ui_test(LibraryPhotoStackIntegrationTest library_photo_stack_integration_test.cpp)
+alcedo_register_test_target(LibraryPhotoStackIntegrationTest ui)
+
+add_executable(PhotoStackDisclosureTest
+    ${ALCEDO_TEST_ROOT}/ui/photo_stack_disclosure_test.cpp
+    ${ALCEDO_TEST_ROOT}/ui/widget_test_main.cpp)
+target_include_directories(PhotoStackDisclosureTest PRIVATE ${ALCEDO_INCLUDE_DIR} ${ALCEDO_TEST_DIR})
+target_link_libraries(PhotoStackDisclosureTest PRIVATE AppTheme GTest::gtest
+    Qt6::Test Qt6::Core Qt6::Qml Qt6::Quick Qt6::QuickControls2 Qt6::QuickEffects Qt6::Widgets)
+target_compile_definitions(PhotoStackDisclosureTest PRIVATE
+    ALCEDO_STACK_ZH_CN_QM_FILE="${CMAKE_BINARY_DIR}/alcedo_studio/src/alcedo_main_zh_CN.qm")
+qt_add_resources(PhotoStackDisclosureTest "photo_stack_icons"
+    PREFIX "/" BASE "${CMAKE_SOURCE_DIR}/alcedo_studio/src/config"
+    FILES "${CMAKE_SOURCE_DIR}/alcedo_studio/src/config/panel_icons/photo-stack.svg")
+add_dependencies(PhotoStackDisclosureTest alcedo_main_lrelease)
+alcedo_ui_gtest_discover_tests(PhotoStackDisclosureTest TEST_PREFIX "PhotoStackDisclosureTest.")
+alcedo_register_test_target(PhotoStackDisclosureTest ui)
+
+def_ui_test(LibraryStackActionsTest library_stack_actions_test.cpp)
+alcedo_register_test_target(LibraryStackActionsTest ui)
+
+# The production close dialog needs QApplication; the service tests use QCoreApplication.
+add_executable(ProjectStackSaveDialogTest
+    ${ALCEDO_TEST_ROOT}/ui/project_stack_save_dialog_test.cpp
+    ${ALCEDO_TEST_ROOT}/ui/widget_test_main.cpp)
+target_include_directories(ProjectStackSaveDialogTest
+    PRIVATE ${ALCEDO_INCLUDE_DIR} ${ALCEDO_TEST_DIR})
+target_link_libraries(ProjectStackSaveDialogTest PRIVATE AppTheme GTest::gtest
+    Qt6::Core Qt6::Qml Qt6::Quick Qt6::QuickControls2 Qt6::QuickEffects Qt6::Widgets)
+alcedo_ui_gtest_discover_tests(ProjectStackSaveDialogTest TEST_PREFIX "ProjectStackSaveDialogTest.")
+alcedo_register_test_target(ProjectStackSaveDialogTest ui)
+
+def_ui_test(ProjectStackSaveTest project_stack_save_test.cpp)
+alcedo_register_test_target(ProjectStackSaveTest ui)
+
+def_ui_test(PhotoStackControllerTest photo_stack_controller_test.cpp)
+alcedo_register_test_target(PhotoStackControllerTest ui)
+
+def_ui_test(LibraryDisplayModelTest library_display_model_test.cpp)
+target_sources(LibraryDisplayModelTest PRIVATE ${ALCEDO_TEST_ROOT}/ui/library_display_publication_test.cpp)
+alcedo_register_test_target(LibraryDisplayModelTest ui)
 alcedo_register_test_target(AlbumSectionModelTest ui)
 # Issue 745: justified-rows Library layout geometry, its window model, and the layout setting.
 def_ui_test(JustifiedLayoutTest justified_layout_test.cpp)

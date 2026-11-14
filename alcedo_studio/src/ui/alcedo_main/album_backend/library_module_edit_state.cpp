@@ -58,13 +58,13 @@ void LibraryModule::SetPendingReveal(uint fileId) {
 
 void LibraryModule::RevealLastEditedFile() {
   SetPendingReveal(0);
-  reveal_scope_widened_ = false;
   auto proj             = project_ ? project_->handler().project() : nullptr;
   auto browse           = proj ? proj->GetAlbumBrowseService() : nullptr;
   if (!browse) {
     return;
   }
-  query_worker_->Submit(SearchRequestKind::kLibraryIds, [this, browse](std::uint64_t generation) {
+  query_worker_->Submit(SearchRequestKind::kLastEditedFile, [this,
+                                                             browse](std::uint64_t generation) {
     std::optional<LastEditedFile> file;
     QString                       error;
     try {
@@ -75,7 +75,7 @@ void LibraryModule::RevealLastEditedFile() {
     QMetaObject::invokeMethod(
         this,
         [this, generation, browse, file, error]() {
-          if (!query_worker_->IsCurrent(SearchRequestKind::kLibraryIds, generation)) {
+          if (!query_worker_->IsCurrent(SearchRequestKind::kLastEditedFile, generation)) {
             return;
           }
           // A project opened after this read started has its own read.
@@ -110,16 +110,9 @@ auto LibraryModule::SettlePendingReveal(uint fileId, bool found) -> bool {
   if (pending_reveal_file_id_ == 0 || fileId != pending_reveal_file_id_) {
     return false;
   }
-  // The root folder (ui id 0) reads every project file, so a miss there is final.
-  if (found || reveal_scope_widened_ || folders_ == nullptr || folders_->CurrentFolderId() == 0) {
-    SetPendingReveal(0);
-    return false;
-  }
-  reveal_scope_widened_ = true;
-  folders_->SelectFolder(0);
-  // Runs after the refresh that the folder selection requested.
-  RequestFocusPosition(fileId);
-  return true;
+  if (!found) SetQueryError(tr("The photo is outside the current Library result."));
+  SetPendingReveal(0);
+  return false;
 }
 
 }  // namespace alcedo::ui

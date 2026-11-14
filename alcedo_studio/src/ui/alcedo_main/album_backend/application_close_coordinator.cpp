@@ -42,7 +42,8 @@ ApplicationCloseCoordinator::ApplicationCloseCoordinator(EditorSessionController
 }
 
 bool ApplicationCloseCoordinator::CloseNeedsConfirmation() const {
-  if (waiting()) {
+  if ((project_ && (project_->HasUnsavedStackChanges() || project_->StackCommandBusy())) ||
+      waiting()) {
     return true;
   }
   if (editor_session_ == nullptr) {
@@ -63,6 +64,11 @@ void ApplicationCloseCoordinator::BeginSave() {
   if (waiting()) {
     return;
   }
+  if (project_ && project_->StackCommandBusy()) {
+    emit ApplicationCloseAborted(tr("A photo stack command is running."));
+    return;
+  }
+  application_save_ = true;
   // Application exit seals the editor session. Ordinary workspace routing keeps it alive.
   Start(Mode::kApplicationExit, /*awaiting_seal=*/true);
   if (editor_session_ != nullptr) {
@@ -78,14 +84,21 @@ void ApplicationCloseCoordinator::BeginDiscard() {
   if (waiting()) {
     return;
   }
+  if (project_ && project_->StackCommandBusy()) {
+    emit ApplicationCloseAborted(tr("A photo stack command is running."));
+    return;
+  }
+  application_save_ = false;
   if (editor_session_ == nullptr) {
-    emit ApplicationCloseFinished();
+    Start(Mode::kApplicationExit, false);
+    Finish();
     return;
   }
   if (editor_session_->has_pending_recovery() &&
       editor_session_->actions()->can_discard_and_continue()) {
     editor_session_->DiscardAndContinue();
-    emit ApplicationCloseFinished();
+    Start(Mode::kApplicationExit, false);
+    Finish();
     return;
   }
   Start(Mode::kApplicationExit, /*awaiting_seal=*/true);
@@ -100,6 +113,7 @@ void ApplicationCloseCoordinator::BeginPersistWait() {
   if (waiting()) {
     return;
   }
+  application_save_ = true;
   Start(Mode::kApplicationExit, /*awaiting_seal=*/false);
   ScheduleEvaluation();
 }
@@ -181,6 +195,15 @@ void ApplicationCloseCoordinator::EvaluateEditorClose() {
 }
 
 void ApplicationCloseCoordinator::Finish() {
+  if (mode_ == Mode::kApplicationExit && project_ && project_->HasUnsavedStackChanges()) {
+    const bool persisted =
+        application_save_ ? project_->RetryStackSave() : project_->DiscardUnsavedProject();
+    if (!persisted) {
+      Abort(project_->StackSaveError().isEmpty() ? project_->ServiceMessage()
+                                                 : project_->StackSaveError());
+      return;
+    }
+  }
   const Mode mode = mode_;
   mode_           = Mode::kIdle;
   awaiting_seal_  = false;

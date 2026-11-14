@@ -1,0 +1,3542 @@
+# Library Photo Stacking Plan
+
+Date: 2026-11-11
+
+Status: PS1 through PS9, including all PS2 and PS5 sub-phases, complete; both UI review
+revisions are complete (2026-11-14).
+PS7 through PS9 are implemented on `feature/library-photo-stacking-PR5`, based on PR4.
+The latest UI revision passed 159/159 targeted Windows Release tests and native review.
+Cover-first ordering, expanded split results, and the ten-command Stack submenu are verified.
+The final Release build and all six post-build icon comparisons passed.
+See the dated PS9 completion records for commands, evidence, and prior fixture limitations.
+Prior-phase verification records remain under their respective phase headings.
+
+Feature request: [#486](https://github.com/zidage/AlcedoStudio/issues/486), stacking section only.
+
+Parent plan: none. This file is the master plan and the detailed phase plan.
+
+Last source review: 2026-11-14.
+
+Source audit: upstream `main` at `e59529c66d2d0bfdc53c5c5cf2d88e6e68d9138d`.
+A fresh upstream fetch confirmed this revision. Local `main` and the planning branch
+`feature/library-photo-stacking` have the same base commit.
+The plan and its two roadmap entries were committed as `4830980d` before PS1 implementation.
+The source audit below describes the implementation base before PS1.
+
+This plan has no dependency on `feature/project-maintenance` or
+`feature/import-duplicate-skipping`. Their unmerged APIs, documents, and test targets are absent
+from this audit. Implement stacking directly on the audited main revision.
+
+Primary owners: project storage, `PhotoStackService` (proposed), `AlbumBrowseService`,
+`LibraryModule`, and the Library presentation models.
+
+## 1. Decision record
+
+### 1.1 Product goal and approved behavior
+
+Let users organize related Library photos into a persistent stack.
+A collapsed stack occupies one photo position. Users can expand it to see its matching members.
+The feature supports burst photography and other sets of related photos.
+It does not combine image pixels.
+
+The user approved these rules on 2026-11-11:
+
+1. Apply all photo filters before stack presentation.
+2. Show a stack when at least one member matches the complete filter.
+3. Show only matching members when that stack expands.
+4. Use a temporary cover when the saved cover is outside the matching portion.
+5. Let one saved stack span several Library groups.
+6. Show each group's matching portion inside that group.
+
+The discussion also established these requirements:
+
+- A temporary cover must not replace the saved cover in storage.
+- Clearing a filter restores the full eligible stack and its saved cover.
+- Expansion state survives a temporary filter change.
+- Counts must distinguish matching photos from the full stack.
+- Ordinary photo actions must not silently include non-matching members.
+
+### 1.2 Design choices selected by this plan
+
+These choices fill details that the issue does not specify. They are part of this proposed design.
+They are not claims of separate user approval.
+
+- Stack membership belongs to the project. It uses logical File IDs, not source paths or Image IDs.
+- A File belongs to at most one saved stack. Stacks cannot contain other stacks.
+- A saved stack has at least two members, one saved cover, and a stable member order.
+- An album shows the intersection of its own files and the stack. Album links do not copy stacks.
+- A displayed portion is called a **stack fragment**. It is the matching members in one group.
+- Expansion is a session setting for each stack fragment. It is not project data.
+- New stacks start collapsed. Each occurrence of a stack in a different group expands independently.
+- A single matching member still shows its stack control and full-stack count.
+- All three Library layouts support stacks: classic grid, justified rows, and grouped classic cells.
+- The editor filmstrip and existing automation photo lists retain their complete matching photo set.
+- Stack changes are Library operations. They do not add image-edit commits or change image pixels.
+- Automatic stacking, image merging, and new public stacking automation commands are outside this request.
+
+### 1.3 Rejected behavior
+
+Do not filter only the saved cover. Do not admit every member because one member matches.
+Do not flatten all stacks whenever a filter is active.
+Do not move a whole stack into the saved cover's group.
+Do not change the saved cover, member order, album membership, or image metadata during a read.
+
+Adobe Bridge documents cover-dependent filtering for collapsed stacks.
+Lightroom Classic users report the same search limitation.
+Those products explain the comparison; they do not define Alcedo's selected behavior.
+Sources: [Bridge filtering](https://helpx.adobe.com/bridge/desktop/organize-and-find-files/organize-files-and-folders/sort-and-filter-files-and-folders.html),
+[Lightroom Classic report](https://community.adobe.com/questions-675/lightroom-classic-not-finding-photos-in-closed-stacks-977686).
+
+### 1.4 Potential direction: photo dragging for stack operations
+
+Decision recorded on 2026-11-14, on the merged PR5 branch at `eeab1698`.
+This is a possible extension, not approved implementation work for PR5.
+Keep the current rubber-band selection interaction unchanged. PR5 adds no photo drag source,
+stack drop target, or new pointer action for this direction.
+
+The possible extension would let users:
+
+- Drag a member to another position within its stack.
+- Drag a photo into a specific position in another stack.
+- Drag a member out of its stack, keeping the photo in the Library and its albums.
+
+The current source provides related operations, but no internal Library photo dragging:
+
+- `ThumbnailGridView.qml` uses pointer movement for rubber-band selection in both flat layouts.
+- `LibraryWorkspace.qml` accepts external file drops for import.
+- `CollectionsPanel.qml` moves collection folders by drag. It also accepts external file drops.
+- `PhotoStackService::MoveMember` moves a member one position earlier or later.
+- `PhotoStackService::AddMembers` transfers explicit Files and appends them to the target stack.
+- `PhotoStackService::RemoveMembers` removes membership and repairs the saved cover or dissolves
+  a stack with fewer than two members.
+- `PhotoStackController` already owns command execution, interaction locks, save outcomes,
+  and the Library refresh after a committed change.
+
+A later proposal must define how users start a photo drag without replacing rubber-band
+selection. It must distinguish saved member order from filtered, grouped display positions.
+It must specify drop targets, multi-photo order, auto-scroll, cancellation, and cover changes.
+All layouts must use logical File IDs and the existing occurrence identity for target lookup.
+
+Arbitrary placement needs one focused storage operation for movement or insertion at a target
+position. Validate the complete input before mutation. Commit destination order, source repair,
+and cover changes together. Do not implement one drop as repeated adjacent-move transactions.
+Keep membership and saved order in `PhotoStackStore`; do not copy live stack state into QML.
+Reuse the controller's save and error reporting. A failed database operation must keep all
+affected stacks unchanged. A failed package save must retain the committed change and offer
+Retry Save. This note adds no schema change, implementation phase, or completion claim.
+
+## 2. Product specification
+
+### 2.1 Filter, group, and stack order
+
+Let `F` contain the unique live Files in the current root or album scope.
+Let `P(f)` be the complete existing search and Inspector predicate for File `f`.
+Let `M = {f in F | P(f)}`.
+Use the current field-search and natural-language relevance rules to compute `M`.
+An unqualified natural-language result must not enter a stack fragment.
+
+For saved stack `S` and Library group `g`, define:
+
+```text
+matching stack members:       M(S)    = members(S) intersect M
+matching fragment members:    M(S,g)  = M(S) intersect members(g)
+flat mode:                    one group containing M
+display the fragment:         M(S,g) is not empty
+displayed cover:              saved cover, if it belongs to M(S,g)
+                              otherwise the earliest member of M(S,g) in saved member order
+temporary cover:              displayed cover differs from saved cover
+```
+
+Each File must satisfy the complete predicate itself.
+A Monday photo that uses Lens A and a Tuesday photo that uses Lens B do not make the stack match
+`Monday AND Lens B`.
+Keep the existing OR rules within one filter category and AND rules across categories.
+
+The complete read order is:
+
+```text
+root or album scope
+  -> complete photo predicate and semantic relevance restriction
+  -> unique matching Files and Inspector statistics
+  -> group membership, including repeated semantic-label occurrences
+  -> stack fragments inside each group
+  -> fragment cover and item order
+  -> expansion projection
+  -> bounded display page
+```
+
+Compute the fragment before applying page limits.
+A page must not decide whether a stack exists or which photo becomes its temporary cover.
+
+### 2.2 Temporary covers and multiple groups
+
+The following example is required acceptance data:
+
+| File | Saved order | Saved cover | Capture day | Camera | Lens | Labels |
+| --- | ---: | --- | --- | --- | --- | --- |
+| A | 0 | Yes | Monday | Canon | Lens A | bird |
+| B | 1 | No | Tuesday | Nikon | Lens B | bird |
+| C | 2 | No | Tuesday | Canon | Lens A | flight |
+| D | 3 | No | Wednesday | Nikon | Lens B | none |
+
+| View | Required stack presentation |
+| --- | --- |
+| No filter, flat | One fragment, A as saved cover, four members. |
+| Tuesday filter, flat | One fragment, B as temporary cover, B and C on expansion. |
+| Monday AND Lens B | No matching fragment. |
+| Capture-day grouping | Monday: A; Tuesday: B and C with temporary cover B; Wednesday: D with temporary cover D. |
+| Camera grouping | Canon: A and C with cover A; Nikon: B and D with temporary cover B. |
+| Label grouping | bird: A and B; flight: C; unknown: D. Each fragment uses only its own members. |
+| Album containing C and D | One flat fragment with temporary cover C. A and B remain members of the saved stack. |
+
+The current `SemanticImageLabel` primary key is `(file_id, model_key)`. Thus each File has
+at most one label for the active model. The example uses that supported representation.
+The existing occurrence relation still defines the query boundary: if that owner later supports
+several active labels, repeated File occurrences must share photo selection and image state,
+keep separate fragment identities, and count once in project photo totals. Stacking does not
+change the semantic-label schema or assignment policy.
+
+Changing the filter, grouping, semantic model, sort direction, or album can change the displayed cover.
+It must not issue a stack write.
+An explicit `Set as stack cover` command changes the saved cover project-wide.
+Other fragments then compute their own displayed cover again.
+
+### 2.3 Sorting and expansion
+
+Keep the existing group order and unknown-group placement.
+Order stack fragments and unstacked photos with the existing photo comparator applied to their
+displayed photo. This includes explicit sort direction and natural-language relevance order.
+Use the displayed File ID as the final tie breaker.
+The displayed photo belongs to the group, so the comparator cannot read a cover from another group.
+
+An expanded stack stays at the same item position as its collapsed fragment.
+Show its displayed cover first. Show its other matching members in saved member order.
+Expansion therefore keeps stack members adjacent. It does not promise a global photo sort within
+an expanded stack. The sort tooltip must state this behavior.
+
+Key fragment expansion by project session, album scope, grouping field, typed group key, and stack ID.
+Use a tagged flat key. Do not confuse flat mode with the unknown group.
+Keep absent keys while filters hide them. Release all keys on project close.
+Returning to a previous album or grouping in the same session restores its expansion choices.
+`Expand all stacks` and `Collapse all stacks` affect fragments in the current matching result only.
+They do not expand or collapse Library group headers.
+
+### 2.4 Counts
+
+Keep these meanings separate:
+
+| Value | Meaning |
+| --- | --- |
+| Library total | Unique matching Files in `M`. |
+| Group photo count | Matching photo occurrences in that group, before stack collapse. |
+| Stack total | All live members of the saved project stack. |
+| Stack query match count | Unique members in `M(S)`, before repeated label membership. |
+| Fragment match count | Members in `M(S,g)`. |
+| Display item count | Cards after applying stack expansion. Used for layout and display paging only. |
+
+Collapse must not change Inspector statistics, collection counts, export totals, or photo totals.
+Do not replace a photo count with a card count.
+
+The stack icon and number control shows the fragment count when collapsed (`3`) and the
+one-based displayed matching position/count when expanded (`2/3`). Its order is the displayed
+cover first, then saved member order. Group fragments keep their own positions and counts.
+With an accepted Inspector or search filter, append `matched` (`3 matched`, `2/3 matched`).
+Grouping or sorting alone is not a filter. The saved total and exact fragment/query counts stay
+in the tooltip and accessible description. At tight zoom sizes, keep the ratio readable and
+move the matched status to the tooltip; the user explicitly approved this compact behavior.
+The ordinal fraction is one related value, not two independent count labels.
+These rules replace the earlier separate-count caption design after the UI review of 2026-11-13.
+
+### 2.5 Selection, actions, and editor navigation
+
+- A normal card click selects the displayed File only. It does not select the entire stack.
+- Clicking the disclosure changes expansion only. It does not change photo selection or open the editor.
+- Ctrl-click changes one photo's selection. Shift selection follows displayed cards and deduplicates File IDs.
+- Ctrl+A selects every unique matching File, including members of collapsed stacks and collapsed groups.
+- The Stack submenu has no separate matching-member or entire-stack selection command
+  after the user review of 2026-11-14.
+- A filter or scope replacement intersects the existing selection with the new match set.
+  Ordinary collapse does not clear an explicit photo selection.
+- Rating, labels, deletion, export, adjustment paste, and collection linking use the explicit selection.
+  They never expand a selected cover into all stack members.
+- Deduplicate targets by logical File ID, including repeated label-group occurrences.
+- Double-click and Enter open the actual displayed photo, including a temporary cover.
+- The editor filmstrip lists all unique matching photos in the existing photo-query order.
+  Library collapse does not hide filmstrip photos or change existing automation list counts.
+- Returning from the editor reveals the actual File in its preferred group.
+  If that matching File is hidden by stack collapse, expand that fragment before revealing it.
+  If it is outside the filter, report that fact. Do not substitute another member or clear the filter.
+
+Visible selected counts must include selected members hidden by collapse.
+Keep that count separate from selected photos outside the query.
+Selection remains owned by `LibrarySelection`.
+
+### 2.6 Stack commands
+
+Put these text actions inside one `Stack` submenu in the Library image context menu, in this
+order. The reviews of 2026-11-13 and 2026-11-14 define these names and behavior.
+
+| Command | Preconditions | Effect |
+| --- | --- | --- |
+| Group into Stack | At least two unique selected Files; a valid selected cover | Create one stack from exactly those Files, with the selected cover first and other Files in displayed order. |
+| Ungroup Stack | Valid clicked stack | Remove that complete stack's organization. Keep every photo and album link. |
+| Add Selected to Stack | Valid clicked target stack; at least one selected File outside it | Append the selected Files in displayed order. Keep the target stack's saved cover. |
+| Remove from Stack | At least one selected stack member | Remove only the selected memberships. Keep the photos in the project and albums. |
+| Set as Stack Cover | Clicked File belongs to the saved stack | Move that File first and persist it as cover; retain the relative order of other members. |
+| Move Up in Stack / Move Down in Stack | Selected single member has an adjacent saved member | Swap their positions and make the first member the cover in the same transaction. Filtering does not limit the neighbor search. |
+| Split Stack | Clicked File is after the first saved member | Split immediately before the clicked File, then expand matching fragments of both surviving stacks. Selection does not change the split point. |
+| Expand/Collapse Stack | Valid clicked fragment | Change only that fragment's session expansion. |
+| Expand/Collapse All Stacks | No accepted filter | Expand all fragments in the accepted scope if any is collapsed; otherwise collapse all. |
+| Expand/Collapse All Matched Stacks | Accepted Inspector or search filter | The same operation, limited to matching fragments, including unloaded keys. |
+
+Choose the clicked selected File as the cover of a new stack.
+If no clicked selected File exists, use the first selected File in displayed order.
+The cover is always first. Set as Stack Cover is a shortcut for moving an arbitrary member
+to the front. Moving the second photo up makes it the cover; moving the cover down promotes
+the photo that becomes first. Existing projects with independently stored covers read that
+cover first, without a schema change or writes during reads.
+Deduplicate selected Files by their first displayed occurrence.
+Place explicitly selected Files outside the result after those displayed Files.
+Order those additional Files by their saved stack ID and member position, then by File ID.
+Place unstacked additional Files last, in File ID order.
+If the selection has no displayed File, use the first File in this defined order as its cover.
+If all targets already form exactly one stack, Group into Stack changes nothing.
+Otherwise, moving selected members into a new or existing stack repairs each source stack in the
+same transaction. It does not move unselected members.
+Treat duplicate target IDs as one target. Reject a missing File or invalid cover before any write.
+
+After removal, dissolve a saved stack with fewer than two members.
+If its cover was removed, choose the earliest remaining saved member as the new saved cover.
+That promotion is a persistent membership repair, not a temporary display cover.
+
+Split Stack is one transaction. The left side retains the original stack ID and its cover if
+that cover remains; otherwise it promotes its earliest saved member. The right side receives
+a new stack ID and uses the clicked File as cover. Saved order within each side stays unchanged.
+The user approved leaving a one-photo side unstacked, so no singleton stack is persisted.
+Splitting before the first saved member is a no-op and is disabled in the menu. The operation
+uses saved order across the whole stack, including members outside a filter or group.
+Both surviving stacks expand in the accepted view before the updated display is published,
+including matching fragments in unloaded groups. A singleton remains an ordinary photo.
+Split expansion is session state and is not saved in the package. The two stack-selection
+menu entries were removed at the user's request on 2026-11-14; ordinary selection is unchanged.
+
+Ungroup Stack requires confirmation when the current result hides some members.
+The confirmation states the full member count and that it changes every fragment of that stack.
+Set as Stack Cover, Split Stack, and member-order actions have project-wide meaning in their tooltips.
+Do not imply that they affect only the current group.
+
+These commands do not use image-edit Undo or Redo. Do not insert Library state into Mini-Git.
+The inverse organization commands remain available. The UI must not advertise an unavailable undo.
+
+### 2.7 Visual and input design
+
+Use the existing Basic style and Library monochrome design.
+Use a white overlapping-photo stack icon and a clear white number on a dark translucent
+rounded control at the top-left of the photo, as requested in the UI review of 2026-11-13.
+The shared `panel_icons/photo-stack.svg` follows the 24-by-24, 1.5-pixel stroke rule.
+It stays reachable at every zoom level, including the caption-free level.
+
+```text
+Tuesday                                      2 photos
+
++----------------------+       expanded:
+| [stack] 2 matched    |       +----------------------+ +----------------------+
+|                      |       | [stack] 1/2 matched  | | [stack] 2/2 matched  |
+|  thumbnail B         |       |  thumbnail B         | |  thumbnail C         |
+|                      |       |                      | |                      |
++----------------------+       +----------------------+ +----------------------+
+B                              B                        C
+No filter: omit matched. Exact fragment/query/saved totals remain accessible.
+```
+
+Map dimensions to existing card spacing, `inspectorHeaderActionSize`, and typography tokens.
+Use `headlineFontFamily`, strong title text (body text at compact zoom), and tabular figures.
+Map all fills, outlines, focus, and animation durations to `appTheme`.
+If a new token is necessary, add it to AppTheme and DESIGN.md together.
+Register a shared proposed `PhotoStackDisclosure.qml` in `ALCEDO_MAIN_QML_FILES`.
+Use it on classic cards, justified tiles, and grouped cells.
+Keep the count visible without overlapping the existing edit, HDR, missing-source, and Delete marks.
+
+The disclosure has an accessible name such as `Expand stack, 2 matching photos`.
+Its accessible description gives the total and temporary-cover state.
+Space and Enter activate a focused disclosure. A focused photo retains existing Enter behavior.
+Expose stack commands through the existing context-menu keyboard path.
+Do not assign new global key chords without checking the shortcut registry.
+Do not add a separate toolbar or a second selection owner.
+
+Preserve the first shown occurrence during expand, collapse, zoom, and temporary-cover replacement.
+Use real item positions when restoring scroll. Do not introduce new uses of estimated ListView
+row offsets. Existing scroll work in [#612](https://github.com/zidage/AlcedoStudio/issues/612) remains relevant.
+Use existing motion durations. `reduceMotion` makes the transition immediate.
+
+### 2.8 Loading, failure, and save behavior
+
+Keep the last accepted result while a query updates.
+Use the current Updating and No Matching Photos states.
+A query failure keeps the accepted result and offers Retry through `LibraryModule`.
+It must not display a flat substitute or a successful empty result.
+
+Validate commands through the interaction policy and again inside the storage operation.
+Do not update membership optimistically in QML or in a copied stack object.
+Publish the complete storage result, then refresh the accepted Library query.
+
+A database transaction failure leaves all affected stack rows unchanged.
+Return the actual validation or storage error.
+A later metadata-save or package-save failure has a different result: the database operation
+has committed, but the package has not saved the change.
+Requery and show the committed working state. Report `Stack changed, but project save failed`
+with the owner's diagnostic and a Retry Save action.
+Add a pending-stack-save condition to ProjectModule. This condition does not exist on audited main.
+Keep it set until a successful project save or an explicit project discard.
+Do not roll back a committed stack by writing an old copy over current rows.
+Close must warn about this unsaved state and offer Retry Save or explicit discard.
+Never report that the package saved when only the working database changed.
+
+## 3. Source audit and dependencies
+
+The audit confirms source structure, not runtime correctness. No new test evidence is claimed here.
+Paths below are relative to the repository root.
+
+| Area | Current owner and path | Verified source behavior | Required change |
+| --- | --- | --- | --- |
+| Project tables | `src/include/storage/store/database.hpp`, `src/storage/store/database.cpp` under `alcedo_studio/` | Image, Element, FileImage, and FolderContent have no photo-stack relation. | Add stack tables and migration. |
+| Project compatibility | `src/include/edit/history/pipeline_history_format.hpp` | Project metadata writes 0.11.0 and accepts 0.10.0 through 0.11.0. | Introduce project metadata 0.12.0 without changing image-edit formats. |
+| Storage boundary | `src/include/sleeve/storage.hpp`, `src/include/storage/store/storage_session.hpp` | Stores take operation-scoped connections under the database lock. Sessions support shared operations. | Add one stack owner and transaction-local deletion repair. |
+| Matching and paging | `src/storage/store/sleeve/element_store.cpp` | `ReadAlbumQuery` evaluates SearchMatchSet once under a transaction. Position and ID reads share the photo order. | Add a display projection after matching and group membership. |
+| Group definitions | `src/storage/store/sleeve/album_query.cpp`, `src/include/sleeve/album_query.hpp` | Typed group keys include unknown values. Label grouping repeats File occurrences. | Preserve these meanings when forming fragments. |
+| Application reads | `src/app/album_browse_service.cpp` | `AlbumBrowseService` owns the UI-facing read API and explicit errors. | Expose display, fragment-member, and display-position reads. |
+| Query publication | `src/ui/alcedo_main/album_backend/library_module.cpp` | One SearchRequestWorker runs reads. Publication installs photo and section owners before notifications. | Publish display pages without mixing raw photo positions and display positions. |
+| Photo metadata | `src/include/ui/alcedo_main/album_backend/album_types.hpp`, `album_thumbnail_model.hpp` in that directory | AlbumItem and AlbumThumbnailModel hold photo values keyed by File ID. | Keep one photo-data owner. Do not attach a complete stack to each photo. |
+| Group geometry | `src/ui/alcedo_main/album_backend/album_section_model.cpp` | Group descriptors, prefix rows, collapse choices, and loaded occurrence IDs drive grouped layout. | Use display counts for geometry and photo counts for captions. |
+| Selection and mutations | `library_selection.cpp`, `library_mutation_operations.cpp`, `image_controller.cpp` in that directory | Selection uses element IDs. Shared action owners resolve explicit targets. | Add fragment selection reads and preserve explicit target semantics. |
+| QML | `src/ui/alcedo_main/qml/ThumbnailGridView.qml`, `JustifiedThumbnailTile.qml`, `AlbumSectionView.qml` | Flat and grouped views consume photo rows. Justified geometry uses photo aspect ratios. | Consume display identities and show stack disclosures. |
+| Save and package | `project_handler.cpp`, `project_module.cpp` in album_backend | `MakeSaveAndPackageJob` saves metadata, then takes the package mutex. It catches metadata-save errors without preserving their text. | Add explicit stack-save outcomes and retain error details. Do not assume the mutex covers metadata save. |
+| Application and project close | `application_close_coordinator.{hpp,cpp}`, `project_module.{hpp,cpp}` in album_backend | Close confirmation observes editor state. ProjectModule has no pending-stack-save property. | Add that state and extend the existing close/save flow in PS5C. |
+| File deletion and sync | `src/app/sleeve_service.cpp`, `src/storage/store/sleeve/element_store.cpp` | Sync calls AddElements, UpdateElements, then RemoveElements. Folder changes can commit before File removal. RemoveElements holds a connection lock but opens no transaction. | Add one atomic element-change operation that includes stack repair. A lock alone is insufficient. |
+| Database packaging and diagnostics | `src/storage/store/storage_maintenance.cpp`, `src/app/project_package_service.cpp` | StorageMaintenance supplies database copies and a fixed diagnostic table list. It is not a user-facing cleanup feature. | Retain this existing owner. Add stack table summaries and package preservation tests. |
+| Existing caller test registration | `tests/app/CMakeLists.txt`, `tests/cmake/AlcedoTestRegistration.cmake` under `alcedo_studio/` | ImportServiceTest and SleeveServiceTest are build targets without CTest discovery. Category registration does not discover cases. | Run those binaries directly with verified GoogleTest filters. Do not claim their CTest prefixes exist. |
+
+The `src/` paths in this table all start at `alcedo_studio/src/`.
+Short names inside one row share that row's stated directory.
+
+Read these related plans before implementation:
+
+1. [Album Sorting, Grouping, and Import Time](album_sort_group_and_import_time_plan.md).
+   Extend its presentation. Replace its exclusion of custom photo grouping only for this stack feature.
+   Keep its filter, group, and sort field meanings.
+2. [Storage Query Boundary](../storage/storage_query_boundary_plan.md).
+   Preserve store-owned SQL, typed rows, prepared binds, and operation-scoped connections.
+3. [Library Search and Project Size](../storage/library_search_and_project_size_plan.md).
+   Preserve one match-set evaluation and bounded metadata pages.
+4. [Global Search Redesign](global_search_redesign_plan.md).
+   Preserve relevance admission and raw photo-list behavior.
+
+### 3.1 Main-branch boundary
+
+The source comparison with the former planning branch established these facts:
+
+| Former assumption | Audited main | Plan correction |
+| --- | --- | --- |
+| ProjectMaintenanceStore and its scanner can protect stack members | These production files and APIs are absent. | Remove them from phases and commands. Future cleanup must call the stack-aware File owner. |
+| SourceFileStore and identity-preserving import replacement are available | These APIs are absent. | Do not require source-replacement rendering tests or implement that import feature. Test ordinary imports and existing metadata writes. |
+| Maintenance/import plans can serve as prerequisites | Both local plan links are absent on main. | Use only the four existing prerequisite plans above. |
+| A deletion transaction already encloses folder unlink and File removal | Current Sync uses separate store calls. | PS2A adds one connection and transaction for those element changes and stack repair. |
+| Pending stack saves already participate in close confirmation | No such state or close rule exists. | PS5C adds it to ProjectModule and ApplicationCloseCoordinator. |
+
+Do not merge or copy the maintenance and duplicate-import branches to satisfy this plan.
+Stacking remains independently implementable on main.
+If those features land before implementation, re-audit their File-removal and File-identity paths.
+Preserve existing stack membership when an operation keeps a logical File ID.
+Require stack-aware deletion when it removes that ID.
+These are integration rules for that future source state, not prerequisites or unfinished stacking phases.
+
+Design sources: [DESIGN.md](../../../../alcedo_studio/src/ui/alcedo_main/DESIGN.md) and
+[VI catalog](../../../VI/README.md).
+Before every phase, read AGENTS.md and the current `alcedo-create-plan`, `alcedo-qml-ui`,
+`alcedo-msvc-cmake`, and applicable implementation/review skills again.
+
+## 4. Target ownership and stored data
+
+### 4.1 Stored schema
+
+The following tables are proposed. They are the sole persistent stack representation.
+
+```sql
+CREATE TABLE PhotoStack (
+  stack_id VARCHAR PRIMARY KEY,
+  cover_file_id BIGINT NOT NULL
+);
+CREATE TABLE PhotoStackMember (
+  file_id BIGINT PRIMARY KEY,
+  stack_id VARCHAR NOT NULL,
+  member_order BIGINT NOT NULL CHECK (member_order >= 0),
+  UNIQUE (stack_id, member_order)
+);
+CREATE INDEX idx_photo_stack_member_stack ON PhotoStackMember(stack_id);
+```
+
+Use a UUID string for stack_id. Generate it in the application service with the existing Qt UUID
+facility. Storage validates its form and uniqueness. Do not add Qt to storage for UUID generation.
+Use the existing File ID type at service boundaries. Validate its full range before conversion.
+
+The store validates these conditions inside the transaction:
+
+- Every member refers to a live Element of File type with a valid FileImage binding.
+- Every member has exactly one stack and one position in that stack.
+- Every saved stack has at least two members.
+- The saved cover is one of those members.
+- Member positions are unique, non-negative, and deterministic.
+
+Validate stored stack relations during project open and affected-stack reads.
+A saved cover excluded by the query permits a temporary cover.
+A saved cover missing from its stored membership is invalid data and reports an error.
+Do not treat a damaged stack as unstacked photos or silently select a replacement saved cover.
+
+The relation between cover and member is cyclic across these two tables.
+Enforce it through the owner transaction and the storage invariant checker.
+Do not introduce a partially valid intermediate state visible to another connection.
+Use delete-and-insert within the transaction when ordinal changes would violate immediate uniqueness.
+
+Set project metadata version and maximum supported version to 0.12.0.
+Keep the lower supported version at 0.10.0.
+Opening 0.10.0 or 0.11.0 adds empty stack tables; it does not invent stacks.
+The next save writes 0.12.0. Earlier builds reject that version before writing project data.
+Keep the packed header, pipeline document, edit history, root, checkpoint, and transfer versions unchanged.
+If the implementation base has advanced this metadata version, use its next unused version and
+record that exact choice before implementing migration.
+
+Package the tables through the existing database package owner.
+Do not add a stack JSON file, image-metadata copy, or external sidecar.
+
+### 4.2 Owner boundaries
+
+| Owner | Responsibility | Lifetime and error surface |
+| --- | --- | --- |
+| Proposed `PhotoStackStore` | Read and atomically change saved membership, order, and cover. Validate all row invariants. | Project storage lifetime; connection per operation; typed validation result or storage exception. |
+| Proposed stack table Mappers | Typed single-table writes used inside the store's transaction. | Connection scope; no independent commit. |
+| Proposed `PhotoStackService` | Application API for explicit stack commands and save-independent outcomes. Generate stack IDs. | ProjectService owns it; no duplicate membership cache. |
+| `ElementStore` and proposed `album_stack_query` module | Read matching display occurrences and fragment members from the same match set. | One read transaction; move query output to its caller; no retained stack state. |
+| `AlbumBrowseService` | UI-facing display and photo reads. Keep filters and semantic inputs consistent. | Project service lifetime; explicit read failure. |
+| `LibraryModule` | Accepted query, existing worker, publication, statistics, and raw photo navigation. | GUI owner plus existing queued worker messages. |
+| Proposed `LibraryDisplayModel` | Ordered display-page identities, fragment expansion choices, and flat-view roles. | GUI thread; no Image, AlbumItem, pixel, or membership copies. |
+| `AlbumSectionModel` | Group headers and prefix row geometry. Read display pages from LibraryDisplayModel. | GUI thread; do not keep a second display-page cache. |
+| `AlbumThumbnailModel` | Photo metadata and thumbnail state by File ID. | GUI thread; shared by all occurrences of the same photo. |
+| Proposed `PhotoStackController` | UI command validation, background task, save outcome, and completion notification. | ApplicationModuleHost owns it; uses services only. |
+| `LibrarySelection` | Selected logical File IDs and explicit whole-stack selection status. | GUI thread; all bulk photo actions read this owner. |
+
+Keep the new responsibilities in their own types.
+Do not add another collection of membership to LibraryModule or ImageController.
+Do not split large member functions across files and claim that this creates a new owner.
+
+### 4.3 Query and presentation data
+
+Extend the existing `AlbumQueryRead`, `AlbumQueryRow`, `AlbumQueryResult`, and
+`AlbumGroupDescriptor` representations. Do not create a parallel result that copies them wholesale.
+
+- Add an explicit photo/display read mode. Existing callers default to the current photo mode.
+- Keep raw photo counts and raw photo occurrence offsets unchanged.
+- Add named display counts and display offsets. Never use one position type for both meanings.
+- A display row carries the existing photo columns for its displayed File and minimal stack scalars:
+  stack ID, saved cover File ID, fragment count, query match count, total count, and temporary-cover flag.
+- A display identity contains the typed group key and either an unstacked File ID, a stack
+  representative identity, or a member File ID within that fragment.
+- A representative identity remains stable when its temporary cover changes.
+- Expanded member rows refer to the same stack identity. They do not repeat a member list.
+- Add a display-position result type rather than changing `AlbumFilePosition` silently.
+
+Compute the global stack total from PhotoStackMember.
+Compute the query match count from unique matching Files before label expansion.
+Compute the fragment count after label expansion, grouped by stack ID and typed group key.
+Use the same SQL comparison for display pages, display positions, and display range IDs.
+Define the photo occurrence rank with the existing comparator. A fragment uses its
+displayed cover's occurrence rank as its unit position. The shared display projection then orders
+that unit and its visible members. This keeps sort and semantic relevance definitions in one owner.
+
+Build the display query in these steps:
+
+1. Left-join the unique match set to PhotoStackMember and PhotoStack.
+2. Distinguish an unstacked File key from a stack UUID. Do not coerce them into one numeric key.
+3. Compute total and query-match counts once for participating stacks.
+4. Expand the existing group membership relation, including each canonical label occurrence.
+5. Partition by typed group key and stack ID. Keep unstacked Files as independent units.
+6. Rank candidate covers by saved-cover membership first, then saved member order and File ID.
+7. Join the captured expansion choices by the exact fragment key.
+8. Produce one representative for a collapsed fragment, or its representative and matching members
+   for an expanded fragment. Rank units with the existing representative-photo comparator.
+9. Assign display positions, compute display group counts, then apply the requested page bounds.
+
+Compare unknown group keys with null-safe equality.
+Use prepared values for expansion keys. Do not concatenate translated titles into SQL or identity keys.
+Use the same active semantic model for matching, labels, statistics, and group membership.
+Do not compute a temporary cover from the photos retained in a UI page.
+
+`LibraryDisplayModel` owns display pages once the result is published.
+`AlbumSectionModel` reads those pages through a scoped const API.
+Keep raw photo metadata in AlbumThumbnailModel once per File.
+The existing in-place refresh's ID-only read can carry minimal display identities instead of
+duplicating photo objects. The model must retain its bounded metadata pages.
+
+### 4.4 Required asynchronous request values
+
+Extend the existing documented `LibraryQueryInput`; do not add another view-state object.
+A display read needs immutable fragment-expansion choices for its row counts and page offsets.
+Capture only the current scope's typed fragment keys and expansion values needed by that request.
+
+This independent request value is necessary because one queued read must use one expansion choice
+throughout counts, ordering, and paging. A mutable GUI-owned reference cannot supply that guarantee.
+A synchronous read under a GUI lock would block input for the database operation.
+The existing worker request owns these minimal values until completion.
+It captures no group descriptors, photo containers, membership arrays, or pixels.
+Release it with the request. Never write it back over live expansion choices.
+Document these captured fields and this lifetime at the input definition.
+
+Reuse SearchRequestWorker's existing replacement and publication behavior.
+Do not add a stack generation, epoch, cancellation scheme, or second query worker.
+If an existing mechanism cannot support a demonstrated production interleaving, first record the
+two operations, queue boundary, executable reproduction, and required correction.
+
+### 4.5 Persistence and File lifecycle
+
+Every stack mutation uses one storage transaction under the database lock.
+Validation and writes use the same connection.
+Source-stack repair and destination-stack changes commit together.
+Return minimal change facts, such as affected stack IDs and affected File IDs.
+Do not return editable copies of complete stored stacks for callers to write back.
+
+Project File deletion removes its memberships and repairs affected stacks in the same transaction
+as the File binding, Element, and affected FolderContent changes.
+This shared transaction is new work. It is not present in the current Sleeve sync chain.
+
+Add proposed `ElementStore::ApplyElementChanges(additions, modifications, deletions)`.
+Its inputs are spans of the existing owner-held SleeveElement references for this sync.
+It opens one connection, takes the database lock, and starts one transaction.
+Reuse InsertElementRows and UpdateElementRows on that connection.
+Add a transaction-neutral removal helper that calls the stack owner's repair operation.
+Do not call the public connection-opening AddElements or UpdateElements inside this transaction.
+
+Change SleeveServiceImpl::Sync to submit its existing change lists to that one operation.
+Clear sync flags and pending folder changes only after commit.
+Run FileSystem garbage collection only after successful sync.
+On failure, restore the affected FileSystem entries from committed storage through proposed
+FileSystem::RestoreAfterFailedSync(affected_ids). Use the existing Sleeve owner synchronization.
+Keep live object identities for restored entries. Remove only newly created entries whose rows did not commit.
+Restore affected folder links and flags through that owner operation.
+Do not replace the complete FileSystem or read an old copied object over newer state.
+The affected IDs come from the current change lists. They are the minimal description needed for reload.
+Do not retain whole element copies for rollback. Do not rewind monotonically allocated Element IDs.
+Report failure after owner restoration; an explicit user retry starts a new operation.
+If restoration itself fails, report both errors and retain the owner error state instead of reporting success.
+Standalone full-element removal APIs must use the same connection-local removal helper.
+Keep RemoveElement(id) as the documented primitive Element-row operation; do not route live File
+deletion through that primitive. Test production deletion entry points through the service.
+
+Album unlink must not remove project stack membership.
+Ordinary import and Image metadata writes must leave existing stack rows unchanged.
+No main-branch stacking phase requires replacing source bytes while retaining File identity.
+
+Extend StorageMaintenance::ReadDataSummary with PhotoStack and PhotoStackMember.
+Keep its existing summary schema and key-conversion rules.
+Its row counts are diagnostics, not proof of stack integrity.
+Verify membership, order, and covers through owner reads and the storage invariant checker.
+Use the existing whole-database package-copy path; do not add another database-copy implementation.
+
+## 5. Proposed APIs and file map
+
+All names in this section that do not exist are proposed.
+API parameters carry IDs or focused changes. Services do not expose mutable store internals.
+
+| API | Input and result | Mutation and validation |
+| --- | --- | --- |
+| `PhotoStackService::CreateStack` | Ordered unique File IDs and cover File ID -> created stack ID and changed IDs | Store validates every File and repairs source stacks atomically. |
+| `PhotoStackService::AddMembers` | Target stack ID and ordered File IDs -> changed IDs | Keep existing target order and cover; append only new members. |
+| `PhotoStackService::RemoveMembers` | Explicit File IDs -> changed IDs | Remove only those memberships; repair or dissolve source stacks. |
+| `PhotoStackService::UngroupStack` | Explicit stack ID -> changed IDs | Remove all memberships of that stack, without deleting photos. |
+| `PhotoStackService::SetCover` | Stack ID and member File ID -> changed IDs | Reject non-members; no-op for the current saved cover. |
+| `PhotoStackService::MoveMember` | Member File ID and direction -> changed IDs | Resolve the saved adjacent member under the same lock. |
+| `PhotoStackService::ReadMemberIds` | Stack ID -> ordered IDs | Read-only explicit full-stack selection; no metadata or pixels. |
+| `ElementStore::ApplyElementChanges` | Spans of existing additions, modifications, and deletions -> void | New storage-owned transaction; commits element rows, folder links, and stack repair together. Throws on failure; flags clear only after commit. |
+| `FileSystem::RestoreAfterFailedSync` | Minimal affected Element IDs -> void | Proposed focused owner reload from committed storage. Restore affected File and Folder entries and links; preserve live identities. Does not copy the whole FileSystem. |
+| `AlbumBrowseService::ReadAlbumQuery` extension | Existing query input plus display mode and expansion choices -> extended existing result | Read-only; one match-set interpretation and explicit failure. |
+| `AlbumBrowseService::ReadAlbumDisplayPosition` | Existing query input, File ID, preferred group -> display location and hidden-by-collapse flag | Read-only; distinguish absent File from collapsed member. |
+| `AlbumBrowseService::ReadAlbumDisplayFileIds` | Existing query input and display ranges -> ordered unique File IDs | Read-only; return represented photos, not an implicit stack expansion. |
+| `AlbumBrowseService::ReadAlbumMatchingFragmentIds` | Existing query input and typed fragment key -> ordered unique matching IDs | Read-only; use complete filter and exact group membership. |
+| `LibraryDisplayModel::SetStackExpanded` | Typed fragment key and bool | GUI presentation mutation only; request display refresh. |
+| `PhotoStackController` command methods | User targets and explicit command -> started/task result, then completion | Apply interaction policy; dispatch to application service and existing save owner. |
+| `ProjectModule::RetryStackSave` and `hasUnsavedStackChanges` | No mutation request -> save outcome and pending-state notification | Proposed additions. Retry only persistence; do not repeat the stack command. Clear pending state on successful save or explicit discard. |
+
+Each public read returns a value whose lifetime belongs to its caller.
+Each write validates inputs before mutation.
+Malformed IDs, unknown stacks, missing Files, and invalid covers have explicit messages.
+Database exceptions retain the actual diagnostic. No failed read becomes an empty success.
+
+Existing files that change, grouped by responsibility:
+
+- Schema/format: `alcedo_studio/src/include/storage/store/database.hpp`,
+  `alcedo_studio/src/storage/store/database.cpp`,
+  `alcedo_studio/src/include/edit/history/pipeline_history_format.hpp`,
+  `alcedo_studio/src/include/app/project_package_backend.hpp`.
+- Storage ownership: `alcedo_studio/src/include/sleeve/storage.hpp`,
+  `alcedo_studio/src/sleeve/storage.cpp`,
+  `alcedo_studio/src/sleeve/sleeve_filesystem.cpp` and its defining header,
+  `alcedo_studio/src/storage/store/sleeve/element_store.cpp`,
+  `alcedo_studio/src/include/storage/store/sleeve/element_store.hpp`,
+  `alcedo_studio/src/storage/store/sleeve/album_query.cpp`,
+  `alcedo_studio/src/include/storage/store/sleeve/album_query_sql.hpp`,
+  `alcedo_studio/src/include/sleeve/album_query.hpp`,
+  `alcedo_studio/src/storage/store/storage_maintenance.cpp` and its defining header.
+- Services: `alcedo_studio/src/app/album_browse_service.cpp` and its defining header;
+  `alcedo_studio/src/app/project_service.cpp` and its defining header;
+  `alcedo_studio/src/app/sleeve_service.cpp` and its defining header.
+- UI owners: `library_module`, `album_section_model`, `library_selection`,
+  `library_mutation_operations`, `project_handler`, `project_module`, `background_task_controller`,
+  `interaction_policy_controller`, `application_close_coordinator`, and `application_module_host`, with their defining headers
+  under `alcedo_studio/src/include/ui/alcedo_main/album_backend/`.
+- QML: `LibraryWorkspace.qml`, `ThumbnailGridView.qml`, `JustifiedThumbnailTile.qml`,
+  `AlbumSectionView.qml`, `ImageActionsController.qml`, and the existing image context menu
+  in `AppDialogs.qml`, under `alcedo_studio/src/ui/alcedo_main/qml/`.
+  Add Main.qml, ShellSignals.qml, and EditorCloseConfirmDialog.qml to the close/save integration scope.
+- Justified layout: the existing `justified_layout_model` owner in album_backend and its header.
+- Registration: `alcedo_studio/src/storage/CMakeLists.txt`,
+  `alcedo_studio/src/app/CMakeLists.txt`, `alcedo_studio/src/ui/alcedo_main/CMakeLists.txt`,
+  `alcedo_studio/tests/app/CMakeLists.txt`, `alcedo_studio/tests/ui/CMakeLists.txt`, and
+  `alcedo_studio/tests/sleeve/CMakeLists.txt` for the existing StorageMaintenanceTest registration.
+- Design and localization: DESIGN.md, AppTheme if required, `docs/VI/README.md`, and the existing
+  `alcedo_main_en` and `alcedo_main_zh_CN` translation catalogs.
+- Verification: `alcedo_studio/tests/support/storage_invariants.{hpp,cpp}`,
+  existing `project_compatibility_test.cpp`, `sleeve_service_test.cpp`, library owner tests,
+  `alcedo_studio/tests/storage/storage_maintenance_test.cpp`, and
+  `alcedo_studio/tests/ui/application_close_coordinator_test.cpp`.
+
+Proposed new files:
+
+- `alcedo_studio/src/include/sleeve/photo_stack.hpp`: IDs and minimal operation results.
+- `alcedo_studio/src/include/storage/mapper/sleeve/photo_stack_mapper.hpp` and
+  `alcedo_studio/src/storage/mapper/sleeve/photo_stack_mapper.cpp`: typed stack-table writes.
+- `alcedo_studio/src/include/storage/store/sleeve/photo_stack_store.hpp` and
+  `alcedo_studio/src/storage/store/sleeve/photo_stack_store.cpp`: persistent owner.
+- `alcedo_studio/src/include/storage/store/sleeve/album_stack_query.hpp` and
+  `alcedo_studio/src/storage/store/sleeve/album_stack_query.cpp`: display SQL definitions.
+- `alcedo_studio/src/include/app/photo_stack_service.hpp` and
+  `alcedo_studio/src/app/photo_stack_service.cpp`: application command API.
+- `library_display_model.{hpp,cpp}` and `photo_stack_controller.{hpp,cpp}` in the existing
+  album_backend header/source directories.
+- `alcedo_studio/src/ui/alcedo_main/qml/PhotoStackDisclosure.qml`: shared presentation control.
+- Focused proposed test files and targets listed in the phases below.
+
+Proposed test registration map:
+
+| Target | Source under `alcedo_studio/tests/` | Manifest |
+| --- | --- | --- |
+| PhotoStackStoreTest | `app/photo_stack_store_test.cpp` | `app/CMakeLists.txt` |
+| PhotoStackLifecycleTest | `app/photo_stack_lifecycle_test.cpp` | `app/CMakeLists.txt` |
+| AlbumStackQueryTest | `app/album_stack_query_test.cpp` | `app/CMakeLists.txt` |
+| AlbumStackPagingTest | `app/album_stack_paging_test.cpp` | `app/CMakeLists.txt` |
+| LibraryDisplayModelTest | `ui/library_display_model_test.cpp` | `ui/CMakeLists.txt` |
+| PhotoStackControllerTest | `ui/photo_stack_controller_test.cpp` | `ui/CMakeLists.txt` |
+| ProjectStackSaveTest | `ui/project_stack_save_test.cpp` | `ui/CMakeLists.txt` |
+| LibraryStackActionsTest | `ui/library_stack_actions_test.cpp` | `ui/CMakeLists.txt` |
+| LibraryStackLayoutTest | `ui/library_stack_layout_test.cpp` | `ui/CMakeLists.txt` |
+| LibraryPhotoStackIntegrationTest | `ui/library_photo_stack_integration_test.cpp` | `ui/CMakeLists.txt` |
+
+Reuse the current project/import test builders.
+If these suites need shared stack inputs, add proposed `support/photo_stack_test_library.hpp`.
+It defines fixture inputs and creates saved stacks through the service.
+It must not load live owner data into a parallel editable representation.
+
+Keep headers complete with their defining includes.
+Keep SQL and DuckDB connections inside storage.
+Do not add image buffers, cloned Images, copied whole-stack objects, or new package representations.
+
+## 6. Primary call chains
+
+### 6.1 Display read and temporary cover
+
+```text
+Inspector/search/album or stack expansion change
+  -> LibraryModule schedules the existing query worker
+  -> AlbumBrowseService::ReadAlbumQuery(display mode)
+  -> ElementStore takes connection lock and starts read transaction
+  -> SearchMatchSet -> group membership -> fragment query -> display page
+  -> counts, groups, and requested photo columns from that read
+  -> worker completion on GUI thread
+  -> install thumbnail metadata, display identities, and section counts
+  -> publish notifications after every owner holds the accepted result
+```
+
+Failure: query throws -> worker carries the error -> keep last accepted result -> AlertBadge and Retry.
+No cover or membership write occurs on either path.
+
+### 6.2 Stack command and save
+
+```text
+context-menu command -> PhotoStackController -> interaction policy
+  -> existing background task, with project-close and target-delete protection
+  -> PhotoStackService -> PhotoStackStore transaction
+  -> validate current Files, memberships, and cover -> commit focused changes
+  -> existing save-and-package job
+  -> GUI completion -> refresh matching presentation -> finish task
+```
+
+Validation or transaction failure: roll back -> report actual error -> keep accepted membership.
+Save failure after commit: publish committed working state -> mark pending save in Project owner
+-> AlertBadge and Retry Save -> clear pending state only after the package save succeeds.
+Keep the operation's project services alive until its worker completes.
+Do not make a queued callback read a closed project's mutable UI objects.
+
+### 6.3 Delete and album unlink
+
+```text
+existing explicit delete targets -> LibraryMutationOperations -> ImageController worker
+  -> AlbumBrowseService -> SleeveServiceImpl::Write and Sync
+  -> proposed ElementStore::ApplyElementChanges on one connection and transaction
+  -> pending folder writes and File deletion with transaction-local stack repair -> commit
+  -> mark owner changes synced and collect deleted FileSystem entries
+  -> existing save -> selection prune -> Library refresh
+```
+
+Any statement failure rolls back the entire database removal and stack repair.
+An album unlink follows its existing FolderContent operation and never calls stack-member removal.
+Failure rolls back storage, reloads affected FileSystem entries through their owner, and reports
+no successful removal. An explicit retry starts a new operation from the restored state.
+PS2A implements the atomic element sync and owner restoration in this chain.
+
+### 6.4 Pending stack save and close
+
+```text
+committed stack command -> save job reports failure -> GUI ProjectModule marks unsaved stack changes
+  -> existing close coordinator checks editor state and proposed pending-stack-save state
+  -> Save: finalize editor if needed -> save/package the current project -> close only on success
+  -> Discard: explicit confirmation -> close the working project without saving it
+  -> Cancel: keep the project and its pending save state
+```
+
+Main's ApplicationCloseCoordinator::BeginSave currently finalizes the editor; it does not itself
+guarantee a project package save before application exit. PS5C adds that step for pending stack changes.
+Update the current close dialog text when stack changes are pending, including Library-only sessions.
+A failed retry aborts close and keeps the working project loaded with the actual error.
+Do not add a second close coordinator or copy stack membership for a discard operation.
+
+## 7. Phase summary
+
+Every estimate includes production code, tests, build registration, localization, and phase write-back.
+Each phase or its documented internal steps stays below 2000 changed lines.
+Split again before implementation if its upper bound grows.
+Do not place the complete implementation in one PR if its added diff can exceed the repository limit.
+
+| Phase | Result | Dependency | Expected changed lines | Split reason | Status |
+| --- | --- | --- | ---: | --- | --- |
+| PS1 | Stack schema, store, and application operations | Source audit | 1300-1850 | Keep persistent invariants in one reviewed unit. | complete |
+| PS2A | Atomic element sync and stack-aware project deletion | PS1 | 1200-1850 | Main needs a complete sync transaction and focused owner restore. | complete |
+| PS2B | Migration, package preservation, and diagnostics | PS1 | 750-1250 | Keep format and package evidence separate from deletion changes. | complete |
+| PS3 | Filter-first fragments, covers, and collapsed display reads | PS1 | 1200-1800 | Isolate query semantics from expansion and UI. | complete |
+| PS4 | Expansion, bounded pages, positions, and matching-member reads | PS3 | 1100-1750 | Paging and three position spaces need dedicated tests. | complete |
+| PS5A | C++ display owner and complete query publication | PS4 | 2400-3750 in two internal steps | Separate page ownership from publication; see PS5A.1 and PS5A.2. | complete |
+| PS5B | Command controller, task policy, and save outcomes | PS2A, PS2B, PS5A | 700-1200 | Keep command task behavior independent from close decisions. | complete |
+| PS5C | Pending stack saves and application/project close | PS5B | 900-1500 | Add the lifecycle behavior that audited main does not provide. | complete |
+| PS6 | Selection, bulk actions, and editor navigation | PS5C | 1000-1600 | Verify target semantics through existing callers. | complete |
+| PS7 | Classic/grid and grouped QML presentation | PS6 | 1050-1700 | Keep the first visual integration below the line limit. | complete |
+| PS8 | Justified rows, localization, and complete visual specification | PS7 | 900-1550 | The second layout has separate geometry and anchor behavior. | complete |
+| PS9 | Integrated persistence, resource, and performance acceptance | PS8 | 800-1400 | Keep final evidence separate from feature construction. | complete |
+
+No phase is complete because a type compiles or a constructor succeeds.
+PS1 through PS6, including all PS2 and PS5 sub-phases, must not expose an incomplete stack feature
+in the production UI.
+PS7 and PS8 form one product delivery: do not release a build with a layout that ignores stacks.
+
+### 7.1 Pull request delivery
+
+The user selected five pull requests on 2026-11-11. The later branch decision below supersedes
+the original merge-before-next-branch workflow.
+The twelve phases remain the implementation and verification units. They do not require twelve PRs.
+Keep a focused, tested commit for each phase. Use functional commit and PR titles without phase IDs.
+Put the phase IDs and this plan link under Changes in the PR body.
+
+| PR | Phases | Review scope | Estimated changed lines |
+| --- | --- | --- | ---: |
+| 1 | PS1, PS2A, PS2B | Stack persistence, atomic deletion, compatibility, and packaging | 3250-4950 |
+| 2 | PS3, PS4 | Filter-first fragments, temporary covers, expansion, and paging | 2300-3550 |
+| 3 | PS5A | Display models and complete query publication | 2400-3750 in two internal steps |
+| 4 | PS5B, PS5C, PS6 | Commands, save and close handling, selection, and editor navigation | 2600-4300 |
+| 5 | PS7, PS8, PS9 | All Library layouts, localization, and integrated acceptance | 2750-4650 |
+
+The estimates exclude the initial plan-document commit. Include that commit in PR 1.
+Keep PR 1's persistence, deletion repair, and format compatibility together before the first merge.
+Keep all layouts and integrated acceptance together in PR 5 before product release.
+PS1 through PS6 must not expose stack commands or incomplete stack presentation in the production UI.
+
+PR 1 is upstream [#828](https://github.com/zidage/AlcedoStudio/pull/828), with head
+`feature/library-photo-stacking` at `c6981926`. The user approved stacked development in the fork
+so the complete UI can provide real screenshots before upstream review finishes.
+Create PR 2 as `feature/library-photo-stacking-PR2` from that PR 1 head. Use
+`feature/library-photo-stacking-PRn` for subsequent branches, each based on the preceding PR branch.
+PR2 contains PS3 and PS4 at `4f3f0b8f`. PR3 is `feature/library-photo-stacking-PR3`,
+based on that PR2 head, and contains PS5A only. Keep this dependency chain in the fork.
+Search for competing work before opening a PR. Upstream submissions must follow CONTRIBUTING.md:
+wait for overlapping open work to close. The fork branch chain does not change that submission rule.
+Use the current alcedo-create-pr skill and its fixed Why, Changes, and Verification sections.
+Report the targeted test evidence collected during implementation.
+Each PR must stay within CONTRIBUTING.md's limit of 10,000 added lines.
+The 2000 changed-line phase limit still applies separately to each phase.
+
+Use `Refs #486` in partial PRs and commits. Use a closing keyword only when a PR satisfies the
+entire issue. This plan implements only its stacking section. Human authors handle review replies
+and subsequent discussion, as CONTRIBUTING.md requires.
+
+## 8. Detailed phases
+
+### PS1 - Persisted stacks and focused owner operations
+
+**Objective and prerequisites.** Add the persistent owner and its complete command semantics.
+Start from the audited source. Review the chosen project-wide scope before changing a stored format.
+
+**Modules and deliverables.** Add proposed `photo_stack.hpp`, table Mappers, PhotoStackStore,
+PhotoStackService, and their registrations. Connect service lifetime to ProjectService.
+Add empty stack tables to Database. Add proposed `PhotoStackStoreTest` in `tests/app/`.
+
+**Data rules.** Enforce Section 4.1 in every operation. Keep cover and membership in storage only.
+Use ordered IDs as an explicit command, not an editable stored-stack copy.
+
+**Steps.**
+
+1. Add typed table writes and prepared reads. Keep transactions in PhotoStackStore.
+2. Implement create, add, remove, ungroup, cover, and adjacent-order operations.
+3. Validate the complete batch before changing a row.
+4. Repair every source stack in the same transaction as a member move.
+5. Define no-op results for duplicate additions and unchanged covers.
+6. Add transaction failure injection through test storage support, without production alternate paths.
+7. Add stack checks to the existing storage invariant test support.
+
+**Success chain.** Service -> store lock/transaction -> validate -> all affected writes -> commit -> changed IDs.
+**Failure chain.** Invalid input or injected statement failure -> rollback -> unchanged stored rows and diagnostic.
+
+**Tests and assertions.**
+
+- `CreateStackPersistsMembersOrderAndSelectedCover`: real project reopen returns exact IDs and order.
+- `MovingSelectedMembersRepairsSourceStacksAtomically`: unselected members stay; one-member sources dissolve.
+- `InvalidCoverOrMissingFileLeavesEveryStackUnchanged`: compare both source and destination rows.
+- `FailureAfterSourceRemovalRestoresAllMemberships`: fail before destination completion and reopen the database.
+- `CoverAndMemberMovePreserveImageHistoryMarksAndAlbumLinks`: compare owner reads before and after.
+- `DuplicateAdditionAndUnchangedCoverPerformNoMembershipChange`: verify returned no-op and stable order.
+
+**Build and run.** Run command group V1 in Section 10. Proposed target: PhotoStackStoreTest.
+**Exit criteria.** [x] All write invariants pass. [x] Injected failure changes no rows.
+[x] No SQL or long-lived connection exists in the service. [x] Public APIs have Doxygen ownership notes.
+**Expected diff.** 1300-1850 lines.
+
+#### PS1 completion record (2026-11-11)
+
+**Status:** complete. Implemented only persisted stacks and application commands.
+Branch: `feature/library-photo-stacking`. Source base: `e59529c66d2d0bfdc53c5c5cf2d88e6e68d9138d`.
+The plan commit is `4830980d`. PS1 and the five-PR split were committed as `a5503149`.
+
+**Changed modules.** Added `PhotoStackChange`, `PhotoStackMove`, two typed table Mappers,
+PhotoStackStore, and PhotoStackService. Storage owns the store. ProjectService creates the service
+for new and loaded projects. The service retains project storage for its callers.
+Database creates the two empty tables and their index with idempotent statements.
+Added PhotoStackStoreTest and stack rules in StorageInvariantsTestSupport.
+Registered the sources, service, and test target in the existing CMake manifests.
+
+**Implemented behavior and selected details.**
+
+- Create, append, remove, ungroup, saved-cover change, adjacent-member move, and ordered ID reads
+  use one connection, database lock, and transaction per operation.
+- Commands deduplicate input IDs by first occurrence. A complete existing stack, repeated additions,
+  an unchanged cover, and a move beyond an endpoint return no changed IDs.
+- Moving selected Files repairs every source in the destination transaction. Cover removal promotes
+  the earliest remaining saved member. A source with fewer than two members dissolves.
+- Removal retains gaps in saved positions. Append uses the largest saved position plus one.
+  Adjacent moves use saved neighbors across those gaps. Position overflow reports an explicit error.
+- Mappers accept focused scalar values and run prepared writes. They do not commit independently.
+  The service generates canonical UUIDs with Qt. Storage checks the UUID text and uniqueness.
+- Validation rejects missing Files, folders, absent or duplicate image bindings, dangling image
+  bindings, invalid covers, unknown stacks, and damaged affected relations before writes.
+- Results contain only affected stack IDs and File IDs. There is no membership cache, editable stack
+  copy, production failure switch, new consistency identifier, or connection retained by the service.
+
+**Primary success call chain:**
+
+```text
+ProjectService::GetPhotoStackService -> explicit command and File IDs
+  -> PhotoStackStore -> operation connection and database lock -> transaction
+  -> validate all targets and affected stacks -> typed Mapper writes and source repair
+  -> commit -> caller-owned changed IDs
+```
+
+**Primary failure call chain:**
+
+```text
+invalid input or destination INSERT constraint failure
+  -> exception -> transaction rollback before releasing the database lock
+  -> unchanged source membership, source cover, dissolved source, and destination rows
+  -> original diagnostic reaches the caller -> reopened project reads the committed prior rows
+```
+
+**Executed evidence.** All six required tests ran through the real application service and project
+storage. The rollback test inserts one destination member before rejecting another. It verifies
+that rollback restores a promoted cover and a dissolved second source, then reopens the project.
+It also verifies that a later valid command succeeds.
+
+| Required test | Target | Result |
+| --- | --- | --- |
+| `CreateStackPersistsMembersOrderAndSelectedCover` | PhotoStackStoreTest | PASS |
+| `MovingSelectedMembersRepairsSourceStacksAtomically` | PhotoStackStoreTest | PASS |
+| `InvalidCoverOrMissingFileLeavesEveryStackUnchanged` | PhotoStackStoreTest | PASS |
+| `FailureAfterSourceRemovalRestoresAllMemberships` | PhotoStackStoreTest | PASS |
+| `CoverAndMemberMovePreserveImageHistoryMarksAndAlbumLinks` | PhotoStackStoreTest | PASS |
+| `DuplicateAdditionAndUnchangedCoverPerformNoMembershipChange` | PhotoStackStoreTest | PASS |
+
+The other eight stack cases verify partial-source selection, removal and position gaps, malformed
+and duplicate IDs, damaged covers, missing bindings and folder targets, position overflow, damaged
+member bindings, and schema constraints. Each successful case checks the stored invariants on reopen.
+The corruption cases check the error and unchanged stack rows, then restore only their test damage.
+The history test compares root and head IDs. It also compares image bindings, ratings, color labels,
+Delete marks, and album links before and after cover and order changes.
+
+**Commands and environment.** Used the existing `win_release` build with tests already enabled.
+This keeps the supported preset and reuses the installed dependencies. No second build tree was made.
+The configured Qt prefix is `C:/Qt/6.12.0/msvc2022_64/lib/cmake`.
+Run from the repository root:
+
+```powershell
+$env:VCVARS_USER_VERSION = '14.44'
+$env:PATH = "$PWD/build/release/vcpkg_installed/x64-windows/debug/bin;$PWD/vcpkg/installed/x64-windows/debug/bin;$PWD/vcpkg/installed/x64-windows/bin;C:/Qt/6.12.0/msvc2022_64/bin;$PWD/build/dependencies/duckdb-v1.5.6;$env:PATH"
+cmd /c scripts\msvc_env.cmd --build --preset win_release --target PhotoStackStoreTest ProjectServiceTest --parallel 4
+ctest --test-dir build/release -N -R '^(PhotoStackStoreTest|ProjectServiceTest)\.'
+ctest --test-dir build/release -j 1 -R '^(PhotoStackStoreTest|ProjectServiceTest)\.' --output-on-failure
+python scripts/check_storage_boundary.py
+git diff --check --ignore-submodules=all
+```
+
+Build and discovery exit codes: 0. Final test exit code: 0.
+Discovered: 22. Passed: 22 (14 stack cases and 8 ProjectService cases). Failed: 0. Skipped: 0.
+Final test duration: 13.82 seconds. Storage boundary check: no findings.
+The first execution passed 20 cases and failed two new test-fixture cases. The fixture now removes
+the dependent index before renaming its table and uses Statement for its expected exception type.
+The final execution above includes both corrected cases. No existing test failed.
+
+**Review and LOC.** The new store has 373 lines. The stack test file has 418 lines.
+The other new C++ files each have at most 55 lines. Code and registration changes total 1151 lines.
+PS1 changed 1272 lines with its original completion record. The existing app test manifest has
+1034 lines; this phase adds only one focused target registration there. It contains no new business
+logic that needs a separate owner. No changed C++ source or header exceeds 1000 lines.
+Public APIs document ownership, transaction scope, synchronous calls, and errors.
+New files were formatted in full. Existing C++ files were formatted only at changed lines.
+The source, test, and documentation terminology searches found no prohibited usage in touched files
+and no prohibited roadmap filename. All changed files use LF.
+
+**Scope and unavailable evidence at PS1 completion.** PS1 left project version 0.12, old-project
+compatibility validation, package diagnostics, and File-deletion integration to PS2A/PS2B.
+Display queries, temporary covers, groups, selection, save tasks, and QML remain in their listed phases.
+No full test suite, Debug build, macOS build, UI check, or performance benchmark ran for PS1.
+There is no unresolved failure in the targeted evidence. Task logs under
+`build/tmp/photo_stacking/` were removed after these results were recorded.
+
+#### PS1 review fixes (2026-11-11)
+
+**Status:** complete. Removed repeated indexing of accumulated change output within PR 1.
+Base implementation: `a5503149`; review-fix source base: `a4cd2689`.
+
+PhotoStackChangeBuilder owns one command's new result and its temporary stack/File ID indices.
+Each index grows with the result and ends with the command. Create, add, remove, ungroup, cover,
+and adjacent-move operations retain their first-use result order and existing transaction scope.
+There is no new stored stack representation or retained connection.
+
+Success: command -> store transaction -> one change builder -> affected writes -> commit -> result.
+Failure: validation or SQL error -> rollback -> discard the local builder -> original diagnostic.
+
+`ManySourceStacksReportEachAffectedStackAndFileOnce` passed with 128 two-member source stacks.
+It checks the exact unique affected stack/File sets after regrouping, duplicate command inputs,
+the appended member order, and the saved result after reopen. All 15 PhotoStackStoreTest cases
+passed, including existing no-op, rollback, cover, order, metadata, and history assertions.
+The PS2A review-fix record below contains the executed commands and combined totals.
+
+Source review confirms that command bookkeeping no longer scans or re-indexes growing prior
+output for each stack. This is expected linear hash-index work over the reported IDs. Per-stack
+SQL validation and repair remain unchanged. No command-throughput benchmark or UI measurement ran.
+PhotoStackStore is 435 lines and its test file is 472 lines. No responsibility split is needed.
+All PS1 exit criteria remain satisfied. PS3 and later phases are unchanged.
+
+### PS2A - Atomic element sync and stack-aware project deletion
+
+**Objective and prerequisites.** Make project File deletion and stack repair one database change.
+Requires PS1. Do not assume the current Sleeve sync already has that transaction.
+
+**Modules and deliverables.** Add ElementStore::ApplyElementChanges and its connection-local removal helper.
+Adapt SleeveServiceImpl::Sync and the existing element-removal APIs.
+Add FileSystem::RestoreAfterFailedSync in sleeve_filesystem.cpp and its defining header.
+Add proposed `PhotoStackLifecycleTest` in `tests/app/` and extend SleeveServiceTest.
+
+**Data rules.** Commit FolderContent, Element, FileImage, and stack repair together.
+Album unlink preserves saved stack membership.
+Mark owner changes synced only after commit. Restore affected owner entries from storage on failure.
+
+**Steps.**
+
+1. Add the focused store operation over the existing additions, modifications, and deletion lists.
+2. Reuse transaction-neutral row helpers on one connection. Do not nest public store transactions.
+3. Call the stack repair helper before completing the affected File removals on that connection.
+4. Replace Sync's separate AddElements/UpdateElements/RemoveElements calls with the atomic operation.
+5. Move flag changes, pending-folder cleanup, and garbage collection after successful commit.
+6. Route standalone full-element removal through the shared removal helper under a transaction.
+7. Preserve the low-level RemoveElement(id) meaning and keep it out of live File deletion call chains.
+8. Inject failure after folder-link writes, after stack repair, and before final commit.
+9. Reload only affected FileSystem entries through the new owner operation after a failed transaction.
+10. Check stored and live-owner membership after each successful operation and failed attempt.
+
+**Success chain.** Service Write/Sync -> ApplyElementChanges -> one transaction -> folder/File/stack writes
+-> commit -> mark owner changes synced -> garbage collection -> existing delete completion.
+**Failure chain.** Any statement failure -> rollback all those rows -> focused FileSystem owner reload
+-> Sync reports failure -> no successful delete notification; explicit retry starts from restored entries.
+
+**Tests and assertions.**
+
+- `DeletingSavedCoverPromotesFirstRemainingMemberInTheSameCommit`: verify no dangling cover.
+- `DeletingDownToOneMemberDissolvesTheSavedStack`: remaining File and album links survive.
+- `AlbumUnlinkKeepsProjectStackMembership`: verify exact stored membership after the unlink.
+- `FailureAfterFolderUnlinkRestoresFolderFileAndStackRows`: fail on the real service sync path.
+- `FailedSyncRestoresFileSystemAndAllowsExplicitRetry`: inspect live File resolution, links, flags, and the later retry result.
+- `StandaloneElementRemovalUsesTheSameStackRepair`: exercise each supported full-element removal entry.
+
+**Build and run.** V2A: PhotoStackLifecycleTest and AlbumBackendImageDeleteTest through CTest.
+Build SleeveServiceTest and ImportServiceTest, then run their direct filters from Section 10.1.
+**Exit criteria.** [x] One connection and transaction cover element changes and stack repair.
+[x] Failed sync preserves the database and restores affected owner entries. [x] Existing import sync still passes.
+**Expected diff.** 1200-1850 lines.
+
+#### PS2A completion record (2026-11-11)
+
+**Status:** complete. Atomic element sync, stack-aware File removal, and failed-sync recovery.
+Branch: `feature/library-photo-stacking`. Implementation base: PS1 commit `a5503149`.
+PS2A is committed as `6261e0a7`; PS2B is committed as `a4cd2689`. No PR was opened.
+
+**Changed modules and selected details.** ElementStore owns one transaction over additions,
+modifications, and deletions. Its existing multi-row insertion and folder-delta helpers remain in use.
+Standalone full-element removal uses the same connection-local removal helper. That helper repairs
+stacks before it removes File bindings. The ID-only Element-row removal primitive keeps its meaning.
+Image/history cleanup remains with its existing caller; this phase does not move that ownership.
+
+SleeveService serializes public Sync with Read and Write through its existing FileSystem mutex.
+Write and DuplicateFileToFolder call SyncLocked while holding that mutex. Sync reports a count and
+collects deleted entries only after the transaction commits. Album unlink changes folder links only.
+
+FileSystem::RestoreAfterFailedSync reads affected entries through ElementStore and restores the
+same live objects under the existing owner lock and storage session. ElementMapper applies its
+existing persisted row fields. Folder membership is then reloaded without incrementing references.
+The operation invalidates path resolution, clears pending folder deltas, discards only uncommitted
+new entries, and never rewinds ID allocation. If the first root insert rolled back, the same empty
+root remains unsynced and usable. No editable owner copy or new consistency identifier was added.
+
+If owner restoration itself fails, the service retains both the original SQL error and restoration
+error and rejects subsequent reads and writes. Reopening the project creates a usable owner from
+committed data. This explicit error state prevents access to a partly restored FileSystem.
+
+**Primary success call chain:**
+
+```text
+DeletePath / DeleteFileEverywhere / DeleteElement / public Sync
+  -> SleeveServiceImpl owner lock -> SyncLocked
+  -> ElementStore::ApplyElementChanges -> one connection, database lock, and transaction
+  -> folder writes -> PhotoStackStore::RemoveFileMemberships -> File and Element removal
+  -> commit -> mark additions/modifications synced and clear pending folder deltas
+  -> FileSystem::GarbageCollect -> successful SyncResult and stored repaired cover/membership
+```
+
+**Primary failure call chain:**
+
+```text
+constraint failure after folder writes or stack repair, before the final Element delete commits
+  -> transaction rollback -> zero successful sync count
+  -> FileSystem::RestoreAfterFailedSync -> restore committed fields and folder membership in place
+  -> failed SyncResult with actual diagnostic -> explicit retry uses restored live objects
+restoration failure
+  -> retain original and restoration diagnostics -> reject service access until project reopen
+```
+
+**Executed evidence.** The new lifecycle cases use real ProjectService, SleeveService, and DuckDB.
+Test-only foreign keys reject real statement boundaries. Exact Element, FolderContent, FileImage,
+PhotoStack, and PhotoStackMember rows are compared across rollback. Recovery cases also assert live
+pointer identity, resolution, sync flags, pending folder changes, and successful explicit retries.
+
+| Required test or additional behavior | Target | Result |
+| --- | --- | --- |
+| `DeletingSavedCoverPromotesFirstRemainingMemberInTheSameCommit` | PhotoStackLifecycleTest | PASS; saved order, cover, deleted rows, and reopen |
+| `DeletingDownToOneMemberDissolvesTheSavedStack` | PhotoStackLifecycleTest | PASS; remaining File and album link retained |
+| `AlbumUnlinkKeepsProjectStackMembership` | PhotoStackLifecycleTest | PASS; exact stack rows and reopen |
+| `FailureAfterFolderUnlinkRestoresFolderFileAndStackRows` | PhotoStackLifecycleTest | PASS; transaction rollback and live folder membership |
+| `FailedSyncRestoresFileSystemAndAllowsExplicitRetry` | PhotoStackLifecycleTest | PASS; failure after stack repair, same live owners, and retry |
+| `StandaloneElementRemovalUsesTheSameStackRepair` | PhotoStackLifecycleTest | PASS; shared-pointer and span entry points |
+| `FailedSyncDiscardsOnlyNewEntriesAndDoesNotReuseTheirIds` | PhotoStackLifecycleTest | PASS; mixed create/delete rollback |
+| `FailedOwnerRestoreReportsBothErrorsAndRequiresProjectReopen` | PhotoStackLifecycleTest | PASS; both diagnostic parts, rejected access, and reopen |
+| `FailedAlbumUnlinkRestoresTheSameFolderAndKeepsTheStack` | PhotoStackLifecycleTest | PASS; same folder, cleared pending changes, and retry |
+| `PublicSyncCommitsPendingFolderChangesAndPreservesIdentity` | SleeveServiceTest | PASS; committed child link, same owners, then zero pending changes |
+| `FailedFirstSyncKeepsRootUsableAndDoesNotReuseDiscardedIds` | SleeveServiceTest | PASS; no committed root/File after failure, same root, and later successful write |
+
+**Commands, discovery, and totals.** PS2A and PS2B share the final build and test run below. It ran
+on their combined working tree before the changes were separated into commits. It used
+the existing supported `win_release` tree with tests enabled and Qt 6.12.0. No new build tree was made.
+All commands ran from the repository root in PowerShell. Build, discovery, and final test exits: 0.
+
+```powershell
+$env:VCVARS_USER_VERSION = '14.44'
+$env:PATH = "C:/Qt/6.12.0/msvc2022_64/bin;$PWD/build/dependencies/duckdb-v1.5.6;$PWD/build/debug/vcpkg_installed/x64-windows/debug/bin;$PWD/vcpkg/installed/x64-windows/debug/bin;$PWD/vcpkg/installed/x64-windows/bin;$env:PATH"
+$env:QT_QPA_PLATFORM = 'offscreen'
+cmd /c scripts\msvc_env.cmd --build --preset win_release --target PhotoStackLifecycleTest PhotoStackStoreTest ProjectCompatibilityTest StorageMaintenanceTest ProjectServiceTest SleeveServiceTest ImportServiceTest AlbumBackendImageDeleteTest --parallel 4
+$testPattern = '^(PhotoStackLifecycleTest|PhotoStackStoreTest|ProjectCompatibilityTest|StorageMaintenanceTest|ProjectServiceTest|AlbumBackendImageDeleteTest)\.'
+ctest --test-dir build/release -N -R $testPattern -E 'ProjectWrittenByCurrentMainOpensAndRendersUnchanged'
+ctest --test-dir build/release -j 1 -R $testPattern -E 'ProjectWrittenByCurrentMainOpensAndRendersUnchanged' --output-on-failure
+& ./build/release/alcedo_studio/tests/app/SleeveServiceTest_runtime/SleeveServiceTest.exe '--gtest_filter=SleeveServiceTests.*:ProjectVersionTests.*'
+& ./build/release/alcedo_studio/tests/app/ImportServiceTest_runtime/ImportServiceTest.exe '--gtest_filter=ImportServiceTests.ImportEmptyTest:ImportServiceTests.ImportWithNonExistentFiles:ImportServiceTests.ImportedElementNameMatchesFileName:ImportServiceTests.ImportToSubfolder_KeepsUnsyncedAndModifiedSetsDisjoint'
+```
+
+| Target | Passed | Failed | Skipped |
+| --- | ---: | ---: | ---: |
+| PhotoStackStoreTest | 14 | 0 | 0 |
+| PhotoStackLifecycleTest, including package cases | 18 | 0 | 0 |
+| ProjectCompatibilityTest | 5 | 0 | 0 |
+| StorageMaintenanceTest | 6 | 0 | 0 |
+| ProjectServiceTest | 8 | 0 | 0 |
+| AlbumBackendImageDeleteTest | 9 | 0 | 3 |
+| SleeveServiceTest, direct filter | 29 | 0 | 0 |
+| ImportServiceTest, direct filter | 4 | 0 | 0 |
+| Total | 93 | 0 | 3 |
+
+CTest discovered 63 selected cases; 60 passed and three skipped in 87.82 seconds.
+The final direct Sleeve run passed 29 cases in 3.684 seconds; the direct Import run passed four in
+0.607 seconds. After strengthening the two-part restoration diagnostic assertions, the lifecycle
+target was rebuilt and that exact CTest case passed again in 0.67 seconds. After adding the first-sync
+root test, SleeveServiceTest was rebuilt and the final 29-case direct run above passed.
+
+**Failures found and resolved.** The first Import run passed two cases and failed two because they
+required the absent private `_DSC1704.NEF`. Reported this dependency in
+[#826](https://github.com/zidage/AlcedoStudio/issues/826). Both tests now assert the presence of the
+tracked real RAW `sample_images/ci_rawfiles/credit @ryanbreitkreutz _DSC0027.ARW` and keep their
+original behavior assertions. All four import cases passed. The initial first-sync failure test
+could not drop Element because of schema dependencies; its corrected test setup rejects the
+FileImage insert instead. The corrected test exercises the same first-sync rollback and passed.
+
+**Checklist and scope.** All PS2A exit criteria are satisfied. The storage boundary check found no
+violations. Review of copied values, includes, ownership, and terminology found no new prohibited
+state copy, unsupported forward declaration, or changed-file terminology usage. The shared LOC
+review is recorded under PS2B. No PS3 or later behavior or production stack UI was implemented.
+
+**Unavailable evidence.** Three existing deletion cases skipped because private RAW samples are
+absent: `DeleteImages_RemovesImageAndRelatedRows`,
+`DeleteTargetsRejectsUnacknowledgedImportAtDirectEntryPoint`, and
+`DeleteImages_BestEffortPartialFailure`. The nine other deletion caller cases passed.
+`ProjectWrittenByCurrentMainOpensAndRendersUnchanged` was explicitly excluded because its GPU
+pixel-hash comparison is unrelated to these persistence changes. No full suite, Debug or macOS
+build, manual UI check, sanitizer, or performance benchmark ran. This phase adds no UI or layout.
+Task evidence under `build/tmp/photo_stack_first_pr/` was removed after recording the final results.
+
+#### PS2A review fixes (2026-11-11)
+
+**Status:** complete. Addressed the PR 1 review findings on folder rebuild cost, failed rename/move
+coverage, and the stale removal comment. The LF-only prerequisite commit is `e7666970`.
+It converts the two mixed-ending SleeveFolder files before their content changes.
+
+**Owner operation and call chains.** SleeveFolder::RestoreContents rebuilds the existing name map
+and ordered child IDs in one pass, with reserved capacity and hash lookups. It resolves stable
+owner-held children under the FileSystem lock, preserves child references and sync flags, clears
+pending membership/filter indices, and rejects invalid children or conflicting names. FileSystem
+uses it after all affected scalar fields have been restored. The existing restoration-error policy
+still prevents service access when owner restoration fails. The Element-row removal comment now
+names SyncLocked, ApplyElementChanges, and the transaction-local RemoveElementRows helper.
+
+Success: Write/Sync -> atomic store commit -> synced flags and garbage collection.
+Failure: SQL error -> rollback -> restore affected scalar fields -> RestoreContents -> failed result;
+explicit retry starts from the restored identities. Restoration error -> retained diagnostics -> reopen.
+
+| Added test | Target | Final result |
+| --- | --- | --- |
+| `RestoresOrderNamesAndFlagsWithoutChangingChildReferences` | SleeveFolderRestoreTest | PASS; order, duplicate IDs, names, references, flags, pending changes, and filters |
+| `EmptyCommittedContentClearsPendingMembershipAndFilterIndices` | SleeveFolderRestoreTest | PASS |
+| `InvalidChildrenAndNameConflictsReportRestorationErrors` | SleeveFolderRestoreTest | PASS; null, wrong ID, deleted child, name conflict, and explicit successful restore |
+| `LargeFoldersResolveEachInputOnceAndKeepExactMembership` | SleeveFolderRestoreTest | PASS; 2000, 8000, and 32000 children, exact names/order/references/flags, one resolution per input |
+| `FailedFolderRenameRestoresNamesPathsAndOwnersBeforeExplicitRetry` | PhotoStackLifecycleTest | PASS; real SQL failure, exact stored rows, same parents/children, old paths, cleared changes, retry, and reopen |
+| `FailedFolderMoveRestoresBothParentsPathsAndOwnersBeforeRetry` | PhotoStackLifecycleTest | PASS; real FK failure, both parent maps, same identities, paths, references, retry, and reopen |
+
+The standalone owner test needs no ProjectService fixture. Rename/move cases use the existing
+six-photo real-project fixture and test-only SQL constraints. Existing lifecycle/package tests
+continue to exercise the production recovery and save paths.
+
+**Executed commands.** Used the existing win_release tree, Qt 6.12.0, MSVC 14.44, and the same
+runtime PATH/QT_QPA_PLATFORM setup as the original PS2A record. All build exits were 0.
+
+```powershell
+cmd /c scripts\msvc_env.cmd --build --preset win_release --target SleeveFolderRestoreTest PhotoStackStoreTest PhotoStackLifecycleTest --parallel 4
+cmd /c scripts\msvc_env.cmd --build --preset win_release --target SleeveFolderRestoreTest PhotoStackStoreTest PhotoStackLifecycleTest SleeveFSTest SleeveServiceTest ImportServiceTest AlbumBackendImageDeleteTest ProjectCompatibilityTest StorageMaintenanceTest ProjectServiceTest --parallel 4
+cmd /c scripts\msvc_env.cmd --build --preset win_release --target PhotoStackLifecycleTest --parallel 4
+$newCases = '^SleeveFolderRestoreTest\.|ManySourceStacksReportEachAffectedStackAndFileOnce|FailedFolderRenameRestoresNamesPathsAndOwnersBeforeExplicitRetry|FailedFolderMoveRestoresBothParentsPathsAndOwnersBeforeRetry'
+ctest --test-dir build/release -j 1 -R $newCases --output-on-failure
+$testPattern = '^(SleeveFolderRestoreTest|SleeveFSTest|PhotoStackStoreTest|PhotoStackLifecycleTest|ProjectCompatibilityTest|StorageMaintenanceTest|ProjectServiceTest|AlbumBackendImageDeleteTest)\.'
+ctest --test-dir build/release -N -R $testPattern -E 'ProjectWrittenByCurrentMainOpensAndRendersUnchanged'
+ctest --test-dir build/release -j 1 -R $testPattern -E 'ProjectWrittenByCurrentMainOpensAndRendersUnchanged' --output-on-failure --output-junit "$PWD/build/tmp/photo_stack_review_fixes/tests-targeted.xml"
+& ./build/release/alcedo_studio/tests/app/SleeveServiceTest_runtime/SleeveServiceTest.exe '--gtest_filter=SleeveServiceTests.*:ProjectVersionTests.*'
+& ./build/release/alcedo_studio/tests/app/ImportServiceTest_runtime/ImportServiceTest.exe '--gtest_filter=ImportServiceTests.ImportEmptyTest:ImportServiceTests.ImportWithNonExistentFiles:ImportServiceTests.ImportedElementNameMatchesFileName:ImportServiceTests.ImportToSubfolder_KeepsUnsyncedAndModifiedSetsDisjoint'
+ctest --test-dir build/release -j 1 -R '^SleeveFSTest\.' --output-on-failure
+```
+
+**Results and fixture corrections.** The first new-case run passed four owner tests and failed
+three reopen steps: the new test code still retained Sleeve/Pipeline services from the old project.
+Releasing those local holders before reopen corrected the fixtures. The final seven-case run
+passed in 7.10 seconds. No production behavior was changed to satisfy those reopen checks.
+
+The broader run discovered 83 cases: 70 passed, ten failed, and three skipped in 95.89 seconds.
+All ten failures were existing SleeveFSTest cases whose shared TEST_DB_PATH parent was absent.
+Reported this clean-checkout dependency in [#827](https://github.com/zidage/AlcedoStudio/issues/827).
+A temporary junction routed that expected resource directory into
+`build/tmp/photo_stack_review_fixes/legacy_fs/`. The unchanged 13-case FileSystem suite then passed
+in 1.69 seconds. The junction was removed immediately. No legacy test source or production path
+was changed. The direct Sleeve filter passed 29 cases in 3.872 seconds; Import passed four in 0.698.
+
+Final distinct results are 80 CTest passes plus 33 direct passes: **113 passed, three skipped,
+zero unresolved failures**. Counts by target: owner 4, FileSystem 13, stack store 15,
+lifecycle/package 20, compatibility 5, maintenance 6, ProjectService 8, deletion caller 9,
+Sleeve 29, and Import 4. The three missing-private-RAW skips and excluded GPU pixel-hash case
+remain the same as in the original record. The existing legacy suite still needs fixture preparation
+until #827 is resolved.
+
+**Measurements and review.** Folder restore took 309, 1684, and 9661 microseconds for 2000, 8000,
+and 32000 children in the executed unit case. These are observations without a timing threshold;
+they exclude database reads and do not establish an application latency target or old/new ratio.
+The source has no repeated full child-ID scan in restoration. No command-throughput, UI, memory,
+sanitizer, Debug/macOS, or full-suite run was made.
+
+Content-change LOC (total / changed): SleeveFolder header 114/10, implementation 319/27,
+FileSystem 703/7, ElementStore 1372/5, PhotoStackStore 435/105, lifecycle tests 290/95,
+store tests 472/55, sleeve test manifest 124/7, and the new owner test 130/130.
+ElementStore's change is documentation only; its existing database-reference ownership is unchanged.
+The new operation remains in the folder owner, and the new builder owns only command output and
+its short-lived indices. No additional owner copy, connection, or consistency mechanism was added.
+Changed-line formatting, LF, whitespace, storage boundaries, and terminology checks passed.
+All PS1/PS2A completion criteria remain satisfied. No PS3 or later behavior was implemented.
+Task logs and fixture files under `build/tmp/photo_stack_review_fixes/` were removed after recording.
+
+### PS2B - Project compatibility, packaging, and diagnostics
+
+**Objective and prerequisites.** Preserve stacks through supported project open, save, and package operations.
+Requires PS1. No maintenance or source-replacement branch is required.
+
+**Modules and deliverables.** Update version constants, Database migration, package comments, and
+StorageMaintenance's diagnostic table list. Extend ProjectCompatibilityTest, StorageMaintenanceTest,
+and the package cases of PhotoStackLifecycleTest. Keep those package cases in
+`tests/app/photo_stack_package_test.cpp`, separate from the File-lifecycle cases.
+Both sources share the focused `tests/support/photo_stack_test_library.hpp` fixture.
+Keep the historical 0.11 version reader in `tests/resources/compat/project_version_reader_011.hpp`
+as a fixed test fixture. It must not become a production alternate read path.
+
+**Data rules.** Old projects gain empty stack tables. Image-edit format identities stay unchanged.
+The existing database-copy owner preserves all stack rows. Diagnostic counts do not prove integrity.
+
+**Steps.**
+
+1. Set the selected metadata version and acceptance range together.
+2. Add idempotent empty-table migration for 0.10.0 and 0.11.0 projects.
+3. Validate stored stack relations at project open. Report invalid stored covers explicitly.
+4. Add PhotoStack and PhotoStackMember to ReadDataSummary without changing its schema.
+5. Use the existing package path and compare exact membership, order, and cover after reopen.
+6. Verify ordinary imports and existing Image metadata writes leave saved stack rows unchanged.
+7. Add old-version rejection fixtures and package-write failure evidence.
+8. Update the existing project-version assertions in sleeve_service_test.cpp for the selected metadata version.
+
+**Success chain.** Open supported project -> migrate/validate -> save metadata -> existing database copy
+-> packed project -> reopen exact stack rows.
+**Failure chain.** Migration or stored-data validation fails -> explicit open failure.
+Package-copy/write failure leaves the working database valid and reports a failed save.
+
+**Tests and assertions.**
+
+- `Version011ProjectGainsEmptyStackTablesAndKeepsRootIds`: verify existing marks, edits, and IDs after save.
+- `PackagedProjectReopensWithExactStackMembershipAndCover`: use the production package path.
+- `DataSummaryIncludesBothStackTablesWithExactRowCounts`: keep existing key conversion semantics.
+- `PackageDatabaseCopyPreservesStackRowsAndFailureKeepsSource`: use StorageMaintenance and its real database copy.
+- `ImportAndMetadataWritesPreserveExistingStackMembership`: call current main services only.
+
+**Build and run.** V2B: PhotoStackLifecycleTest, ProjectCompatibilityTest, StorageMaintenanceTest,
+and ProjectServiceTest through CTest. Run the direct ImportServiceTest and SleeveServiceTest filters too.
+**Exit criteria.** [x] Both supported old versions open. [x] New format has rejection evidence for old readers.
+[x] Package reopen preserves exact stack state. [x] Every required existing target is registered on main.
+**Expected diff.** 750-1250 lines.
+
+#### PS2B completion record (2026-11-11)
+
+**Status:** complete. Supported-version migration, stored-stack validation, package preservation,
+and diagnostic table counts. Branch and audited source base are the same as the PS2A record.
+The prerequisite PS2A commit is `6261e0a7`.
+
+**Changed modules and selected details.** The writer and maximum metadata version are 0.12.0;
+the minimum remains 0.10.0. Packed project, pipeline, image-edit, commit, chain, root, checkpoint,
+WAL record, and adjustment-transfer format identities are unchanged. The WAL documentation now
+states the existing value 7. PS1's idempotent Database table creation also performs the empty-table
+migration; no parallel migration owner was added.
+
+ProjectService validates every persisted stack immediately after Storage opens and before services
+become available. PhotoStackStore::ValidateAll uses one read transaction, an orphan check, canonical
+UUID validation, and one grouped relation query. It checks covers, member count/order, live File
+identity, and exactly one valid image binding. It neither repairs nor discards damaged relations.
+This avoids one query per stack at open. No performance benchmark was run.
+
+StorageMaintenance::ReadDataSummary includes PhotoStack and PhotoStackMember with the existing
+summary schema and key conversion. The existing database-copy and packed-project paths preserve
+the whole database. They need no stack sidecar or second persisted representation.
+
+The fixed historical 0.11 reader fixture comes from the audited upstream revision, independently
+of current version constants. Only tests include it. Package tests use the real copy, pack, unpack,
+and load operations. Their assertion-row copies belong only to tests and are never written back.
+
+**Primary success call chain:**
+
+```text
+ProjectService load -> Storage/Database idempotent table creation
+  -> PhotoStackStore::ValidateAll -> expose existing application services
+  -> SaveProject writes 0.12 metadata and stack table counts
+  -> existing StorageMaintenance database copy -> WritePackedProject
+  -> UnpackProjectToWorkspace -> ProjectService load -> exact cover, member IDs, and saved order
+```
+
+**Primary failure call chain:**
+
+```text
+invalid persisted cover / orphan member / empty stack / malformed stack ID
+  -> project-open validation throws the actual diagnostic -> stored stack rows stay unchanged
+database-copy or package-replacement failure
+  -> existing copy/package owner reports failure -> source stack rows stay unchanged
+  -> later explicit copy or project reopen succeeds after the test obstruction is removed
+```
+
+**Executed evidence:**
+
+| Required test or additional behavior | Target | Result |
+| --- | --- | --- |
+| `Version011ProjectGainsEmptyStackTablesAndKeepsRootIds` | PhotoStackLifecycleTest | PASS; absent tables, marks, roots, 0.12 save, and repeat open |
+| `Version010ProjectGainsLibraryMarksAndKeepsRootIds` | ProjectCompatibilityTest | PASS; existing 0.10 fixture, empty stacks, marks, edits, and root IDs |
+| `Version012MetadataIsRejectedByTheVersion011Reader` | ProjectCompatibilityTest | PASS; historical bounds reject 0.12 and accept 0.10/0.11; other format IDs unchanged |
+| `PackagedProjectReopensWithExactStackMembershipAndCover` | PhotoStackLifecycleTest | PASS; two stacks, order gaps, cover changes, exact rows, roots, and invariants |
+| `DataSummaryIncludesBothStackTablesWithExactRowCounts` | StorageMaintenanceTest | PASS; existing summary schema and numeric key conversion |
+| `PackageDatabaseCopyPreservesStackRowsAndFailureKeepsSource` | PhotoStackLifecycleTest | PASS; real copied database, failed copy, detach cleanup, and later copy |
+| `ImportAndMetadataWritesPreserveExistingStackMembership` | PhotoStackLifecycleTest | PASS; real import with SyncImports, marks, exact stack rows, reopen, and invariants |
+| `PackageWriteFailureReportsErrorAndKeepsWorkingStackRows` | PhotoStackLifecycleTest | PASS; failed destination replacement, diagnostic, source rows, and reopen |
+| Invalid cover, orphan membership, empty stack, malformed saved UUID | PhotoStackLifecycleTest, four named cases | PASS; explicit open failure and exact unchanged stack rows |
+
+**Commands and totals.** The PS2A record contains the exact combined commands, target counts,
+follow-up runs, and environment. All final build and test exits were 0. All required targets exist
+and were built on this branch. The new lifecycle target registers both focused test sources with
+CTest. Sleeve and Import use direct filters because audited main does not discover their cases.
+The combined 93-pass result includes all nine package cases, five compatibility cases, six storage
+maintenance cases, eight ProjectService cases, and the required direct filters.
+
+**Failures found and resolved.** The first combined run passed 58 cases, skipped three, and failed
+two. The package-write test used an empty destination directory that the package owner could
+replace; it now uses a nonempty directory and asserts that its marker remains. The existing
+ProjectService version assertion still expected 0.11; it now checks the selected 0.12 version.
+Both corrected cases passed in the final 60-pass, three-skip CTest run. No unresolved failure
+remains in the executed targeted evidence. The import fixture issue is recorded as #826 under PS2A.
+
+**Ownership, file size, and review of the initial delivery.** PS2A and PS2B together changed about
+1700 lines, including tests and those records. That count is below the limit for either phase.
+The persistence store, FileSystem owner, application orchestration, and package owner retain their
+existing boundaries. New code adds no retained connection, owner mirror, or speculative race state.
+
+| Changed code or registration file | Total lines |
+| --- | ---: |
+| `src/app/project_service.cpp` | 641 |
+| `src/app/sleeve_service.cpp` | 314 |
+| `src/include/app/project_package_backend.hpp` | 148 |
+| `src/include/app/sleeve_service.hpp` | 155 |
+| `src/include/edit/history/pipeline_history_format.hpp` | 90 |
+| `src/include/sleeve/sleeve_filesystem.hpp` | 112 |
+| `src/include/storage/mapper/sleeve/element/element_mapper.hpp` | 69 |
+| `src/include/storage/store/database.hpp` | 338 |
+| `src/include/storage/store/sleeve/element_store.hpp` | 407 |
+| `src/include/storage/store/sleeve/photo_stack_store.hpp` | 59 |
+| `src/sleeve/sleeve_filesystem.cpp` | 706 |
+| `src/storage/mapper/sleeve/element/element_mapper.cpp` | 155 |
+| `src/storage/store/sleeve/element_store.cpp` | 1371 |
+| `src/storage/store/sleeve/photo_stack_store.cpp` | 420 |
+| `src/storage/store/storage_maintenance.cpp` | 231 |
+| `tests/app/CMakeLists.txt` | 1046 |
+| `tests/app/import_service_test.cpp` | 771 |
+| `tests/app/photo_stack_store_test.cpp` | 417 |
+| `tests/app/project_compatibility_test.cpp` | 454 |
+| `tests/app/project_service_test.cpp` | 263 |
+| `tests/app/sleeve_service_test.cpp` | 1155 |
+| `tests/storage/storage_maintenance_test.cpp` | 304 |
+| `tests/app/photo_stack_lifecycle_test.cpp` | 195 |
+| `tests/app/photo_stack_package_test.cpp` | 228 |
+| `tests/resources/compat/project_version_reader_011.hpp` | 61 |
+| `tests/support/photo_stack_test_library.hpp` | 144 |
+
+ElementStore already exceeded 1000 lines (1369 before this change). It owns only a Database
+reference; this phase consolidates existing persistence operations into its focused atomic API.
+Album query helpers remain separate modules, stack invariants remain in PhotoStackStore, and
+restoration of live state remains in FileSystem. Moving these transaction helpers into a second
+method file would not establish a new owner. No new mutable responsibility was added to the store.
+The existing 1155-line SleeveServiceTest keeps its FileSystem behavior fixture; only two focused
+sync cases and version assertions were added. The new lifecycle and package files stay separate
+and share a small six-photo project builder. The 1046-line CMake manifest gains one registration
+and no runtime responsibility. The PS1 fixture cleanup only removes trailing underscores from
+protected members; it changes no assertions or tested behavior.
+
+Public API comments state lock/transaction requirements, ownership, side effects, and errors.
+New files were formatted in full; existing files only at changed lines. Changed files use LF.
+Storage boundary, whitespace, roadmap filename, and touched-file terminology checks passed.
+
+**Checklist and unavailable evidence.** All PS2B exit criteria are satisfied. The PS2A record lists
+the three missing-sample skips and excluded GPU rendering comparison. No full suite, Debug/macOS
+build, manual layout/theme/language check, sanitizer, or resource/performance measurement ran.
+PS3 and later work is unchanged. No production Library stack command or presentation is exposed.
+Task logs under `build/tmp/photo_stack_first_pr/` were removed after results were recorded.
+
+**PR 1 review-fix verification (2026-11-11).** Rebuilt and reran all five selected compatibility
+cases, six maintenance cases, eight ProjectService cases, and nine package cases successfully.
+The PS2A review-fix record contains the exact commands, fixture preparation, and combined results.
+This follow-up changes no version bound, persisted schema, package operation, or PS2B format identity.
+
+### PS3 - Matching fragments and temporary covers
+
+**Objective and prerequisites.** Return correct collapsed stack results for every query and group.
+Requires PS1. Read the existing album SQL comparison and label rules again.
+
+**Modules and deliverables.** Add proposed album_stack_query module.
+Extend the existing album query types and ElementStore read path.
+Add proposed `AlbumStackQueryTest` in `tests/app/` with an independent expected-result evaluator.
+
+**Data rules.** Match each File before grouping. Partition fragments by typed group key and stack ID.
+Temporary covers are read results. A saved stack with one match remains a saved stack.
+
+**Steps.**
+
+1. Add explicit display read mode without changing the default photo read mode.
+2. Derive membership only from the existing SearchMatchSet and group relations.
+3. Compute total, query-match, and fragment counts at their stated levels.
+4. Choose saved or temporary cover before LIMIT/OFFSET.
+5. Apply the current comparator to displayed representatives and unstacked photos.
+6. Return group photo counts and display counts separately in the existing result.
+7. Assert that display reads never write PhotoStack or PhotoStackMember.
+
+**Success chain.** MatchSet -> group occurrences -> fragment partition -> cover -> collapsed display page.
+**Failure chain.** Invalid options or query failure -> exception -> no result publication and no stack write.
+
+**Tests and assertions.**
+
+- `NonCoverMatchShowsStackAndChoosesTemporaryCover`: Tuesday returns B, with two matches and total four.
+- `DifferentMembersCannotSatisfyDifferentAndConditions`: Monday AND Lens B returns no fragment.
+- `OneStackSpanningDaysHasOneFragmentInEachMatchingDay`: assert exact members, counts, and covers.
+- `LabelOccurrencesUseOneSavedStackWithoutDuplicatingPhotoTotals`: bird, flight, and unknown fragments share one saved stack; total stays four.
+- `AlbumScopeCanUseATemporaryCoverWithoutChangingSavedCover`: C/D album displays C; stored cover stays A.
+- `ExplicitSortAndSemanticRelevanceOrderUseTheDisplayedCover`: verify each supported comparator.
+- `UnknownGroupAndFlatModeHaveDifferentFragmentKeys`: preserve typed unknown values.
+- `PhotoModeReturnsEveryMatchingFileRegardlessOfStackCollapse`: preserve old read APIs and statistics.
+- `InvalidStoredCoverReportsErrorInsteadOfChoosingATemporaryCover`: distinguish damaged data from excluded data.
+
+**Build and run.** V3: AlbumStackQueryTest and AlbumQueryTest.
+**Exit criteria.** [x] Section 2.2 table matches exact expected outputs.
+[x] Predicate evaluates once per read. [x] Saved rows stay byte-for-byte unchanged after reads.
+**Expected diff.** 1200-1800 lines.
+#### PS3 completion record (2026-11-11)
+
+**Status:** complete. Display mode is opt-in; the existing photo mode remains the default.
+The fork branch `feature/library-photo-stacking-PR2` starts at PR 1 commit `c6981926`.
+
+**Implementation decisions.** The existing occurrence comparator assigns a raw rank. Each stack
+unit uses the rank of its displayed cover. This shares all sort and relevance rules without a
+second comparator. The new `album_stack_query` module owns the SQL projection, and the existing
+ElementStore operation owns its connection, lock, match table, and transaction. A shared typed
+SQL row definition avoids a second metadata decoder. Participating stacks are validated through
+PhotoStackStore on that same connection. Reads do not repair malformed rows.
+
+The acceptance fixture was corrected to the current semantic-label schema: one label per File
+and model. B has `bird`; C has `flight`. No label schema or assignment behavior changes here.
+The relation remains occurrence-based so later owner support for repeated labels does not require
+a new stacking model. Repeated active-model label assignments cannot be tested against this schema.
+
+**Primary success call chain:**
+
+```text
+AlbumBrowseService::ReadAlbumQuery(display mode)
+  -> ElementStore: connection lock + read transaction + one SearchMatchSet evaluation
+  -> existing photo counts/groups/statistics
+  -> album_stack_query: validated fragments + cover rank + bounded display metadata
+  -> typed display identities, counts, saved and temporary covers
+```
+
+**Primary failure call chain:**
+
+```text
+Invalid read bounds or damaged participating saved cover
+  -> validation exception + transaction rollback + match-table cleanup
+  -> no successful result and no stack or Image write
+```
+
+**Executed evidence:** `AlbumStackQueryTest` passes all 10 cases, including every named PS3
+criterion plus `PredicateRunsOnceAndReadsKeepStoredOrganizationAndMetadataUnchanged`.
+The latter compares persisted organization and Image JSON, counts actual sequence evaluations,
+and checks stable representative identity across filters. `AlbumQueryTest` passes 34 regular
+cases; its opt-in 10,000-photo measurement also passes. `PhotoStackStoreTest` passes 15 cases.
+
+Commands (PowerShell from repository root; MSVC 14.44, Qt 6.12, existing `build/release`):
+
+```powershell
+cmd /c scripts\msvc_env.cmd --build --preset win_release --target AlbumStackQueryTest AlbumQueryTest PhotoStackStoreTest --parallel 4
+ctest --test-dir build/release -R '^(AlbumStackQueryTest\.|AlbumQueryTest\.|PhotoStackStoreTest\.)' --output-on-failure
+$env:ALCEDO_ALBUM_QUERY_PROFILE='10000'
+& build/release/alcedo_studio/tests/app/AlbumQueryTest_runtime/AlbumQueryTest.exe --gtest_filter=AlbumQueryTest.LargeLibraryPagesStayBoundedAndRecordTimings
+```
+
+The regular run has 59 passes and one opt-in skip. The direct measurement adds that skipped
+case: 60 distinct cases pass. Test runtime PATH includes the vcpkg binary directories.
+The first fixture run rejected an invalid second label assignment; it was corrected before
+acceptance. No production failure was suppressed.
+
+**Raw-photo timing reference:** the existing, unchanged photo-mode statements were measured on
+10,000 unstacked synthetic photos, with one first read and 10 warm reads. This records an equivalent
+raw-photo reference after the new opt-in mode was added, rather than claiming a checkout of the
+parent commit. PS9 must use the same fixture and configuration for its display-mode comparison.
+
+| Operation | First ms | Warm median ms | Warm p95 ms |
+| --- | ---: | ---: | ---: |
+| Camera-group initial page + statistics | 39.902 | 28.676 | 37.192 |
+| Camera-group deep page | 21.375 | 18.733 | 22.338 |
+| Camera-group position | 12.190 | 11.262 | 14.910 |
+| Label-group initial page + statistics | 50.056 | 41.015 | 47.088 |
+| Label-group deep page | 32.074 | 24.873 | 30.406 |
+| Edit-day initial page + statistics | 48.652 | 40.381 | 56.709 |
+| Edit-day deep page | 23.841 | 20.650 | 32.166 |
+
+**Review and size:** new projection 177 lines, shared SQL row definition 56, query tests 234,
+fixture 134. ElementStore is 1347 lines (down from 1372): new fragment logic lives in a module
+with an explicit stateless API; ElementStore retains transaction and match-table ownership.
+The 1054-line app CMake file remains target registration only. The plan's length reflects its
+product specification and retained completion history. Changed files use LF; changed C++ lines
+and new files were formatted. The roadmap-wide terminology scan found pre-existing matches in
+unrelated files; the touched plan and new code contain no prohibited wording.
+
+**Completion criteria:** all checked. Full-suite, macOS, and GUI execution were not run.
+GUI publication and screenshot evidence require PS5A through PS8; this phase changes no QML.
+
+
+### PS4 - Expanded display pages and position reads
+
+**Objective and prerequisites.** Page and navigate stack display items without loading a whole stack.
+Requires PS3. Keep raw photo, display occurrence, and visual row positions distinct.
+
+**Modules and deliverables.** Extend album_stack_query and AlbumBrowseService with display positions,
+display range IDs, and matching-fragment IDs. Add proposed `AlbumStackPagingTest` in `tests/app/`.
+
+**Data rules.** Expansion changes display counts only.
+Display ID ranges select represented photos; Ctrl+A continues to use the raw matching query.
+
+**Steps.**
+
+1. Add minimal immutable expansion input to the existing worker request representation.
+2. Derive the expanded display stream with the representative first and other members in saved order.
+3. Apply display page bounds after that derivation.
+4. Use the same display stream for positions and display-range selection IDs.
+5. Return a hidden-by-collapse location for a matching member that needs reveal.
+6. Read exact fragment IDs without trusting a page's loaded members.
+7. Keep the existing 1000-row page limit and typed result checks.
+
+**Success chain.** Accepted query/expansion input -> display rank -> page or position -> bounded result.
+**Failure chain.** Invalid range or failed statement -> explicit error; retain accepted display pages.
+
+**Tests and assertions.**
+
+- `StackCrossingPageBoundariesKeepsOneRepresentativeAndExactMemberOrder`: concatenate pages and compare all IDs.
+- `LargeCollapsedStackLoadsOnlyItsRepresentativeMetadata`: a 10,000-member stack returns one photo row.
+- `DisplayPositionAndDisplayRangeIdsAgreeWithPagedRows`: verify first, middle, and last positions.
+- `MatchingMemberRevealLocatesItsCollapsedFragment`: distinguish hidden member from non-matching member.
+- `ExpandOneDayFragmentDoesNotExpandOtherDays`: counts and other fragment state remain unchanged.
+- `FragmentSelectionIncludesUnloadedMatchesAndExcludesOtherGroups`: verify independent SQL ID reads.
+- `RawSelectionAndStatisticsDoNotDependOnExpansion`: compare collapse, expand, and partial expansion.
+
+**Build and run.** V4: AlbumStackPagingTest, AlbumStackQueryTest, and AlbumQueryTest.
+**Exit criteria.** [x] All pages concatenate without omission or duplication.
+[x] No expansion requires all member metadata. [x] All three position spaces have explicit names.
+**Expected diff.** 1100-1750 lines.
+#### PS4 completion record (2026-11-11)
+
+**Status:** complete. Expanded display pages and read-only navigation are available through
+AlbumBrowseService. Production UI callers still use photo mode until PS5A.
+
+**Implementation decisions.** `AlbumQueryRead::expanded_fragments` carries only the current
+scope's immutable fragment keys inside the existing `LibraryQueryInput::read_`. The request
+owns these values until completion. No member list, photo metadata copy, cache, generation,
+or second worker was added. Duplicate keys do not duplicate rows. Valid absent keys match no
+fragment. Invalid scope, grouping, typed key, page mode, or range reports an explicit error.
+
+The shared SQL projection emits the representative first, then other matching members in saved
+order. All members retain the representative's unit rank. Page bounds apply after expansion.
+The display-position and display-range APIs use that same definition. The exact fragment-ID
+read is named `ReadAlbumMatchingFragmentIds` to match the existing album-read API names and
+state that its scope is one fragment. It reads every matching ID independently of loaded pages.
+
+Raw positions remain `AlbumFilePosition::occurrence_index_`. Display positions use the new
+`AlbumDisplayPosition::display_index`. Existing `AlbumSectionModel` logical/model rows remain
+a layout concern. PS5A will map display positions into that layout; this phase does not change
+its raw-photo interpretation. A hidden matching member returns its representative identity
+with `hidden_by_collapse`. A filtered-out File returns no position.
+
+**Primary success call chain:**
+
+```text
+Captured query + exact fragment expansion keys
+  -> AlbumBrowseService: compile the complete predicate
+  -> ElementStore::WithAlbumMatchSet: one connection, lock, transaction, and predicate evaluation
+  -> album_stack_query shared display projection
+  -> bounded metadata page / display position / unique display-range IDs / matching fragment IDs
+```
+
+**Primary failure call chain:**
+
+```text
+Invalid bounds/key, damaged cover, or SQL preparation failure after match-table creation
+  -> explicit exception + match-table cleanup + transaction rollback + connection release
+  -> no partial result or saved-row changes; a later valid read succeeds
+```
+
+**Executed evidence:** all 11 `AlbumStackPagingTest` cases pass. The seven required names above
+are unchanged. Four additional cases verify duplicate/absent/unknown and invalid typed keys,
+semantic kept-set and calling-worker behavior, damaged-cover recovery, and SQL-failure cleanup.
+`DisplayPositionAndDisplayRangeIdsAgreeWithPagedRows` checks every grouping field, including
+import and edit days, using a typed preferred group for each row. The exact page-crossing case
+uses a saved cover in the middle of saved order and compares the independently authored sequence.
+
+The 10,000-member integration case uses the real project, stack service, synthetic File builder,
+and folder owner. A collapsed page returns exactly one metadata row. An expanded page at display
+offset 9000 returns exactly the last 1000 members. Neither read requests all raw IDs or any source
+decode. A limit of 1001 is rejected. Full matching IDs are read only by their explicit ID API.
+
+Commands (same release toolchain and runtime PATH as PS3):
+
+```powershell
+cmd /c scripts\msvc_env.cmd --build --preset win_release --target AlbumStackPagingTest AlbumStackQueryTest AlbumQueryTest AlbumBackendLibraryQueryTest --parallel 4
+ctest --test-dir build/release -R '^(AlbumStackPagingTest\.|AlbumStackQueryTest\.|AlbumQueryTest\.|AlbumBackendLibraryQueryTest\.)' --output-on-failure
+cmd /c scripts\msvc_env.cmd --build --preset win_release --target AlbumStackPagingTest --parallel 4
+& build/release/alcedo_studio/tests/app/AlbumStackPagingTest_runtime/AlbumStackPagingTest.exe
+ctest --test-dir build/release -R '^AlbumStackPagingTest\.' --output-on-failure
+```
+
+The combined run passed 31 C++ library-owner cases, 10 stack-query cases, 34 regular album-query
+cases, and 10 paging cases. Its added SQL-failure case stopped in setup: DuckDB rejects renaming
+the indexed membership table. The corrected fixture renames the unindexed stack header, reaches
+the intended SQL-read failures, restores the relation, and compares all saved rows. Both the
+direct 11-case run and the final 11-case CTest run pass. Thus 86 regular distinct cases pass across
+the accepted runs. The album-query opt-in measurement is skipped by normal CTest and passed
+separately in PS3. No implementation failure was hidden and no assertion was weakened.
+
+**Measured large-stack reads:** first sample followed by 10 warm samples in the direct 11-case
+run. These measure one 10,000-member stack, without statistics. They are not a comparison against
+the different unstacked fixture in PS3. No-stack and many-small-stack comparisons remain PS9 work.
+
+| Operation | First ms | Warm median ms | Warm p95 ms |
+| --- | ---: | ---: | ---: |
+| Collapsed metadata page | 55.559 | 51.411 | 59.019 |
+| Expanded metadata page at 9000 | 56.137 | 56.784 | 68.837 |
+| Collapsed member reveal | 34.137 | 35.019 | 45.998 |
+| Complete matching fragment IDs | 35.813 | 36.277 | 43.190 |
+
+**Review and size:** the display SQL module is 335 lines and its header is 50. The new paging
+suite is 407 lines. AlbumBrowseService remains a 589-line routing facade with a 215-line header.
+ElementStore is 1412 lines with a 469-line header. It retains the database reference, transaction,
+and predicate-table lifetime; new display rules stay in the focused SQL module. The common
+transaction helper removes repeated operation setup rather than creating a new state owner.
+The existing 497-line library header changes only its request documentation. The 1062-line app
+CMake file still only registers targets. Each phase remains below 2000 changed lines.
+
+| File | Total lines | Added / removed |
+| --- | ---: | ---: |
+| `alcedo_studio/src/app/album_browse_service.cpp` | 589 | 36 / 0 |
+| `alcedo_studio/src/include/app/album_browse_service.hpp` | 215 | 33 / 1 |
+| `alcedo_studio/src/include/storage/store/sleeve/album_stack_query.hpp` | 50 | 29 / 0 |
+| `alcedo_studio/src/include/storage/store/sleeve/element_store.hpp` | 469 | 44 / 2 |
+| `alcedo_studio/src/include/ui/alcedo_main/album_backend/library_module.hpp` | 497 | 2 / 0 |
+| `alcedo_studio/src/storage/store/sleeve/album_stack_query.cpp` | 335 | 172 / 14 |
+| `alcedo_studio/src/storage/store/sleeve/element_store.cpp` | 1412 | 84 / 19 |
+| `alcedo_studio/tests/app/CMakeLists.txt` | 1062 | 8 / 0 |
+| `alcedo_studio/tests/app/album_stack_paging_test.cpp` | 407 | 407 / 0 |
+
+New and changed APIs document ownership, bounds, result meaning, worker use, and failures.
+Changed C++ lines and the new test file are formatted. LF, terminology, data-copy, and defining
+include checks pass for touched files. The full first-party and roadmap scans retain unrelated
+existing matches; ordinary `aggregate`, `delegate`, and `investigate` are not the prohibited term.
+No new forward declarations or independent owner-state copies were added.
+
+**Completion criteria:** all checked. Full-suite, macOS, and GUI/screenshot checks were not run.
+The C++ owner suite exercises real worker and publication behavior without synthetic QML input.
+No stack command or stack presentation is exposed in production UI before PS7/PS8. PS5A is next
+in the approved dependency chain; no later phase was started.
+
+
+### PS5A - Presentation owner and complete query publication
+
+**Objective and prerequisites.** Publish stack display results through one C++ presentation owner.
+Requires PS4. This sub-phase separates presentation work from command and package-save work.
+
+**Modules and deliverables.** Add LibraryDisplayModel and its ApplicationModuleHost registration.
+Adapt LibraryModule publication and AlbumSectionModel geometry.
+Add proposed `LibraryDisplayModelTest` through the existing UI test manifest.
+
+**Data rules.** Display model owns display pages; thumbnail model owns photo values.
+Section model reads display pages rather than copying them.
+Expansion choices are session data. Query output never replaces newer expansion choices.
+
+**Steps.**
+
+1. Install counts, metadata, display pages, and section descriptors before publishing notifications.
+2. Transfer each result component into its existing or new owner exactly once.
+3. Replace the section model's separate page cache with scoped display-owner reads.
+4. Use display counts for geometry and matching photo counts for captions.
+5. Preserve representative identity when its temporary cover changes.
+6. Preserve expansion choices while a filter temporarily hides their fragment.
+7. Reuse the existing query worker's replacement behavior and error publication.
+
+**Success chain.** Worker result -> GUI installation in each owner -> complete accepted state -> notifications.
+**Failure chain.** Query error -> retain accepted owners -> current query error and Retry.
+An expansion choice made after submission remains the live choice for its requested refresh.
+
+**Tests and assertions.**
+
+- `PublicationObserversSeeOneCompletePhotoAndDisplayResult`: inspect every relevant notification.
+- `TemporaryCoverChangeKeepsFragmentIdentityWithoutSelectingTheNewCover`: identity survives; selection stays File-based.
+- `ClearingFilterRestoresSavedCoverAndPreviousExpansion`: test flat and multi-group states.
+- `SectionGeometryReadsDisplayCountsButReportsMatchingPhotoCounts`: verify row count and caption separately.
+- `DisplayPagesHaveOneOwnerAndReleaseHiddenThumbnailPins`: verify loaded counts and owner notifications.
+
+**Build and run.** V5A: LibraryDisplayModelTest, AlbumSectionModelTest, and AlbumBackendLibraryQueryTest.
+**Exit criteria.** [x] One owner per state category. [x] QAbstractItemModelTester accepts every transition.
+[x] GUI publication performs no SQL. [x] No duplicate display-page cache remains.
+**Implementation split (2026-11-11).** Source audit at PR2 `4f3f0b8f` found a 770-line section
+model with its own page map and a 1788-line library facade with separate publication paths.
+The estimate has a material risk of exceeding 2000 changed lines. Keep PS5A as the PR3 scope,
+with these independently tested internal steps. Neither step starts PS5B or a later phase.
+
+| Step | Exact scope | Expected changed lines | Completion |
+| --- | --- | ---: | --- |
+| PS5A.1 | Minimal display-item representation, LibraryDisplayModel page/expansion owner, section-model scoped reads and geometry, model tests | 1200-1850 | complete |
+| PS5A.2 | LibraryModule worker/publication, photo-value owner, host registration, notification/worker/failure tests | 1200-1900 | complete |
+
+PS5A.1 moves the existing section page storage into LibraryDisplayModel. Keep legacy photo-ID
+operation inputs as transient algorithm outputs, never as a second stored page cache. Tests
+use QAbstractItemModelTester and verify geometry, retention, stable keys, and expansion lifetime.
+PS5A.2 installs all components before completion notifications. Remove the duplicate legacy
+photo-value cache through its current callers, and retain the existing raw-photo behavior.
+Capture expansion choices in the existing worker input. Use the existing replacement policy.
+Keep stack presentation available through C++ tests only until the complete layouts are installed.
+Run all V5A targets before PS5A is complete. Preserve the five named assertions above.
+
+#### PS5A.1 completion record (2026-11-11)
+
+**Status:** complete for page ownership and geometry. PS5A remains partial until PS5A.2.
+The fork branch `feature/library-photo-stacking-PR3` starts at PR2 `4f3f0b8f`.
+
+The new `AlbumDisplayItem` holds only stable identity, actual File ID, counts, and stack flags.
+`AlbumDisplayRow` adds its photo values for a bounded query response. The GUI display model keeps
+only the item. Photo roles read AlbumThumbnailModel through a scoped const API. Photo updates
+notify every loaded display occurrence. The model owns page ranges and session expansion choices.
+AlbumSectionModel holds geometry and matching-photo captions; it owns no page map. Standalone
+section tests construct a display owner, while the application can inject its shared owner.
+Existing photo-ID page inputs remain transient operation inputs and algorithm outputs.
+
+**Success chain:** typed query item -> LibraryDisplayModel page -> scoped section read -> display
+geometry with the separate matching-photo caption. No SQL runs in the display or section model.
+**Failure chain:** invalid page range -> validation before mutation -> prior count and pages remain.
+Session reset releases pages and expansion; replacing a result preserves absent expansion keys.
+
+**Executed evidence:** five LibraryDisplayModelTest cases pass, including
+`SectionGeometryReadsDisplayCountsButReportsMatchingPhotoCounts`, live photo-role forwarding,
+sole page ownership/retention, expansion lifetime, and invalid-range retention.
+QAbstractItemModelTester accepts the display and section transitions. All 12 AlbumSectionModelTest
+cases and all 31 AlbumBackendLibraryQueryTest cases pass: **48/48**, no skip or failure.
+
+```powershell
+cmd /c scripts\msvc_env.cmd --build --preset win_release --target LibraryDisplayModelTest AlbumSectionModelTest AlbumBackendLibraryQueryTest --parallel 4
+ctest --test-dir build/release -R '^(LibraryDisplayModelTest\.|AlbumSectionModelTest\.|AlbumBackendLibraryQueryTest\.)' --output-on-failure
+```
+
+This uses the same MSVC 14.44, Qt 6.12, release preset, and vcpkg runtime PATH as PR2.
+New files are formatted; touched existing C++ uses changed-line formatting and LF.
+The new display implementation is 249 lines, its header 89, and its focused tests 152.
+The section implementation shrinks after its page storage moves. This internal step stays below
+2000 changed lines. No command, package-save, selection policy, or QML work was added.
+
+**PS5A remaining:** integrate complete worker publication, shared host registration, eliminate the
+legacy duplicate photo values, and execute the remaining named publication/pin/failure assertions.
+Full-suite, macOS, and manual GUI checks were not run.
+
+
+#### PS5A.2 completion record (2026-11-11)
+
+**Status:** complete. PS5A.1 and PS5A.2 complete the PS5A scope on
+`feature/library-photo-stacking-PR3`, based on PR2 `4f3f0b8f`.
+No stack command, save policy, selection policy, or QML layout was added.
+
+**Owner and publication changes.** LibraryDisplayModel owns display pages and session expansion.
+AlbumThumbnailModel owns each loaded photo value. AlbumSectionModel owns group descriptors,
+collapse choices, and geometry. Its scoped reads use the display owner. LibraryModule installs
+counts, statistics, photo values, display pages, and group geometry before completion notifications.
+ApplicationModuleHost exposes the library-owned model as `libraryDisplayModel`.
+Project close clears all presentation owners and expansion choices through LibraryModule.
+
+The duplicate `AlbumViewState::all_images_` cache and unused catalog insertion API were removed.
+ImageController and ThumbnailManager use focused photo-owner operations. Retained photo values
+and thumbnail state move through the owner. Eviction releases only the pins of unloaded photos.
+No duplicate display-page or photo-value cache remains.
+
+**Design details selected.** In-place relocation needs the complete ordered identity stream.
+The existing ID-only read now supports minimal display items from the same SQL projection.
+These items contain no photo metadata or member list. The GUI consumes retained ranges and releases
+the remaining stream. Metadata reads stay bounded. Photo-mode results become ordinary display items
+at the worker boundary; the service default and existing photo navigation remain unchanged.
+
+The existing worker request captures minimal expansion keys. An accepted result does not write
+those keys back over live choices. The worker's existing request replacement handles newer choices.
+The C++ composition setting `SetStackDisplayEnabled` permits owner tests; production keeps photo
+mode until all Library layouts support stacks. It is not a QML command.
+
+**Primary success chain:**
+
+```text
+Filter, grouping, content refresh, or C++ expansion choice
+  -> LibraryModule captures its typed read on the GUI thread
+  -> SearchRequestWorker -> AlbumBrowseService -> SQL read transactions
+  -> minimal display items and bounded photo values return to the GUI
+  -> install each component in its owner -> publish completion notifications
+  -> sections read display geometry and retain matching-photo captions
+```
+
+**Primary failure chain:**
+
+```text
+Invalid saved cover or SQL failure -> worker returns the actual query error
+  -> accepted photo values, display identities, and section state remain
+  -> QueryError and Retry -> successful read installs one complete result
+```
+
+Malformed retained-photo order is rejected before thumbnail state moves. An absent fragment keeps
+its expansion choice. A choice made while a query runs survives that older request's completion.
+No new generation, cancellation protocol, backend, or substitute query path was added.
+
+**Observed regression and fix.** The additional in-place notification test initially found section
+counts of 5 versus 6 display items, and 6 versus 7 matching photos, at a photo-count notification.
+The photo owner's synchronous publication callback now installs the other accepted owners before
+its property completion signals. The same regression passes after the fix.
+The first build also caught a test-access namespace typo; the corrected test source builds.
+
+**Executed acceptance evidence:**
+
+| Acceptance criterion | Executed assertion | Result |
+| --- | --- | --- |
+| Complete accepted publication and no GUI SQL | `PublicationObserversSeeOneCompletePhotoAndDisplayResult` checks model/property/statistics notifications and the service's query-thread observer. | PASS |
+| In-place count and geometry publication | `InPlaceCompletionNotificationsExposeTheNewCountsAndSectionGeometryTogether` adds a new day and checks completion observers. | PASS |
+| Stable temporary-cover identity and File selection | `TemporaryCoverChangeKeepsFragmentIdentityWithoutSelectingTheNewCover` keeps the original File selected. | PASS |
+| Filter clearing and multi-group expansion | `ClearingFilterRestoresSavedCoverAndPreviousExpansion` covers flat and date groups, including an absent fragment. | PASS |
+| Display geometry versus matching-photo caption | `SectionGeometryReadsDisplayCountsButReportsMatchingPhotoCounts` checks row geometry, collapse, and caption values separately. | PASS |
+| One display-page owner and hidden-pin release | `DisplayPagesHaveOneOwnerAndReleaseHiddenThumbnailPins` checks owners, loaded values, and pins after collapse. | PASS |
+| Bounded page ownership and eviction | `DisplayPageEvictionReleasesOnlyTheUnloadedPhotoPins` uses 3503 display items and retains at most three pages and 3000 photo values. | PASS |
+| Failure retention and Retry | `QueryFailureRetainsAcceptedOwnersAndRetryPublishesTheValidResult` uses a real invalid saved cover. | PASS |
+| Worker replacement preserves a later choice | `ExpansionChangedAfterSubmissionSurvivesTheOlderWorkerResult` pauses the real query worker while the GUI submits a new choice. | PASS |
+| Minimal relocation data and stable representative | `RelocationReadsReturnOnlyMinimalItemsAndPreserveRepresentativeIdentity` reads the whole minimal stream but only one metadata row. | PASS |
+| Reject invalid retained values before mutation | `InvalidRetainedPhotoOrderDoesNotMoveTheAcceptedThumbnailState` verifies the accepted thumbnail URL remains. | PASS |
+
+QAbstractItemModelTester checks all three owners across the integration fixture's filter, grouping,
+cover, in-place, failure/retry, expansion, paging, and eviction transitions. Core geometry tests also
+check model transitions. The host property points to the same library-owned display model.
+The direct caller suites preserve raw-photo paging, in-place import/delete, marks, ratings, editor
+list reads, project close/reopen, and host lifetime behavior.
+
+**Build and test commands:**
+
+```powershell
+$env:VCVARS_USER_VERSION = '14.44'
+$env:PATH = "C:/Qt/6.12.0/msvc2022_64/bin;$PWD/build/dependencies/duckdb-v1.5.6;$PWD/vcpkg/installed/x64-windows/debug/bin;$PWD/vcpkg/installed/x64-windows/bin;$env:PATH"
+cmd /c scripts\msvc_env.cmd --build --preset win_release --target LibraryDisplayModelTest AlbumSectionModelTest AlbumBackendLibraryQueryTest AlbumStackQueryTest AlbumStackPagingTest AlbumQueryTest AlbumBackendLibraryMarksTest AlbumBackendThumbnailTest AlbumBackendRatingTest ProjectModuleTest ApplicationModuleHostLifecycleTest EditorRhiPresentationTest --parallel 4
+cmd /c scripts\msvc_env.cmd --build --preset win_release --target LibraryDisplayModelTest --parallel 4
+$env:PATH = "$PWD/build/release/vcpkg_installed/x64-windows/debug/bin;$PWD/vcpkg/installed/x64-windows/bin;$env:PATH"
+ctest --test-dir build/release -R '^LibraryDisplayModelTest\.' --output-on-failure
+ctest --test-dir build/release -R '^(LibraryDisplayModelTest|AlbumSectionModelTest|AlbumBackendLibraryQueryTest|AlbumStackQueryTest|AlbumStackPagingTest|AlbumQueryTest|AlbumBackendLibraryMarksTest|AlbumBackendThumbnailTest|AlbumBackendRatingTest|ProjectModuleTest|ApplicationModuleHostLifecycleTest|EditorRhiPresentationTest)\.' --output-on-failure
+```
+
+The final builds and test runs exit 0. The narrow display run passes 15/15. The final run discovers
+153 cases: **148 passed, five skipped, no failures**. Do not add the earlier 48 passes again.
+
+| Target | Passed | Skipped |
+| --- | ---: | ---: |
+| LibraryDisplayModelTest | 15 | 0 |
+| AlbumSectionModelTest | 12 | 0 |
+| AlbumBackendLibraryQueryTest | 31 | 0 |
+| AlbumStackQueryTest | 10 | 0 |
+| AlbumStackPagingTest | 12 | 0 |
+| AlbumQueryTest | 34 | 1 |
+| AlbumBackendLibraryMarksTest | 6 | 0 |
+| AlbumBackendThumbnailTest | 2 | 4 |
+| AlbumBackendRatingTest | 10 | 0 |
+| ProjectModuleTest | 4 | 0 |
+| ApplicationModuleHostLifecycleTest | 2 | 0 |
+| EditorRhiPresentationTest | 10 | 0 |
+
+One thumbnail case needs Metal. Three need RAW fixtures absent from the configured fixture path:
+`MissingSourceThumbnailStopsLoadingAndSetsMissingFlag`, `VisibleThumbnailRerequestsWhenMaxEdgeChanges`,
+and `ReleasingOneTierKeepsTheOtherConsumersPinnedTier`. The large-library timing case needs explicit
+opt-in. These five cases were skipped, not passed. The new owner pin/eviction assertions passed.
+The full suite, macOS, sanitizer builds, manual GUI checks, and screenshots were not run.
+WorkspaceShell and other synthetic QML input suites were not run under the repository's test rule.
+Their cache assignments and catalog stub were updated mechanically for the removed API.
+
+**Maintainability review.** The new production display owner is 293 lines; its header is 96.
+Focused owner tests are separate from the 395-line real-host publication tests.
+LibraryModule remains the existing query/worker/publication coordinator. Its pages and expansion
+live in LibraryDisplayModel; photo values live in AlbumThumbnailModel; group geometry lives in
+AlbumSectionModel; pins and request lifetimes live in ThumbnailManager. No new mutable state is
+shared across these owners. Worker messages hold minimal independent request values.
+
+LibraryModule remains above 1000 lines but shrinks from its PR2 size. A further split would need
+an independent query-request owner with its worker and accepted input; moving methods alone would
+not create that boundary. No such additional refactor is needed for this scoped publication change.
+ImageController only loses duplicate-cache writes. ElementStore adds read-mode validation.
+The large UI test manifest and WorkspaceShell fixture have registration or mechanical edits only.
+These files keep their current responsibilities. No new forward declaration was added.
+
+Required terminology cleanup renamed the touched RHI presentation target and its test consistently.
+Its ten assertions pass. This changes names, not RHI behavior. Touched fixture helpers and comments
+use operation names. Source, test, document, and roadmap terminology searches were reviewed.
+All touched files use LF. New code and changed C++ lines are formatted. The final edits after the
+regression run change documentation, formatting, explicit includes, and fixture helper names only.
+
+**Changed-file LOC review for PS5A.2:** paths below are relative to `alcedo_studio/`.
+The source/test step changes 1499 lines, excluding this completion record. PS5A.1 changed 831 lines.
+Each internal step remains below 2000 changed lines with its plan write-back.
+
+| File | Total lines | Added / removed |
+| --- | ---: | ---: |
+| `src/include/storage/store/sleeve/element_store.hpp` | 481 | 4 / 0 |
+| `src/include/ui/alcedo_main/album_backend/album_catalog.hpp` | 42 | 0 / 5 |
+| `src/include/ui/alcedo_main/album_backend/album_section_model.hpp` | 256 | 4 / 0 |
+| `src/include/ui/alcedo_main/album_backend/album_thumbnail_model.hpp` | 184 | 27 / 5 |
+| `src/include/ui/alcedo_main/album_backend/album_types.hpp` | 86 | 1 / 2 |
+| `src/include/ui/alcedo_main/album_backend/application_module_host.hpp` | 279 | 4 / 0 |
+| `src/include/ui/alcedo_main/album_backend/library_display_model.hpp` | 96 | 8 / 1 |
+| `src/include/ui/alcedo_main/album_backend/library_module.hpp` | 499 | 28 / 26 |
+| `src/include/ui/alcedo_main/album_backend/thumbnail_manager.hpp` | 93 | 3 / 0 |
+| `src/storage/store/sleeve/album_stack_query.cpp` | 360 | 53 / 29 |
+| `src/storage/store/sleeve/element_store.cpp` | 1415 | 3 / 0 |
+| `src/ui/alcedo_main/album_backend/album_section_model.cpp` | 710 | 6 / 1 |
+| `src/ui/alcedo_main/album_backend/album_thumbnail_model.cpp` | 542 | 78 / 15 |
+| `src/ui/alcedo_main/album_backend/application_module_host.cpp` | 841 | 1 / 4 |
+| `src/ui/alcedo_main/album_backend/image_controller.cpp` | 2328 | 4 / 40 |
+| `src/ui/alcedo_main/album_backend/library_display_model.cpp` | 293 | 49 / 5 |
+| `src/ui/alcedo_main/album_backend/library_module.cpp` | 1743 | 262 / 307 |
+| `src/ui/alcedo_main/album_backend/thumbnail_manager.cpp` | 629 | 15 / 9 |
+| `src/ui/editor_rhi/CMakeLists.txt` | 235 | 8 / 8 |
+| `tests/app/album_stack_paging_test.cpp` | 429 | 22 / 0 |
+| `tests/ui/CMakeLists.txt` | 3137 | 8 / 7 |
+| `tests/ui/editor_rhi_presentation_test.cpp` | 155 | 2 / 2 |
+| `tests/ui/editor_versions_panel_qml_test.cpp` | 842 | 3 / 6 |
+| `tests/ui/library_display_model_test.cpp` | 164 | 12 / 0 |
+| `tests/ui/library_display_publication_test.cpp` | 395 | 395 / 0 |
+| `tests/ui/project_module_close_test.cpp` | 139 | 1 / 1 |
+| `tests/ui/ui_fuzz_automation_test.cpp` | 523 | 2 / 3 |
+| `tests/ui/workspace_shell_test.cpp` | 2890 | 10 / 10 |
+
+**Completion criteria:** all PS5A items are complete. No persisted schema or stack organization
+changed. PS5B through PS9 remain unstarted. No unresolved observed test failure remains.
+Temporary logs and review captures under `build/tmp/photo_stack_pr3/` are removed after this record.
+
+
+### PS5B - Command tasks and save outcomes
+
+**Objective and prerequisites.** Connect the complete service behavior to testable C++ UI owners.
+Requires PS2A, PS2B, and PS5A. Keep the production QML feature unavailable until its layouts are complete.
+
+**Modules and deliverables.** Add PhotoStackController and its ApplicationModuleHost registration.
+Extend the background-task policy and preserve save diagnostics through the existing save job.
+Add proposed `PhotoStackControllerTest` through the existing UI test manifest.
+
+**Data rules.** Command requests hold IDs and focused changes only.
+Storage owns membership. Saved package state and committed working state have distinct outcomes.
+PS5C owns the pending-save and close integration that consumes these results.
+
+**Steps.**
+
+1. Add a background task kind and `EditPhotoStacks` interaction capability.
+2. Protect project close and affected File deletion while a command/save job runs.
+3. Dispatch validated command IDs through PhotoStackService; do not pass QObjects to the worker.
+4. Return distinct unchanged, committed-and-saved, and committed-but-unsaved outcomes.
+5. Preserve actual save diagnostics through the existing save job.
+6. Use existing query replacement behavior after mutations. Add no stack-specific consistency counter.
+
+**Success chain.** Controller -> policy -> task -> service/store -> save job -> GUI refresh and task completion.
+**Failure chain.** Storage failure -> unchanged membership; post-commit save failure -> accepted working state
+and an explicit unsaved outcome for PS5C. Do not repeat a committed command.
+
+**Tests and assertions.**
+
+- `CommandUsesWorkerAndRefusesConflictingDeleteOrProjectClose`: use the real task and policy owners.
+- `DatabaseFailurePublishesNoOptimisticMembership`: command fails and accepted view remains valid.
+- `PackageSaveFailureReportsCommittedButUnsavedStack`: verify working rows and unchanged saved package.
+- `MetadataSaveFailureRetainsItsDiagnostic`: inject the error at the existing metadata save owner.
+
+**Build and run.** V5B: PhotoStackControllerTest, LibraryDisplayModelTest, and ProjectCompatibilityTest.
+**Exit criteria.** [x] Command policy and task lifetimes have owner-level evidence.
+[x] Save failure is distinguishable from mutation failure. [x] No command outcome claims a save that failed.
+**Expected diff.** 700-1200 lines.
+#### PS5B completion record (2026-11-11)
+
+**Status:** complete. Added the C++ PhotoStackController, host ownership, task kind,
+interaction capability, command validation, and distinct failed, unchanged, saved, and unsaved results.
+**Source:** PR3 `ae5cf951c08c5bc641b97f9e06155c9006fbc427`, implemented on
+`feature/library-photo-stacking-PR4`. These changes expose no stack commands or stack layouts in QML.
+
+**Selected details:** requests carry ordered File IDs and focused changes. An absent create cover
+uses the first supplied File. Storage validates live membership on the worker. The task holds global
+stack-edit, delete, and project-close locks until its GUI completion, including package save.
+The delete lock also protects source-stack repairs. No command result stores a membership cache.
+ProjectModule holds the pending condition and diagnostic; its close behavior is completed below.
+
+**Primary success chain:**
+
+```text
+PhotoStackController::Start -> interaction policy and background-task registry
+  -> worker -> PhotoStackService -> existing transactional store
+  -> ProjectHandler::MakeSaveAndPackageJob -> GUI result and Library content refresh
+```
+
+**Primary failure chain:** storage error -> failed result and unchanged accepted organization.
+Post-commit metadata/package error -> unsaved result, retained diagnostic and committed working rows,
+Library refresh, and ProjectModule pending state. An unchanged command does not attempt a save.
+
+**Executed evidence:** PhotoStackControllerTest 7/7, LibraryDisplayModelTest 15/15,
+and ProjectCompatibilityTest 6/6 passed in the final run recorded under PS6.
+The controller tests hold the real database lock to prove that Start returns before mutation,
+check task serialization and conflicting operations, and compare working rows with saved package bytes.
+Metadata write failure retains `Failed to open meta file for writing`.
+Saved packages are checked by the existing storage invariant support in fixture teardown.
+
+**Completion criteria:** all three criteria above are satisfied. Existing service/store operations
+supply membership behavior; no persisted schema, image-edit format, or rendering setting changed.
+**LOC:** new command owner and focused integration fixture; no new source or test file exceeds 1000 lines.
+**Coverage limits and commands:** see the shared final verification record under PS6.
+
+### PS5C - Pending stack saves and close integration
+
+**Objective and prerequisites.** Preserve committed stack changes when save or close fails.
+Requires PS5B. These pending-state APIs and close rules are proposed additions to main.
+
+**Modules and deliverables.** Extend ProjectModule, ProjectHandler, ApplicationCloseCoordinator,
+their defining headers, and the existing ProjectLifecycleHooks where needed.
+Update Main.qml, ShellSignals.qml, AppDialogs.qml, and EditorCloseConfirmDialog.qml.
+Add proposed ProjectStackSaveTest and extend ApplicationCloseCoordinatorTest.
+
+**Data rules.** ProjectModule owns only the pending-save condition and diagnostic, not stack rows.
+Controller completion marks it after a committed-but-unsaved result.
+Successful project/package save or explicit project discard clears it.
+An active stack command refuses another stack command or explicit save retry until completion.
+The save action must not clear pending state while a stack command remains active.
+Use the existing task's busy state and project lifecycle hook. Do not add a revision counter.
+
+**Steps.**
+
+1. Add hasUnsavedStackChanges and its change notification to ProjectModule.
+2. Add RetryStackSave, which saves the current working project without rerunning a stack mutation.
+3. Preserve pending state and the actual error on every failed save attempt.
+4. Extend CloseNeedsConfirmation to include pending stack changes in Library-only sessions.
+5. After editor finalization, require successful project/package save before application close with Save.
+6. Apply the same rule to project close and project replacement, using the existing lifecycle owner.
+7. Abort close on save failure. Keep the project and current working stack rows loaded.
+8. Use explicit discard to abandon unsaved working-project changes; do not promise stack-only rollback.
+9. Update close-dialog text for pending stack changes without adding a second dialog/state owner.
+10. Keep the existing editor-only close behavior when no stack save is pending.
+
+**Success chain.** Controller result -> ProjectModule pending condition -> Retry Save or close with Save
+-> existing save/package owner -> successful persistence -> clear pending condition -> finish requested close.
+**Failure chain.** Save error -> keep pending condition and working project -> show diagnostic -> abort close.
+Cancel changes no state. Explicit discard closes without saving the working project.
+
+**Tests and assertions.**
+
+- `RetryStackSavePersistsWithoutRepeatingCommittedMutation`: exact rows and package are checked after retry.
+- `LibraryOnlyApplicationCloseRequiresPendingStackSaveConfirmation`: no editor image is needed.
+- `ApplicationCloseWaitsForProjectPackageSaveAfterEditorFinalize`: assert package success before close notification.
+- `FailedStackSaveAbortsCloseAndKeepsProjectLoaded`: inspect pending condition and live membership.
+- `ProjectReplacementDoesNotDiscardPendingStacksWithoutAnExplicitChoice`: check the lifecycle entry surface.
+- `ExplicitDiscardLeavesTheLastSavedPackageUnchanged`: reopen the package and verify its prior stack rows.
+- `EditorOnlyCloseBehaviorStaysUnchangedWithoutPendingStacks`: retain the current coordinator tests.
+
+**Build and run.** V5C: ProjectStackSaveTest, ApplicationCloseCoordinatorTest, PhotoStackControllerTest,
+and ProjectCompatibilityTest. Verify dialog bindings declaratively and through real application review.
+**Exit criteria.** [x] Every close/save entry reads the same pending state.
+[x] Save failure cannot report successful close. [x] Discard never writes an old stack copy over live rows.
+**Expected diff.** 900-1500 lines.
+#### PS5C completion record (2026-11-11)
+
+**Status:** complete. Pending stack saves now participate in save, application close,
+project close, and project replacement through the existing project lifecycle owner.
+**Source:** PR3 `ae5cf951c08c5bc641b97f9e06155c9006fbc427`, implemented on
+`feature/library-photo-stacking-PR4`. These changes expose no stack commands or stack layouts in QML.
+
+**Selected details:** ProjectModule owns only the pending condition and diagnostic. RetryStackSave
+saves the current working project and does not submit another command. Ordinary successful saves
+notify the same owner; an active stack command retains responsibility for its own terminal result.
+Replacement is refused while pending, until save or explicit project close with discard.
+Explicit application discard retires the working project, so shutdown cannot save its abandoned changes.
+The existing close dialog shows Retry Save, the diagnostic, and the scope of whole-project discard.
+The dialog has a separate QApplication test target; service tests keep the existing QCoreApplication runner.
+
+**Primary success chain:**
+
+```text
+committed-unsaved command -> ProjectModule pending state
+  -> RetryStackSave, or close with Save after editor finalization
+  -> existing metadata/package owner -> clear pending -> finish the requested close
+```
+
+**Primary failure chain:** metadata/package failure -> retain pending state and working membership
+-> report diagnostic -> abort close with the project loaded. Cancel changes no state.
+Explicit discard closes the working project without writing its last saved package.
+
+**Executed evidence:** ProjectStackSaveTest 6/6, ProjectStackSaveDialogTest 1/1,
+ApplicationCloseCoordinatorTest 6/6, PhotoStackControllerTest 7/7, and
+ProjectCompatibilityTest 6/6 passed in the final run. These subsets overlap other phase records.
+The retry test first moves a saved member, fails package save, retries, and reopens the exact
+member order. Replaying the move would produce a different order and fail that assertion.
+The discard test compares saved package bytes and reopens its original unstacked contents.
+Close tests assert editor completion before package save, no successful close after save failure,
+retained live rows, pending-state confirmation in a Library-only session, and blocked replacement.
+The existing `CloseWaitsForSaveAndFinishesOnNoImage` and
+`SaveFailureAbortsApplicationCloseWithSessionError` cases provide the planned editor-only behavior evidence.
+The production dialog is instantiated in Basic style and its text bindings are evaluated directly.
+
+**Completion criteria:** all three criteria above are satisfied. No old stack copy is written back.
+ProjectModule remains the existing project lifecycle, accelerator, and recent-project owner
+(1061 lines); this change adds only project save state and operations to that owner.
+No new storage representation or second close-dialog state owner was introduced.
+**Coverage limits and commands:** see the shared final verification record under PS6.
+
+### PS6 - Selection, existing bulk actions, and editor navigation
+
+**Objective and prerequisites.** Make every existing photo action use the intended explicit Files.
+Requires PS5C. This phase adds no stack controls to QML.
+
+**Modules and deliverables.** Extend LibrarySelection, LibraryMutationOperations, LibraryModule's
+selection/reveal APIs, and the existing editor-list integration.
+Add proposed `LibraryStackActionsTest` in `tests/ui/`.
+
+**Data rules.** A cover click means one File. Ctrl+A means the full matching photo set.
+Explicit whole-stack selection is the only selection action that admits non-matching members.
+Repeated label occurrences must not duplicate mutation or export targets.
+
+**Steps.**
+
+1. Map displayed card ranges to File IDs through the new display read API.
+2. Implement matching-fragment and explicit whole-stack selection reads.
+3. Keep hidden-by-collapse selected counts and outside-result selected counts distinct.
+4. Intersect selection on filter/scope replacement without clearing it on ordinary collapse.
+5. Route rating, marks, delete, export, paste, and album linking through existing explicit target owners.
+6. Keep editor filmstrip and automation photo lists on raw photo reads.
+7. Reveal a matching hidden member by expanding its exact preferred fragment.
+
+**Success chain.** User selection request -> worker ID read -> LibrarySelection -> existing action owner -> exact IDs.
+**Failure chain.** ID read or policy refusal -> unchanged selection/action state and explicit message.
+Missing reveal target -> report outside-result state, without changing the filter.
+
+**Tests and assertions.**
+
+- `CollapsedCoverRatingChangesOnlyTheExplicitlySelectedFile`: persisted non-cover ratings stay unchanged.
+- `SelectAllIncludesCollapsedMatchingMembersButExcludesNonMatches`: verify complete ID set beyond loaded pages.
+- `WholeStackSelectionIsExplicitAndReportsOutsideResultCount`: verify subsequent action target IDs.
+- `RepeatedLabelOccurrencesProduceOneExportAndOneMutationPerFile`: inspect real export enqueue and owner calls.
+- `FilteredDeleteLeavesNonMatchingStackMembersAndRepairsCover`: use production delete and reopen.
+- `FilterChangePrunesSelectionWithoutReplacingSelectedFileWithTemporaryCover`: verify photo identity.
+- `EditorFilmstripKeepsAllMatchingFilesWhenLibraryStacksCollapse`: compare its exact IDs and positions.
+- `ReturningToHiddenMatchingMemberExpandsOnlyItsPreferredFragment`: assert revealed File and group.
+
+**Build and run.** V6: LibraryStackActionsTest, LibrarySelectionTest, LibraryMutationOperationsTest,
+AlbumBackendLibraryQueryTest, and the direct automation library caller tests.
+**Exit criteria.** [x] Every bulk action has exact-target evidence.
+[x] No hidden member enters an action through cover selection. [x] Filmstrip/photo APIs preserve raw counts.
+**Expected diff.** 1000-1600 lines.
+#### PS6 completion record (2026-11-11)
+
+**Status:** complete. Display selection, explicit fragment/whole-stack selection, unique bulk targets,
+raw editor photo reads, and exact matching-member reveal are implemented and verified.
+**Source:** PR3 `ae5cf951c08c5bc641b97f9e06155c9006fbc427`, implemented on
+`feature/library-photo-stacking-PR4`. These changes expose no stack commands or stack layouts in QML.
+
+**Selected details:** LibrarySelectionOperations owns asynchronous selection operations on the existing
+Library worker. It receives the existing immutable query message, rather than copying live owner state.
+LibrarySelection owns unique File selections and separate hidden-by-stack and outside-result counts.
+An empty selection starts no membership SQL. Filter/scope replacement intersects selection;
+expansion, sorting, and grouping preserve explicit selection. Existing mutation, export, paste,
+and album-link owners already accept explicit targets and required no membership expansion logic.
+
+The editor filmstrip shares the existing photo-value owner. While that surface is active, LibraryModule
+uses the raw photo projection; returning to Library requests its display projection and retains its
+session expansion choices. Layout preferences and stack-display enablement are unchanged.
+Returning to a hidden match expands only the exact preferred fragment. An absent target reports -1
+and an error, with the current filter and album scope retained.
+
+The selection-read replacement test drives the actual queue: accept a new filter, pause its ID read,
+Ctrl-select the displayed cover, then release the worker. The pending intersection survives replacement
+of that read. No new generation or cancellation protocol was added.
+Verification also exposed a project-open ordering problem: ProjectOpened queued a global last-edited
+lookup before SubmitPendingRefresh invalidated query-specific ID reads. That invalidation canceled
+the lookup before it could publish PendingRevealFileId. The global lookup now has its own request
+category on the same worker and keeps the existing project-identity check. Project-open reveal is tested.
+The former root-widening test is now `PendingRevealOutsideAlbumReportsAbsenceAndKeepsTheAlbumScope`,
+which asserts the approved absence result, retained album, empty accepted rows, and diagnostic.
+
+**Primary success chain:**
+
+```text
+Library selection request -> accepted query input -> existing worker
+  -> AlbumBrowseService raw/display/fragment ID read -> LibrarySelection
+  -> existing rating/marks/delete/export/paste/album-link owner -> exact unique Files
+editor route -> raw photo projection -> all matching filmstrip photos
+return/reveal -> display position -> expand preferred fragment if hidden -> reveal actual File
+```
+
+**Primary failure chain:** ID read failure -> retain selection and publish the diagnostic.
+Nonmatching reveal -> retain filter and scope, return the requested File with position -1.
+No cover is substituted and no stack membership is changed by a read or expansion.
+
+**Executed phase evidence:** LibraryStackActionsTest 14/14, LibrarySelectionTest 8/8,
+LibraryMutationOperationsTest 5/5, AlbumBackendLibraryQueryTest 31/31, and
+AutomationLibraryCommandsTest 14/14 passed. Assertions include persisted cover-only ratings and marks,
+one export enqueue per File, real adjustment-paste targets and unchanged non-cover histories,
+cover-only album linking, filtered project deletion and saved-cover repair after reopen, hidden-member
+Select All, explicit outside-result selection, exact display ranges, raw filmstrip IDs/positions,
+preferred-fragment reveal, failure retention, and the real worker replacement interleaving.
+The current active-model schema has one label per File. Repeated occurrence maps exercise the real
+selection, mutation, and export owners without inventing unsupported multi-label storage rows.
+
+**Shared final Windows verification:** all 157 discovered cases passed; no failures or skips.
+The following table counts each final case once; earlier subset runs are not added again.
+
+| Target | Passed | Skipped | Failed |
+| --- | ---: | ---: | ---: |
+| PhotoStackControllerTest | 7 | 0 | 0 |
+| ProjectStackSaveTest | 6 | 0 | 0 |
+| ProjectStackSaveDialogTest | 1 | 0 | 0 |
+| ApplicationCloseCoordinatorTest | 6 | 0 | 0 |
+| LibraryStackActionsTest | 14 | 0 | 0 |
+| LibraryDisplayModelTest | 15 | 0 | 0 |
+| ProjectCompatibilityTest | 6 | 0 | 0 |
+| LibrarySelectionTest | 8 | 0 | 0 |
+| LibraryMutationOperationsTest | 5 | 0 | 0 |
+| AlbumBackendLibraryQueryTest | 31 | 0 | 0 |
+| AutomationLibraryCommandsTest | 14 | 0 | 0 |
+| ProjectModuleTest | 4 | 0 | 0 |
+| ApplicationModuleHostLifecycleTest | 2 | 0 | 0 |
+| AlbumBackendBackgroundTaskTest | 18 | 0 | 0 |
+| AlbumBackendInteractionPolicyTest | 15 | 0 | 0 |
+| UppercaseSignalQmlHandlersTest | 5 | 0 | 0 |
+
+The existing Release tree uses Qt 6.12.0 and MSVC 14.44. No Debug tree was created.
+The initial unpinned build used mismatched MSVC headers; pinning the existing toolset corrected it.
+An initial dialog test used the headless runner and failed; the dedicated QApplication target fixes
+that setup and executes the production component. The first caller run exposed the canceled global
+reveal above. Its old root-widening expectation was changed to the approved scope-preserving behavior.
+One compatibility case exceeded the Windows path limit under the sandbox's long default TEMP path;
+the same binary passed with the task's shorter TEMP/TMP directory. No product path was changed.
+
+Final setup, build, discovery, and run (PowerShell from the repository root; commands exit 0):
+
+```powershell
+$env:VCVARS_USER_VERSION = '14.44'
+$testTemp = Join-Path $PWD 'build/tmp/library_photo_stacking/runtime'
+New-Item -ItemType Directory -Force $testTemp | Out-Null
+$env:TEMP = $testTemp
+$env:TMP = $testTemp
+$env:PATH = "C:/Qt/6.12.0/msvc2022_64/bin;$PWD/build/dependencies/duckdb-v1.5.6;$PWD/vcpkg/installed/x64-windows/bin;$PWD/vcpkg/installed/x64-windows/debug/bin;$env:PATH"
+cmd /c scripts\msvc_env.cmd --build --preset win_release --target PhotoStackControllerTest ProjectStackSaveTest ProjectStackSaveDialogTest ApplicationCloseCoordinatorTest LibraryStackActionsTest LibraryDisplayModelTest ProjectCompatibilityTest LibrarySelectionTest LibraryMutationOperationsTest AlbumBackendLibraryQueryTest AutomationLibraryCommandsTest ProjectModuleTest ApplicationModuleHostLifecycleTest AlbumBackendBackgroundTaskTest AlbumBackendInteractionPolicyTest UppercaseSignalQmlHandlersTest --parallel 4
+ctest --test-dir build/release -N -R '^(PhotoStackControllerTest|ProjectStackSaveTest|ProjectStackSaveDialogTest|ApplicationCloseCoordinatorTest|LibraryStackActionsTest|LibraryDisplayModelTest|ProjectCompatibilityTest|LibrarySelectionTest|LibraryMutationOperationsTest|AlbumBackendLibraryQueryTest|AutomationLibraryCommandsTest|ProjectModuleTest|ApplicationModuleHostLifecycleTest|AlbumBackendBackgroundTaskTest|AlbumBackendInteractionPolicyTest|UppercaseSignalQmlHandlersTest)\.'
+ctest --test-dir build/release -j 1 -R '^(PhotoStackControllerTest|ProjectStackSaveTest|ProjectStackSaveDialogTest|ApplicationCloseCoordinatorTest|LibraryStackActionsTest|LibraryDisplayModelTest|ProjectCompatibilityTest|LibrarySelectionTest|LibraryMutationOperationsTest|AlbumBackendLibraryQueryTest|AutomationLibraryCommandsTest|ProjectModuleTest|ApplicationModuleHostLifecycleTest|AlbumBackendBackgroundTaskTest|AlbumBackendInteractionPolicyTest|UppercaseSignalQmlHandlersTest)\.' --output-on-failure --output-junit "$PWD/build/tmp/library_photo_stacking/commands/final.xml"
+```
+
+**Storage and resource evidence:** saved-package invariant checks run in the new integration fixture.
+The selection tests keep one loaded representative while selecting unloaded matching members through
+ID/name reads. Thumbnail ownership and page eviction caller tests pass. No 50,000-photo performance
+measurement, sanitizer run, macOS run, full suite, or manual full-application visual review was performed.
+The full suite was not requested. WorkspaceShell and synthetic key/focus tests were not run.
+PS7, PS8, and PS9 retain their layout, localization, manual input, and performance delivery scope.
+
+**Actual code/test diff:** 1503 added and 126 removed lines across 36 files.
+This plan records the scope and evidence separately. Each scoped commit is below 2000 changed lines.
+
+**Completion criteria:** all three criteria above are satisfied.
+LibraryModule remains the existing query/publication and thumbnail facade (1840 lines); the new
+selection-operation type owns its pending action and uses focused owner APIs. No physical method-file
+split or copied display/membership cache was introduced. The large CMake files contain registration
+changes only. The existing query caller test file has 1225 lines and keeps its shared query fixture;
+only its reveal expectations changed. New stack cases are in LibraryStackActionsTest, rather than
+adding another responsibility to that caller suite. First-party terminology, roadmap filenames, added data copies, forward declarations,
+changed-line formatting, and LF checks were reviewed.
+
+**Temporary evidence:** the task's commands, review, and runtime directories under
+`build/tmp/library_photo_stacking/` are removed after recording this evidence. No temporary output is committed.
+
+### PS7 - Classic grid and grouped cells
+
+**Objective and prerequisites.** Add the real Library controls for classic and grouped layouts.
+Requires PS6. PS8 must complete before product release.
+
+**Modules and deliverables.** Add PhotoStackDisclosure.qml.
+Update LibraryWorkspace, ThumbnailGridView, AlbumSectionView, ImageActionsController, and AppDialogs.
+Register QML and document token use in DESIGN.md and VI.
+
+**Data rules.** QML reads C++ occurrence identities and scalar roles.
+It does not construct stacks or cache member lists.
+Group-header disclosure and stack disclosure remain independent.
+
+**Steps.**
+
+1. Bind classic cards and grouped cells to display occurrences and shared photo metadata.
+2. Add the compact disclosure, separate count roles, and temporary-cover accessible description.
+3. Add context actions, valid disabled states, and the hidden-member ungroup confirmation.
+4. Keep pointer, keyboard, rating, rubber-band, and context-menu hit areas separate.
+5. Preserve real scroll anchors during disclosure changes and zoom.
+6. Show errors with AlertBadge and save retry through the owner.
+7. Add declarative role/accessibility assertions. Do not depend on WorkspaceShellTest input delivery.
+
+**Success chain.** QML action -> C++ owner -> accepted display publication -> correct card/control state.
+**Failure chain.** Owner refusal -> same accepted result and visible error; QML does not invent a substitute.
+
+**Tests and evidence.**
+
+- `DisclosureTogglesOnlyTheClickedFragmentAndKeepsPhotoSelection`: C++ owner assertions plus declarative bindings.
+- `TemporaryCoverOpensItsOwnFileAndReportsMatchingCounts`: assert the actual editor-open target.
+- `GroupHeaderCollapseDoesNotChangeStackExpansionChoices`: restore header and verify fragment expansion.
+- `CountAndDisclosureRemainAccessibleAtEveryClassicZoomLevel`: include caption-free geometry.
+- Manual: both themes, narrow window, all zoom levels, multiple day/camera/label groups, real keyboard and pointer.
+
+**Build and run.** V7: alcedo_main, LibraryDisplayModelTest, PhotoStackControllerTest,
+and LibraryStackActionsTest. Run focused declarative tests only if they are reliable on the host.
+**Exit criteria.** [x] Real application matches Section 2.7.
+[x] Every action reaches its intended C++ owner. [x] QML and new tokens are registered and documented.
+**Expected diff.** 1050-1700 lines.
+#### PS7 completion record (2026-11-12)
+
+**Status:** complete. Classic and grouped cards use the accepted display owner.
+
+**Implemented behavior.** Production `main` enables stack display. Generic application-host
+callers retain their existing photo-mode default. `PhotoStackDisclosure.qml` reads only the
+opaque occurrence key and scalar counts. It reserves a 24-pixel pointer and keyboard target,
+keeps count roles separate, and describes temporary covers. Group disclosure stays independent.
+`PhotoStackActions.qml` owns confirmation presentation; C++ owns explicit targets, availability,
+ordering, mutation, and package save. Whole-stack selection always asks for confirmation;
+ungroup asks when the current fragment excludes members. Saved-cover and saved-order tooltips
+state their project scope. Command and package errors use AlertBadge and the project Retry Save API.
+
+**Primary success call chains:**
+
+```text
+Classic/grouped disclosure -> LibraryModule::ToggleStack -> LibraryDisplayModel expansion choice
+  -> query worker -> bounded occurrence publication -> same File selection and restored real anchor
+Context menu -> PhotoStackController::PrepareMenu / RunAction -> PhotoStackService
+  -> PhotoStackStore transaction -> package save -> content refresh and task completion
+```
+
+**Primary failure call chains:**
+
+```text
+Invalid command -> owner refusal or storage rollback -> same saved rows and visible command error
+Committed change + package failure -> retained working change -> AlertBadge -> RetryStackSave
+  -> package saved without repeating the mutation -> pending-save and error state clear
+```
+
+**Executed evidence.** `DisclosureTogglesOnlyTheClickedFragmentAndKeepsPhotoSelection`,
+`TemporaryCoverOpensItsOwnFileAndReportsMatchingCounts`, and
+`GroupHeaderCollapseDoesNotChangeStackExpansionChoices` use production owners.
+`CountAndDisclosureRemainAccessibleAtEveryClassicZoomLevel` loads the production component
+with QApplication. The queued context-menu test exercises a second click and changed selection
+while the first worker read is pending. Storage tests verify complete-stack no-op availability,
+saved neighbors, explicit add/remove targets, and ordering.
+
+**Real application review.** Opened the compiled Windows Release EXE and a temporary package
+made by importing two ARW and two DNG repository fixtures. Reviewed a 1214-by-793 window and the
+initial wide window. Native pointer disclosure, Space, and Enter expanded/collapsed without
+selecting or opening photos; the export selection stayed zero. Capture-date groups showed
+fragments of 2, 1, and 1 with exact accessible query/total counts. Expanding the two-photo
+fragment, collapsing its group header, and reopening the header retained stack expansion.
+Camera and label groups each showed two fragments of two. Context-menu disabled states and
+the four-photo whole-stack confirmation were visible; confirmation selected exactly four.
+All eight zoom values (0 through 7), including caption-free cards, retained disclosure/counts.
+A real saved-cover change with a deliberately blocked temporary package file displayed the
+Chinese AlertBadge and Retry Save button. Removing the test blocker and pressing Retry Save
+cleared the error and preserved the changed cover. The final linked application also passed
+native Tab navigation from the first to the second disclosure, followed by Space to collapse
+four cards to one with zero selected export targets. Only the temporary fixture package was edited.
+
+**Review corrections.** Stack creation must retain a loaded representative even when another
+ordinary card survives. Retention now matches exact occurrences and the same File in its typed
+group, chooses at most three bounded windows nearest the old viewport, and moves minimal
+result items. It does not retain all metadata between distant old cards. Unloaded rows return
+explicit loading roles and invalid values for unsupported Qt roles; the latter corrected an
+observed Qt model-checker failure during page eviction. The regression tests include stack
+creation, dissolution of a large stack, viewport anchoring, and eviction under the model checker.
+Two existing import/delete caller tests exposed unnecessary page realignment. Ordinary-photo
+pages now keep their shifted offsets when their retained span fits one page; stack pages and
+larger spans use bounded aligned windows. Overlaps merge without increasing the selected
+metadata bound. The existing caller assertions for offsets, real anchors, and unloaded gaps
+remain unchanged. `MenuActionNamesApplyEverySavedOrganizationCommandToExplicitFiles` also
+executes group, add, both moves, set-cover, remove, and ungroup through the actual menu entry
+point and asserts persisted order, cover repair, and final ungrouped cards.
+
+**Scope and ownership.** No member list is cached in QML, no per-card SQL is added, and no render
+quality policy changes. Shared control tokens and input boundaries are documented in DESIGN.md
+and `docs/VI/README.md`. Final targeted verification totals are recorded under PS9.
+
+
+### PS8 - Justified layout, localization, and complete visual delivery
+
+**Objective and prerequisites.** Finish the same feature in justified rows and every supported UI language.
+Requires PS7. Do not switch users to classic grid to hide missing justified-stack behavior.
+
+**Modules and deliverables.** Update JustifiedLayoutModel, JustifiedThumbnailTile, and shared grid geometry.
+Complete translations, VI entries, tooltips, error strings, and proposed `LibraryStackLayoutTest`.
+
+**Data rules.** A justified tile uses its displayed cover's oriented aspect ratio.
+Replacing a temporary cover may change its geometry, but not its fragment identity.
+
+**Steps.**
+
+1. Feed display-item IDs and displayed-photo aspect ratios to justified layout.
+2. Support expand/collapse and temporary-cover replacement without duplicating photo metadata.
+3. Preserve the first shown fragment using actual layout rectangles.
+4. Keep disclosure hit targets and existing marks readable at compact sizes.
+5. Add English and Chinese strings by hand to the current catalogs.
+6. Verify language change does not reset membership, expansion, selection, or typed group keys.
+7. Complete real-application visual review for all layouts and save/error states.
+
+**Success chain.** Accepted display roles -> justified geometry -> shared tile/disclosure -> existing input owner.
+**Failure chain.** Missing source/thumbnail -> existing photo error presentation; query failure -> accepted view and Retry.
+Do not select a different cover because thumbnail loading fails.
+
+**Tests and evidence.**
+
+- `JustifiedTemporaryCoverChangeUsesItsAspectRatioAndKeepsFragmentIdentity`: verify rectangles and occurrence identity.
+- `JustifiedExpansionPreservesTopFragmentAndShowsOnlyMatchingMembers`: assert member IDs and real anchor.
+- `LanguageChangeKeepsTypedFragmentKeysAndSelection`: compare C++ state and translated control text.
+- Manual: classic, justified, grouped classic; both themes; English and Chinese; narrow view; reduceMotion.
+
+**Build and run.** V8: alcedo_main, LibraryStackLayoutTest, and AlbumBackendI18nTest.
+**Exit criteria.** [x] Every Library layout implements the same matching policy.
+[x] Every new string translates. [x] Manual review records actual states and unresolved defects honestly.
+**Expected diff.** 900-1550 lines.
+#### PS8 completion record (2026-11-12)
+
+**Status:** complete. Justified tiles use the same display identities and policy.
+
+**Implemented behavior.** `JustifiedLayoutModel` accepts either the display model or the legacy
+photo model and reads the displayed File's oriented aspect ratio through model roles. Its
+viewport contains scalar geometry; photo metadata stays in `AlbumThumbnailModel`. Appended or
+sparse retained windows update geometry without loading intervening metadata. QML preserves
+opaque typed keys and actual delegate rectangles through expansion, cover changes, zoom, and
+language changes. The same shared disclosure and context actions serve justified tiles.
+English and Chinese catalogs include controls, confirmations, tooltips, errors, pending-save
+messages, and close refusal text. No new visual token or icon asset was required.
+
+**Primary success call chain:**
+
+```text
+Accepted display occurrence -> JustifiedLayoutModel aspect-ratio roles and actual tile rectangles
+  -> JustifiedThumbnailTile / shared disclosure -> LibraryModule -> accepted publication
+  -> restore occurrence anchor and disclosure focus
+```
+
+**Primary failure call chain:**
+
+```text
+Unloaded occurrence -> explicit loading values and zero File ID -> no photo action or pin
+Query failure -> keep accepted display -> owner error and Retry
+Package failure -> keep committed organization -> shared AlertBadge and project Retry Save
+```
+
+**Executed evidence.** `JustifiedTemporaryCoverChangeUsesItsAspectRatioAndKeepsFragmentIdentity`,
+`JustifiedExpansionPreservesTopFragmentAndShowsOnlyMatchingMembers`,
+`AppendedDisplayPageAddsJustifiedTilesWithoutChangingTheAcceptedCount`, and
+`ExpansionAboveViewportKeepsTheActualTopTileAndBoundedMetadataWindows` assert exact geometry,
+identity, member IDs, and the metadata bound. The viewport fixture has a following tile so the
+anchor is not constrained by the normal bottom scroll limit.
+`LanguageChangeKeepsTypedFragmentKeysAndSelection` checks owner state;
+`ChineseTranslationUpdatesAccessibleCountsWithoutChangingOccurrenceIdentity` loads the compiled
+catalog and checks translated control text with the same key and expansion.
+
+**Real application review.** The same imported RAW package was reviewed in classic, justified,
+and grouped classic layouts, Alcedo and Classic themes, and English and Simplified Chinese.
+The narrow justified view kept oriented photos, visible compact counts, and disclosure targets;
+collapse reduced four tiles to the saved-cover tile. Grouped layouts retained independent
+stack and header state. Chinese accessible text reported matching-here, query, total, and
+temporary-cover status. Restored Follow System language, Alcedo theme, classic layout, and the
+original zoom after review. `reduceMotion` has no exposed settings control on this build;
+native review used its existing value. The declarative zoom test exercises both reduceMotion
+values through AppTheme and restores the original value. The control uses no animation; existing layout
+animation duration remains zero when that property is enabled. This native coverage limit
+is recorded rather than claiming a configuration that was not exercised.
+
+**Review correction.** Native review found a stale hidden-selection count after expanding a
+fragment in place. Both replacement and in-place publication now accept the new minimal query
+input, including expansion choices, before later selection or paging reads. No project service
+is retained in that accepted input. `ExpandedFragmentUpdatesHiddenSelectionAndSubsequentDisplayReads`
+checks zero hidden selections after expansion, all four explicit display IDs from a subsequent
+ordered read, another whole-stack selection, and the restored hidden count after collapse.
+The rebuilt native application showed four selected photos, three hidden while collapsed,
+and no hidden-selection message after expansion, with four export targets retained.
+Final targeted verification totals are recorded under PS9.
+
+
+### PS9 - Integrated acceptance and resource evidence
+
+**Objective and prerequisites.** Demonstrate the complete requested capability through production owners.
+Requires PS8. This phase closes evidence, not missing product behavior.
+
+**Modules and deliverables.** Add proposed `LibraryPhotoStackIntegrationTest` in `tests/ui/` and focused
+performance cases in AlbumStackPagingTest. Update this plan's completion records and roadmap status.
+
+**Data rules.** Expected results come from an independent set/order evaluator over fixture inputs.
+Do not compute expected covers by calling the production fragment helper.
+
+**Steps.**
+
+1. Create a real project, import fixture photos, create a stack through the command owner, and save.
+2. Apply dates, camera, lens, rating, marks, labels, and semantic search through their production owners.
+3. Verify temporary covers, multiple-group fragments, explicit actions, and restored expansion.
+4. Delete the saved cover, remove an album link, import another photo, save/package, and reopen.
+5. Inject a transaction failure and a package-save failure through the real command paths.
+6. Measure 50,000 photos, many small stacks, and one 10,000-member stack.
+7. Record targeted test discovery, results, skips, platform limits, and manual evidence.
+
+**Success chain.** ApplicationModuleHost -> Library commands/query -> services -> real storage/package -> reopen.
+**Failure chain.** Injected owner failure -> defined rollback or committed-unsaved state -> successful explicit retry.
+
+**Tests and assertions.**
+
+- `FilterGroupSaveAndReopenPreserveSavedCoverAndExactStackMembership`.
+- `TemporaryCoverAndExpansionNeverWriteStackRows`.
+- `MultipleGroupFragmentsSharePhotoSelectionWithoutDuplicatingActions`.
+- `StackCommandsAndDeletionLeaveStorageInvariantsValidAfterEveryOperation`.
+- `LargeCollapsedStackKeepsMetadataPagesAndThumbnailPinsBounded`.
+- `UnstackedLibraryReadsStayWithinTheMeasuredQueryCostTarget`.
+
+**Build and run.** V9: the proposed integration target and the directly affected suites in Section 10.
+**Exit criteria.** [x] Every acceptance row in Section 9 has evidence.
+[x] Targeted caller suites pass or have linked existing issues. [x] No layout silently ignores stacks.
+[x] No phase is marked complete with missing required product behavior.
+**Expected diff.** 800-1400 lines.
+#### PS9 completion record (2026-11-12)
+
+**Status:** complete. Integration and resource acceptance use production owners. The local
+application post-build check limitation is recorded under Artifacts; required product behavior
+has executed owner and native UI evidence.
+
+**Primary success call chain:**
+
+```text
+ApplicationModuleHost -> real import / public stack command / filter and selection owners
+  -> query worker and application services -> DuckDB transactions -> package save
+  -> close and reopen -> exact saved membership, cover, and photo metadata
+```
+
+**Primary failure call chain:**
+
+```text
+Invalid transaction -> rollback -> unchanged saved membership
+Package write failure after commit -> retained changed order and pending save
+  -> explicit retry -> saved package -> reopen without replaying the mutation
+```
+
+**Executed integration assertions.** `LibraryPhotoStackIntegrationTest` adds:
+
+| Case | Assertion |
+| --- | --- |
+| `FilterGroupSaveAndReopenPreserveSavedCoverAndExactStackMembership` | Independent camera/set evaluator; filtered expansion and reopened saved cover/order. |
+| `TemporaryCoverAndExpansionNeverWriteStackRows` | Same package bytes and persisted cover/member rows after read-only presentation changes. |
+| `DateCameraLensRatingMarksLabelsAndSemanticSearchUseIndividualMatchingPhotos` | Production filter, stats, marks, label, storage, and query owners; deterministic text-vector provider only. |
+| `MultipleGroupFragmentsSharePhotoSelectionWithoutDuplicatingActions` | Unique export targets and one rating change for each explicit selected File. |
+| `StackCommandsAndDeletionLeaveStorageInvariantsValidAfterEveryOperation` | Create/add/remove/reorder/cover/ungroup, album unlink, another import, deletion, and saved-store validation. |
+| `InvalidCommandRollsBackAndPackageFailureRetainsCommittedOrderUntilRetry` | Defined failure, retained committed state, exact retry, and saved package. |
+| `LargeCollapsedStackKeepsMetadataPagesAndThumbnailPinsBounded` | 10,000 members; one representative's metadata while collapsed, bounded deep page, and released pins. |
+| `ImportedRawPhotosCanBeGroupedSavedAndReopened` | Real import of two ARW and two DNG fixtures, public group command, package save and reopen. |
+
+Large storage fixtures use bulk synthetic File insertion and required persisted image roots.
+Expected sets and covers come from fixture inputs, not the production fragment evaluator.
+The real RAW import case also supplied the temporary package used for native UI review.
+
+**Measured resource and performance results.** Windows Release, MSVC 14.44, Qt 6.12.0;
+existing `build/release`, same machine and 10,000-photo no-stack fixture as PS3.
+Each row records first read, median, and p95 in milliseconds; warm samples number ten.
+These values are from the initial integrated Release profiling run. The final targeted run
+also executes the no-stack cost assertion with the 10,000-photo fixture.
+
+| Fixture / operation | First | Median | p95 |
+| --- | ---: | ---: | ---: |
+| No stack, camera initial display | 56.251 | 29.326 | 51.302 |
+| No stack, camera deep display | 33.432 | 18.110 | 22.658 |
+| No stack, label initial display | 64.479 | 41.539 | 54.866 |
+| No stack, label deep display | 38.589 | 27.855 | 37.575 |
+| No stack, edit-day initial display | 58.061 | 39.541 | 47.755 |
+| No stack, edit-day deep display | 29.305 | 21.514 | 24.477 |
+| One 10,000-member stack, collapsed first page | 69.582 | 51.868 | 56.173 |
+| One 10,000-member stack, expanded page at 9000 | 60.595 | 56.936 | 69.823 |
+| One 10,000-member stack, collapsed reveal | 34.743 | 35.074 | 44.852 |
+| One 10,000-member stack, matching IDs | 32.859 | 33.610 | 43.129 |
+| 50,000 photos: one 10,000-member stack plus 20,000 pairs, collapsed first page | 253.023 | 259.034 | 325.684 |
+| Same 50,000-photo fixture, expanded deep page | 296.251 | 317.652 | 354.693 |
+
+The no-stack medians also stay within 25% of the historical PS3 medians. The largest page
+comparison is label-deep, 27.855 ms versus 24.873 ms. An initial measurement exceeded the
+cost target; the query now checks the exact no-membership precondition within its transaction
+and uses the existing photo query or an equivalent unstacked projection. This is the exact
+same result, not a substitute behavior after failure. Stack validation and errors remain
+explicit. `UnstackedLibraryReadsStayWithinTheMeasuredQueryCostTarget` asserts the ratio against
+photo-mode reads of the same fixture in the same run.
+
+Every display page returns at most 1,000 photo rows; retained GUI metadata stays within three
+bounded windows. Deep expansion does not load all earlier members. Model-checker eviction and
+integration pin assertions verify release. No source decode or SQL was added to per-card GUI
+bindings. The existing processing resolution and rendering policy are unchanged.
+
+**Verification commands and totals.** Final evidence covers **360 distinct cases: 344 passed,
+15 skipped, and one existing private-fixture failure linked to #826**. The initial broad run
+selected 359 cases in 583.14 seconds. It exposed two retained-page regressions, which were
+corrected without changing their assertions. The final six-suite recheck passed **90/90** in
+256.77 seconds and includes the additional complete menu-entry case. The three immediate
+regression checks also passed 3/3. Counts below use the latest result of each case; repeated
+runs are not added to the distinct total.
+
+| Target | Passed | Skipped | Existing fixture failure |
+| --- | ---: | ---: | ---: |
+| `AlbumBackendBackgroundTaskTest` | 18 | 0 | 0 |
+| `AlbumBackendFolderTest` | 16 | 0 | 0 |
+| `AlbumBackendI18nTest` | 2 | 0 | 0 |
+| `AlbumBackendImageDeleteTest` | 9 | 3 | 0 |
+| `AlbumBackendImportTest` | 15 | 12 | 1 |
+| `AlbumBackendInteractionPolicyTest` | 15 | 0 | 0 |
+| `AlbumBackendLibraryMarksTest` | 6 | 0 | 0 |
+| `AlbumBackendLibraryQueryTest` | 31 | 0 | 0 |
+| `AlbumBackendRatingTest` | 10 | 0 | 0 |
+| `AlbumQueryTest` | 1 | 0 | 0 |
+| `AlbumSectionModelTest` | 12 | 0 | 0 |
+| `AlbumStackPagingTest` | 13 | 0 | 0 |
+| `AlbumStackQueryTest` | 10 | 0 | 0 |
+| `ApplicationCloseCoordinatorTest` | 6 | 0 | 0 |
+| `ApplicationModuleHostLifecycleTest` | 2 | 0 | 0 |
+| `AutomationLibraryCommandsTest` | 14 | 0 | 0 |
+| `JustifiedLayoutTest` | 22 | 0 | 0 |
+| `LibraryDisplayModelTest` | 18 | 0 | 0 |
+| `LibraryMutationOperationsTest` | 5 | 0 | 0 |
+| `LibraryPhotoStackIntegrationTest` | 8 | 0 | 0 |
+| `LibrarySelectionTest` | 8 | 0 | 0 |
+| `LibraryStackActionsTest` | 14 | 0 | 0 |
+| `LibraryStackLayoutTest` | 10 | 0 | 0 |
+| `PhotoStackControllerTest` | 9 | 0 | 0 |
+| `PhotoStackDisclosureTest` | 2 | 0 | 0 |
+| `PhotoStackLifecycleTest` | 20 | 0 | 0 |
+| `PhotoStackStoreTest` | 16 | 0 | 0 |
+| `ProjectCompatibilityTest` | 6 | 0 | 0 |
+| `ProjectModuleTest` | 4 | 0 | 0 |
+| `ProjectStackSaveDialogTest` | 1 | 0 | 0 |
+| `ProjectStackSaveTest` | 6 | 0 | 0 |
+| `SimplifiedChineseCatalogTest` | 10 | 0 | 0 |
+| `UppercaseSignalQmlHandlersTest` | 5 | 0 | 0 |
+
+All tests use explicit CTest name prefixes, `--test-dir build/release -j 1
+--output-on-failure`, the Qt/vcpkg/DuckDB runtime PATH, and short TEMP/TMP paths under
+`build/tmp/`. All selected targets were built and discovered. No full-suite run was authorized
+or performed. WorkspaceShellTest synthetic focus/pointer coverage is excluded per AGENTS.md;
+native application checks are recorded under PS7 and PS8. macOS and sanitizer builds were not
+run on this Windows host.
+
+Skipped cases (absent private RAW/JPEG/TIFF folders):
+
+- `AlbumBackendImageDeleteTest.DeleteTests.DeleteImages_BestEffortPartialFailure`.
+- `AlbumBackendImageDeleteTest.DeleteTests.DeleteImages_RemovesImageAndRelatedRows`.
+- `AlbumBackendImageDeleteTest.DeleteTests.DeleteTargetsRejectsUnacknowledgedImportAtDirectEntryPoint`.
+- `AlbumBackendImportTest.ImportTests.CancelImportShowsStoppingStateUntilTheImportEnds`.
+- `AlbumBackendImportTest.ImportTests.ImportIntoSubfolder_PersistsAcrossFreshProjectLoad`.
+- `AlbumBackendImportTest.ImportTests.Import_BatchDng_Succeeds`.
+- `AlbumBackendImportTest.ImportTests.Import_CancelImmediate_NoCrash`.
+- `AlbumBackendImportTest.ImportTests.Import_DuplicateFiles_Deduplication`.
+- `AlbumBackendImportTest.ImportTests.Import_JpegOnly_NoCrash`.
+- `AlbumBackendImportTest.ImportTests.Import_MixedRawAndJpeg_NoCrash`.
+- `AlbumBackendImportTest.ImportTests.Import_NoProjectLoaded_NoCrash`.
+- `AlbumBackendImportTest.ImportTests.Import_SingleRawFile_Succeeds`.
+- `AlbumBackendImportTest.ImportTests.Import_TiffOnly_NoCrash`.
+- `AlbumBackendImportTest.ImportTests.SearchPreviewThumbnail_LoadsForPagedVisibleResult`.
+- `AlbumBackendImportTest.ImportTests.SearchPreview_ReturnsPagedResultsAndTotalCount`.
+
+**Reproduction commands (PowerShell, repository root):**
+
+```powershell
+$env:VCVARS_USER_VERSION = '14.44'
+$env:TEMP = Join-Path $PWD 'build/tmp/library_photo_stacking_ui/runtime'
+$env:TMP = $env:TEMP
+$env:PATH = "C:/Qt/6.12.0/msvc2022_64/bin;$PWD/build/dependencies/duckdb-v1.5.6;$PWD/vcpkg/installed/x64-windows/bin;$PWD/vcpkg/installed/x64-windows/debug/bin;$env:PATH"
+$testTargets = @(
+  'AlbumBackendBackgroundTaskTest',
+  'AlbumBackendFolderTest',
+  'AlbumBackendI18nTest',
+  'AlbumBackendImageDeleteTest',
+  'AlbumBackendImportTest',
+  'AlbumBackendInteractionPolicyTest',
+  'AlbumBackendLibraryMarksTest',
+  'AlbumBackendLibraryQueryTest',
+  'AlbumBackendRatingTest',
+  'AlbumSectionModelTest',
+  'AlbumStackPagingTest',
+  'AlbumStackQueryTest',
+  'ApplicationCloseCoordinatorTest',
+  'ApplicationModuleHostLifecycleTest',
+  'AutomationLibraryCommandsTest',
+  'JustifiedLayoutTest',
+  'LibraryDisplayModelTest',
+  'LibraryMutationOperationsTest',
+  'LibraryPhotoStackIntegrationTest',
+  'LibrarySelectionTest',
+  'LibraryStackActionsTest',
+  'LibraryStackLayoutTest',
+  'PhotoStackControllerTest',
+  'PhotoStackDisclosureTest',
+  'PhotoStackLifecycleTest',
+  'PhotoStackStoreTest',
+  'ProjectCompatibilityTest',
+  'ProjectModuleTest',
+  'ProjectStackSaveDialogTest',
+  'ProjectStackSaveTest',
+  'SimplifiedChineseCatalogTest',
+  'UppercaseSignalQmlHandlersTest'
+)
+cmd /c scripts\msvc_env.cmd --build --preset win_release --target $testTargets --parallel 4
+$testPattern = '^(' + ($testTargets -join '|') + ')\.|^AlbumQueryTest\.AlbumQueryTest\.UnstackedLibraryReadsStayWithinTheMeasuredQueryCostTarget$'
+$env:ALCEDO_ALBUM_QUERY_PROFILE = '10000'
+ctest --test-dir build/release -N -R $testPattern
+ctest --test-dir build/release -R $testPattern -j 1 --output-on-failure
+# Focused verification after the retained-page correction:
+cmd /c scripts\msvc_env.cmd --build --preset win_release --target LibraryDisplayModelTest AlbumBackendLibraryQueryTest LibraryStackLayoutTest LibraryPhotoStackIntegrationTest PhotoStackControllerTest LibraryStackActionsTest --parallel 4
+ctest --test-dir build/release -R '^(LibraryDisplayModelTest|AlbumBackendLibraryQueryTest|LibraryStackLayoutTest|LibraryPhotoStackIntegrationTest|PhotoStackControllerTest|LibraryStackActionsTest)\.' -j 1 --output-on-failure
+cmd /c scripts\msvc_env.cmd --build --preset win_release --target alcedo_main --parallel 4
+```
+
+**Existing fixture limitation.** The targeted import caller case
+`ImportTests.FolderScanListsNestedFilesAndFolderImportTakesOnlySelectedTypes` fails because
+`tests/resources/sample_images/raw/airplane/` is absent. It collects zero RAW files, then
+expects `ImportRunning()` and a nonempty phase list. The test file has the same Git blob as
+PR4 (`46d219cbdc3b9052b70d443eb85da770edeefc8f`); this change does not edit it or its import
+implementation. The missing private airplane data is already tracked by
+[#826](https://github.com/zidage/AlcedoStudio/issues/826). Related fixture-dependent import and
+deletion cases skip on this checkout. No duplicate issue or automated follow-up comment was
+posted: CONTRIBUTING.md requires later issue communication to come from a human. The new
+RAW import/save/reopen integration uses four committed CI files and runs independently of
+those absent private fixtures.
+
+**Maintainability review.** The new menu component owns confirmation, the shared disclosure
+owns its input/accessible text, the display model owns occurrence pages/expansion, the query
+worker owns asynchronous reads, and the stack store owns validation and transactions. Existing
+large files keep their established responsibilities: LibraryModule orchestrates accepted
+query publication; ThumbnailGridView and AlbumSectionView own separate flat/grouped geometry;
+ElementStore owns query entry points; catalogs, build manifests, and DESIGN.md remain centralized
+registries. No method-only file split or parallel membership/photo-state cache was introduced.
+New focused test files stay below 600 lines. Public owner APIs document thread/lifetime and
+failure behavior. This review does not claim to decompose pre-existing large UI modules.
+
+**Changed-file size review.** Final source, test, and VI counts; roadmap records are excluded.
+Existing files over 1,000 lines are assessed by responsibility above.
+
+| File | Total lines | Added | Deleted |
+| --- | ---: | ---: | ---: |
+| `alcedo_studio/src/app/album_browse_service.cpp` | 599 | 10 | 0 |
+| `alcedo_studio/src/app/photo_stack_service.cpp` | 65 | 11 | 0 |
+| `alcedo_studio/src/include/app/album_browse_service.hpp` | 221 | 6 | 0 |
+| `alcedo_studio/src/include/app/photo_stack_service.hpp` | 55 | 5 | 0 |
+| `alcedo_studio/src/include/sleeve/photo_stack.hpp` | 36 | 9 | 0 |
+| `alcedo_studio/src/include/storage/store/sleeve/album_stack_query.hpp` | 62 | 12 | 0 |
+| `alcedo_studio/src/include/storage/store/sleeve/element_store.hpp` | 487 | 6 | 0 |
+| `alcedo_studio/src/include/storage/store/sleeve/photo_stack_store.hpp` | 70 | 5 | 0 |
+| `alcedo_studio/src/include/ui/alcedo_main/album_backend/application_module_host.hpp` | 284 | 1 | 0 |
+| `alcedo_studio/src/include/ui/alcedo_main/album_backend/interaction_policy_controller.hpp` | 182 | 4 | 1 |
+| `alcedo_studio/src/include/ui/alcedo_main/album_backend/justified_layout_model.hpp` | 185 | 8 | 5 |
+| `alcedo_studio/src/include/ui/alcedo_main/album_backend/library_display_model.hpp` | 116 | 22 | 2 |
+| `alcedo_studio/src/include/ui/alcedo_main/album_backend/library_module.hpp` | 524 | 16 | 0 |
+| `alcedo_studio/src/include/ui/alcedo_main/album_backend/photo_stack_controller.hpp` | 83 | 19 | 0 |
+| `alcedo_studio/src/storage/store/sleeve/album_stack_query.cpp` | 441 | 96 | 15 |
+| `alcedo_studio/src/storage/store/sleeve/element_store.cpp` | 1445 | 30 | 0 |
+| `alcedo_studio/src/storage/store/sleeve/photo_stack_store.cpp` | 519 | 53 | 0 |
+| `alcedo_studio/src/ui/alcedo_main/CMakeLists.txt` | 1295 | 2 | 0 |
+| `alcedo_studio/src/ui/alcedo_main/DESIGN.md` | 1523 | 29 | 1 |
+| `alcedo_studio/src/ui/alcedo_main/album_backend/justified_layout_model.cpp` | 433 | 36 | 18 |
+| `alcedo_studio/src/ui/alcedo_main/album_backend/library_display_model.cpp` | 433 | 157 | 17 |
+| `alcedo_studio/src/ui/alcedo_main/album_backend/library_module.cpp` | 1924 | 99 | 15 |
+| `alcedo_studio/src/ui/alcedo_main/album_backend/photo_stack_controller.cpp` | 217 | 96 | 4 |
+| `alcedo_studio/src/ui/alcedo_main/application_module_qml_types.cpp` | 79 | 6 | 0 |
+| `alcedo_studio/src/ui/alcedo_main/i18n/alcedo_main_en.ts` | 6884 | 65 | 1 |
+| `alcedo_studio/src/ui/alcedo_main/i18n/alcedo_main_zh_CN.ts` | 9368 | 64 | 0 |
+| `alcedo_studio/src/ui/alcedo_main/main.cpp` | 441 | 1 | 0 |
+| `alcedo_studio/src/ui/alcedo_main/qml/AlbumSectionView.qml` | 1484 | 54 | 10 |
+| `alcedo_studio/src/ui/alcedo_main/qml/AppDialogs.qml` | 423 | 11 | 2 |
+| `alcedo_studio/src/ui/alcedo_main/qml/EditorCloseConfirmDialog.qml` | 173 | 6 | 1 |
+| `alcedo_studio/src/ui/alcedo_main/qml/ImageActionsController.qml` | 714 | 3 | 0 |
+| `alcedo_studio/src/ui/alcedo_main/qml/ImageContextMenu.qml` | 250 | 2 | 0 |
+| `alcedo_studio/src/ui/alcedo_main/qml/JustifiedThumbnailTile.qml` | 399 | 22 | 0 |
+| `alcedo_studio/src/ui/alcedo_main/qml/LibraryWorkspace.qml` | 762 | 37 | 10 |
+| `alcedo_studio/src/ui/alcedo_main/qml/PhotoStackActions.qml` | 96 | 96 | 0 |
+| `alcedo_studio/src/ui/alcedo_main/qml/PhotoStackDisclosure.qml` | 115 | 115 | 0 |
+| `alcedo_studio/src/ui/alcedo_main/qml/ThumbnailGridView.qml` | 2181 | 109 | 35 |
+| `alcedo_studio/tests/app/album_query_test.cpp` | 1888 | 29 | 1 |
+| `alcedo_studio/tests/app/album_stack_paging_test.cpp` | 499 | 70 | 0 |
+| `alcedo_studio/tests/app/photo_stack_store_test.cpp` | 494 | 22 | 0 |
+| `alcedo_studio/tests/ui/CMakeLists.txt` | 3174 | 17 | 0 |
+| `alcedo_studio/tests/ui/library_display_model_test.cpp` | 215 | 51 | 0 |
+| `alcedo_studio/tests/ui/library_photo_stack_integration_test.cpp` | 464 | 464 | 0 |
+| `alcedo_studio/tests/ui/library_stack_layout_test.cpp` | 312 | 312 | 0 |
+| `alcedo_studio/tests/ui/photo_stack_controller_test.cpp` | 215 | 79 | 0 |
+| `alcedo_studio/tests/ui/photo_stack_disclosure_test.cpp` | 94 | 94 | 0 |
+| `alcedo_studio/tests/ui/project_stack_save_dialog_test.cpp` | 46 | 3 | 1 |
+| `docs/VI/README.md` | 688 | 18 | 0 |
+
+**Original delivery artifacts and local build limitation (2026-11-12).** Final GUI executable is
+`build/release/alcedo_studio/src/alcedo_main.exe` (55,129,088 bytes, linked 2026-11-12 at
+02:29:27 local time). Native UI verification exercised the same final production sources.
+The existing `scripts/verify_windows_exe_icon.ps1` compares the EXE and ICO; the user allowed
+this repository check after earlier antivirus blocks. A prior direct check and application
+build passed all six icon images. After the final retained-page correction, both the build
+hook and its exact absolute-path direct invocation returned -1 without verifier output.
+The final application-only retry linked successfully, then failed at post-build.bat line 5
+with the same result. The user initially reported no antivirus alert. The subsequent antivirus
+history supplied by the user confirms that PowerShell process 51824 was blocked while running
+this exact repository check. Its parent Ninja process 26452 matches the final application-only
+retry. No matching Windows PowerShell startup or Application crash event was found. This record
+does not claim a successful final post-build step. Further verifier attempts remain paused
+until the user confirms that this specific check is allowed and they are ready for a retry.
+No antivirus settings, interpreter, or build checks were changed to avoid the failure.
+The completed sample package is available at `build/review/library_photo_stacks_review.alcd`;
+open it from this Release EXE because the machine's file association can select another build.
+Transient test packages, logs, and debugger output under
+`build/tmp/library_photo_stacking_ui/` are removed after evidence is recorded.
+
+
+#### UI review revision (2026-11-13)
+
+**Status:** complete. The requested badge, Stack submenu, and Split Stack are implemented.
+All 154 affected tests and the final four component checks pass. Native review and the final
+Release build, including all six icon comparisons, passed.
+
+**User decisions.** Expanded filtered counters show position among matching photos and the
+matching count (`2/3 matched`), not saved position/full membership. A collapsed badge shows
+its matching count (`3`, or `3 matched` with a filter). When the complete label cannot fit,
+the compact badge keeps the ratio and its tooltip states matched status. Group fragments keep
+their own positions. The tooltip and accessible description retain exact group, view, and saved
+totals. Grouping and sort alone do not add matched text. A one-photo split side becomes an
+ordinary unstacked photo, as explicitly approved by the user.
+
+**Implementation.** The display projection supplies one-based positions with the displayed
+cover first, then saved order; this scalar also passes through deep pages and relocation reads.
+QML reads that role and the Library owner's accepted filter state. The shared badge uses the
+new registered 24-by-24 `photo-stack.svg`, white strong text, a black translucent fill, and the
+same input/focus owner in every layout. Both new color tokens are documented in DESIGN.md and VI.
+No source decode, metadata cache, per-card SQL, or render-quality policy was added.
+
+`ImageContextMenu` contains one Stack submenu. It uses the requested names and order, with
+Add Selected to Stack above Remove from Stack, and a single all-stacks toggle directly after
+the fragment toggle. The caption says All Matched Stacks with an accepted filter. The two
+explicit stack selection actions remain last. All twelve actions stay out of the top level.
+The submenu is constructed only for Library actions and starts closed. Its width follows the
+actual menu rows' intrinsic widths, including the resolved popup font and row padding; Stack
+captions use a single line. This corrects wrapping observed during native review. Other menu
+rows retain their existing wrapping behavior.
+
+Split Stack uses the right-clicked File, independently of a multi-photo selection, and splits
+saved order before that File. The left retains its ID and its cover when present, or promotes
+its earliest saved member. The right gets a new UUID and the clicked File as cover. Singletons
+become unstacked; a first-member split is disabled/no-op. Both partitions commit together.
+The operation includes saved members outside a filter or group. It changes no photo, album
+link, image-edit history, persisted schema, or project-format version. Add/remove still use
+all explicit selected File IDs.
+
+**Primary success call chains:**
+
+```text
+Accepted filter/query -> display SQL matching position -> bounded LibraryDisplayModel roles
+  -> shared PhotoStackDisclosure -> fragment toggle -> accepted publication and restored focus
+Context click -> PrepareMenu -> storage action availability -> Stack submenu -> RunAction
+  -> PhotoStackService::SplitStack -> PhotoStackStore transaction -> package save -> GUI refresh
+All-stacks toggle -> worker reads matching fragment keys (including unloaded fragments)
+  -> GUI owner chooses expand-if-any-collapsed or collapse-all -> one content refresh
+```
+
+**Primary failure call chains:**
+
+```text
+Invalid split or right-header SQL failure -> transaction rollback -> original membership/cover
+Committed split + package failure -> both partitions remain pending -> AlertBadge / Retry Save
+  -> package saved once -> reopen with both exact partitions, including unmatched members
+```
+
+**Executed tests.** The 12-suite targeted run passed **154/154**, with no skips or failures,
+in 344.45 seconds. The initial focused selection passed 13/13. After tooltip and native menu
+corrections, all four declarative component cases passed again; repeats are not added to the
+154 distinct cases.
+
+| Target | Passed |
+| --- | ---: |
+| `AlbumBackendLibraryQueryTest` | 31 |
+| `AlbumStackPagingTest` | 13 |
+| `AlbumStackQueryTest` | 10 |
+| `LibraryDisplayModelTest` | 18 |
+| `LibraryPhotoStackIntegrationTest` | 8 |
+| `LibraryStackActionsTest` | 14 |
+| `LibraryStackLayoutTest` | 12 |
+| `PhotoStackControllerTest` | 11 |
+| `PhotoStackDisclosureTest` | 4 |
+| `PhotoStackStoreTest` | 21 |
+| `ProjectCompatibilityTest` | 6 |
+| `ProjectStackSaveTest` | 6 |
+
+Named assertions include `SplitPreservesBothSavedPartitionsAndPersistsTheirCovers`,
+`SplitPromotesLeftCoverAndLeavesSingletonSidesUnstacked`,
+`SplitSingletonDissolvesOnlyItsSideAndKeepsTheOtherStack`,
+`SplitFirstMemberIsUnchangedAndNonmemberIsRejected`, and
+`SplitSqlFailureRestoresMembershipAndCoverAfterDetach`.
+`SplitMenuUsesClickedMemberAndSavesBothSidesWithSelectionUnchanged` exercises the public menu
+command. `FilteredSplitIncludesUnmatchedMembersAndRetrySavesBothPartitions` verifies a real
+package failure, selection preservation, explicit retry, and reopen of both saved partitions.
+`FilteredPositionsStartAtOneAndFollowOnlyDisplayedMatchingMembers` checks accepted-filter state
+and actual File IDs. The existing 10,000-member deep-page case now asserts positions 9,001 and
+10,000. The 50,000-photo resource case still passes with bounded metadata pages.
+
+`BadgeShowsCountOrMatchingPositionWithCompactStatusInTooltip` checks collapsed/expanded and
+filtered/unfiltered text, the white icon color, and a successfully loaded registered SVG.
+`StackSubmenuHasReviewOrderAndNoTopLevelStackCommands` checks actual production components:
+12 ordered submenu rows, only one top-level Stack entry, closed initial popups, no Stack entry
+outside the Library, current filter caption, intrinsic widths, nonwrapping captions, and the
+Split action ID. Existing declarative checks cover all eight zoom levels, both reduceMotion
+values, and compiled Chinese accessible strings. No synthetic pointer/focus suite was used.
+
+**Commands (PowerShell from the repository root):**
+
+```powershell
+$env:VCVARS_USER_VERSION = '14.44'
+$env:TEMP = Join-Path $PWD 'build/tmp/library_stack_ui_review/runtime'
+$env:TMP = $env:TEMP
+$env:PATH = "C:/Qt/6.12.0/msvc2022_64/bin;$PWD/build/dependencies/duckdb-v1.5.6;$PWD/vcpkg/installed/x64-windows/bin;$PWD/vcpkg/installed/x64-windows/debug/bin;$env:PATH"
+$targets = @('PhotoStackStoreTest', 'AlbumStackQueryTest', 'AlbumStackPagingTest',
+  'LibraryDisplayModelTest', 'PhotoStackControllerTest', 'LibraryStackLayoutTest',
+  'PhotoStackDisclosureTest', 'LibraryPhotoStackIntegrationTest', 'LibraryStackActionsTest',
+  'ProjectStackSaveTest', 'ProjectCompatibilityTest', 'AlbumBackendLibraryQueryTest')
+cmd /c scripts\msvc_env.cmd --build --preset win_release --target $targets --parallel 4
+$pattern = '^(' + ($targets -join '|') + ')\.'
+ctest --test-dir build/release -R $pattern -j 1 --output-on-failure
+cmd /c scripts\msvc_env.cmd --build --preset win_release --target PhotoStackDisclosureTest --parallel 4
+ctest --test-dir build/release -R '^PhotoStackDisclosureTest\.' -j 1 --output-on-failure
+cmd /c scripts\msvc_env.cmd --build --preset win_release --target alcedo_main --parallel 4
+```
+
+The full suite, WorkspaceShellTest, macOS, and sanitizer builds were not run. The prior private
+fixture limitation (#826) remains documented in the original acceptance record; this revision
+does not claim that those absent fixture cases were rerun.
+
+**Native review:** passed in the compiled Release application, using only the isolated
+four-photo package `build/review/library_photo_stacks_ui_review_2026-11-13.alcd`.
+No personal project was opened for native stack mutations. Observed results:
+
+- The collapsed control showed a white stack icon and `3`; expansion showed `1/3`, `2/3`,
+  and `3/3`, with no matching suffix. Adding the four selected photos through the submenu
+  produced one four-member stack, retained all four selections, and showed `1/4` through `4/4`.
+- The camera filter showed `1/2 matched` and `2/2 matched`, using only the two matching
+  photos. Its submenu said Expand/Collapse All Matched Stacks. Clearing the filter restored
+  the four-member display. Camera grouping alone showed two-member fragment counts without
+  the matched suffix; expanding one group showed `1/2` and `2/2` in that group.
+- The top-level menu contained one Stack entry. Its twelve commands had the requested order
+  and fit on single lines in English and Chinese, including the two longer selection actions.
+- Classic cards, grouped classic cells, and justified rows displayed the shared control.
+  The Alcedo and Classic themes retained white-on-dark contrast. Chinese commands and
+  the new Split Stack action were readable. Native review covered window widths of 1,214
+  and 2,194 pixels; the component suite covers all eight zoom levels and the tight label.
+- Splitting at saved member 3 through the Chinese submenu produced `[1,2]` and `[3,4]`,
+  with the first side expanded and the second collapsed. The two selected photos stayed
+  selected. Clicking the second side's badge expanded it; Space collapsed it with focus
+  retained. The all-stacks command expanded the mixed expanded/collapsed result.
+- Follow System language, Alcedo theme, classic layout, no filter, and no grouping were
+  restored. The reviewed application was then closed. The review package retains the
+  two saved two-photo stacks for manual review.
+
+**Release artifact:** `build/release/alcedo_studio/src/alcedo_main.exe`, 55,148,032 bytes,
+linked on 2026-11-13 at 23:39:13 local time. The final application build exited 0; the existing
+`scripts/verify_windows_exe_icon.ps1` compared all six embedded icons successfully.
+The user was notified before each application build. No antivirus setting was changed.
+The prior 2026-11-12 antivirus block remains historical evidence below its original heading.
+Temporary logs and intermediate tooling under `build/tmp/library_stack_ui_review/` are removed
+after this record is complete; the Release EXE and intentional review package remain.
+
+**Acceptance review:** no observed failure remains in the requested revision. Split rollback,
+package failure/retry, reopen, unmatched membership, ordinals, and selection are covered by
+executed owner tests. Native review verifies the actual menu entry points and rendered controls.
+The full test suite, private fixture cases, macOS, and sanitizers remain unrun as stated above.
+
+**Ownership and size review.** Split remains in the existing stack transaction owner, with no
+parallel membership representation. The new ordinal is a scalar read result, not saved state.
+Menu presentation and confirmation stay in QML; policy, explicit targets, order, and mutations
+stay in C++ owners. Existing oversized Library view/module files receive focused role/API
+bindings; they keep their existing geometry/query responsibilities. AppTheme, translations,
+resources, and CMake remain centralized registries. New test cases stay in the focused store,
+controller, paging, layout, and component suites. No method-only file split, new forward
+declaration, consistency counter, or mutable state copy was added.
+
+| File | Total lines | Added | Deleted |
+| --- | ---: | ---: | ---: |
+| `alcedo_studio/src/app/photo_stack_service.cpp` | 71 | 6 | 0 |
+| `alcedo_studio/src/config/resource.qrc` | 134 | 1 | 0 |
+| `alcedo_studio/src/include/app/photo_stack_service.hpp` | 58 | 3 | 0 |
+| `alcedo_studio/src/include/sleeve/photo_stack.hpp` | 37 | 1 | 0 |
+| `alcedo_studio/src/include/storage/store/sleeve/element_store.hpp` | 488 | 1 | 0 |
+| `alcedo_studio/src/include/storage/store/sleeve/photo_stack_store.hpp` | 75 | 6 | 1 |
+| `alcedo_studio/src/include/ui/alcedo_main/album_backend/library_display_model.hpp` | 117 | 1 | 0 |
+| `alcedo_studio/src/include/ui/alcedo_main/album_backend/library_module.hpp` | 536 | 12 | 0 |
+| `alcedo_studio/src/include/ui/alcedo_main/album_backend/photo_stack_controller.hpp` | 83 | 2 | 2 |
+| `alcedo_studio/src/include/ui/alcedo_main/app_theme.hpp` | 533 | 5 | 0 |
+| `alcedo_studio/src/storage/store/sleeve/album_stack_query.cpp` | 444 | 12 | 9 |
+| `alcedo_studio/src/storage/store/sleeve/photo_stack_store.cpp` | 550 | 31 | 0 |
+| `alcedo_studio/src/ui/alcedo_main/DESIGN.md` | 1535 | 19 | 7 |
+| `alcedo_studio/src/ui/alcedo_main/album_backend/library_display_model.cpp` | 437 | 4 | 0 |
+| `alcedo_studio/src/ui/alcedo_main/album_backend/library_module.cpp` | 1930 | 9 | 3 |
+| `alcedo_studio/src/ui/alcedo_main/album_backend/photo_stack_controller.cpp` | 227 | 13 | 3 |
+| `alcedo_studio/src/ui/alcedo_main/app_theme.cpp` | 1392 | 3 | 0 |
+| `alcedo_studio/src/ui/alcedo_main/i18n/alcedo_main_en.ts` | 6899 | 15 | 0 |
+| `alcedo_studio/src/ui/alcedo_main/i18n/alcedo_main_zh_CN.ts` | 9383 | 15 | 0 |
+| `alcedo_studio/src/ui/alcedo_main/qml/AlbumSectionView.qml` | 1486 | 2 | 0 |
+| `alcedo_studio/src/ui/alcedo_main/qml/AppDialogs.qml` | 424 | 2 | 1 |
+| `alcedo_studio/src/ui/alcedo_main/qml/AppMenuItem.qml` | 54 | 2 | 1 |
+| `alcedo_studio/src/ui/alcedo_main/qml/ImageContextMenu.qml` | 292 | 44 | 2 |
+| `alcedo_studio/src/ui/alcedo_main/qml/JustifiedThumbnailTile.qml` | 401 | 2 | 0 |
+| `alcedo_studio/src/ui/alcedo_main/qml/PhotoStackActions.qml` | 95 | 13 | 14 |
+| `alcedo_studio/src/ui/alcedo_main/qml/PhotoStackDisclosure.qml` | 124 | 71 | 62 |
+| `alcedo_studio/src/ui/alcedo_main/qml/ThumbnailGridView.qml` | 2183 | 2 | 0 |
+| `alcedo_studio/tests/app/album_stack_paging_test.cpp` | 501 | 2 | 0 |
+| `alcedo_studio/tests/app/photo_stack_store_test.cpp` | 569 | 75 | 0 |
+| `alcedo_studio/tests/ui/CMakeLists.txt` | 3177 | 3 | 0 |
+| `alcedo_studio/tests/ui/library_stack_layout_test.cpp` | 356 | 44 | 0 |
+| `alcedo_studio/tests/ui/photo_stack_controller_test.cpp` | 298 | 83 | 0 |
+| `alcedo_studio/tests/ui/photo_stack_disclosure_test.cpp` | 250 | 156 | 0 |
+| `docs/VI/README.md` | 698 | 14 | 4 |
+| `alcedo_studio/src/config/panel_icons/photo-stack.svg` | 5 | 5 | 0 |
+
+#### Cover order and split expansion review (2026-11-14)
+
+**Status:** complete. All 159 targeted tests, native GUI checks, and the Release build passed.
+
+**Approved changes.** The first photo is always the saved cover. Set as Stack Cover moves
+the clicked member to the front and keeps the relative order of other members. Moving the
+second member up makes it the cover; moving the cover down promotes its new first neighbor.
+Creating a stack also puts the chosen cover first. Both surviving split stacks expand in
+the accepted view, including matching fragments in unloaded groups. Singletons remain ordinary
+photos. The two stack-selection menu entries and their unused confirmation copy are removed.
+Add/remove still operate on the explicit multi-photo selection.
+
+**Ownership.** The storage transaction owns cover and order together. Reads of older projects
+place their separately stored cover first, without changing rows or the project schema.
+Reordering writes only member IDs and their positions through the existing mapper, under the
+same transaction as the cover write. The Library owner reads matching fragment keys on its
+existing worker, selects only the split result IDs, updates session expansion, and requests
+one content refresh. No membership cache, new persisted representation, or consistency counter
+was introduced. Session expansion is not saved in the package.
+
+**Primary success call chains:**
+
+```text
+Stack menu -> RunAction -> PhotoStackService -> store transaction
+  -> cover-first positions and saved cover commit together -> package save -> display refresh
+Split -> store transaction -> package save -> ExpandSplitStacks -> worker reads matching keys
+  -> both result stacks expanded in session -> one accepted display publication
+```
+
+**Primary failure call chains:**
+
+```text
+Invalid member or failed cover write -> transaction rollback -> original order and cover
+Committed split + package failure -> both partitions remain pending and expanded
+  -> Retry Save -> package reopen with exact saved memberships
+```
+
+**Executed verification:** the 12-suite Release run passed **159/159** with no skips or failures
+in **363.69 seconds**. The focused review checks first passed **10/10** in 15.45 seconds;
+these repeats are not added to the 159 distinct cases.
+
+| Target | Passed |
+| --- | ---: |
+| `PhotoStackStoreTest` | 24 |
+| `PhotoStackControllerTest` | 13 |
+| `PhotoStackDisclosureTest` | 4 |
+| `LibraryStackLayoutTest` | 12 |
+| `LibraryPhotoStackIntegrationTest` | 8 |
+| `LibraryStackActionsTest` | 14 |
+| `ProjectStackSaveTest` | 6 |
+| `LibraryDisplayModelTest` | 18 |
+| `AlbumBackendLibraryQueryTest` | 31 |
+| `AlbumStackQueryTest` | 10 |
+| `AlbumStackPagingTest` | 13 |
+| `ProjectCompatibilityTest` | 6 |
+
+`CreateStackPersistsCoverFirstAndOtherMembersInInputOrder` and
+`CoverShortcutAndNeighborMovesPersistTheFirstMemberAsCover` independently read persisted
+positions with SQL, verify other members' relative order, move both directions across the
+first position, and reopen. `OlderIndependentCoverReadsFirstWithoutWritesAndMovesInThatOrder`
+checks old saved rows, menu availability, command ordering, no read mutation, and subsequent
+persisted movement. `CoverWriteFailureRollsBackBothShortcutAndNeighborReordering` fails the
+header update after position changes and asserts exact rollback of both tables.
+
+`SplitMenuUsesClickedMemberAndSavesBothSidesWithSelectionUnchanged` now also checks both
+results are expanded. `SplitExpandsEveryMatchingGroupOfBothResultStacks` checks every group,
+and `SplitCollapsedFilteredFragmentExpandsSurvivingNonsingletonSide` checks a collapsed
+temporary cover, unmatched members, and an unstacked singleton. The existing real package
+failure/retry/reopen test asserts both partitions remain expanded while unsaved and keeps
+the explicit selection. `StackSubmenuHasReviewOrderAndNoTopLevelStackCommands` checks exactly
+ten ordered rows and the absence of both removed action IDs. Existing owner tests still
+verify multi-photo add/remove, image history, photo marks, album links, and bounded pages
+with 50,000 photos.
+
+**Commands (PowerShell from the repository root):**
+
+```powershell
+$env:VCVARS_USER_VERSION = '14.44'
+$env:TEMP = Join-Path $PWD 'build/tmp/library_stack_cover_order/runtime'
+$env:TMP = $env:TEMP
+$env:PATH = "C:/Qt/6.12.0/msvc2022_64/bin;$PWD/build/dependencies/duckdb-v1.5.6;$PWD/vcpkg/installed/x64-windows/bin;$PWD/vcpkg/installed/x64-windows/debug/bin;$env:PATH"
+$targets = @('PhotoStackStoreTest', 'PhotoStackControllerTest', 'PhotoStackDisclosureTest',
+  'LibraryStackLayoutTest', 'LibraryPhotoStackIntegrationTest', 'LibraryStackActionsTest',
+  'ProjectStackSaveTest', 'LibraryDisplayModelTest', 'AlbumBackendLibraryQueryTest',
+  'AlbumStackQueryTest', 'AlbumStackPagingTest', 'ProjectCompatibilityTest')
+cmd /c scripts\msvc_env.cmd --build --preset win_release --target $targets --parallel 4
+$focused = '^(PhotoStackStoreTest.*(CreateStackPersistsCoverFirst|CoverShortcutAndNeighborMoves|OlderIndependentCover|CoverWriteFailure)|PhotoStackControllerTest.*(Split|MenuActionNames)|PhotoStackDisclosureTest.*StackSubmenu)'
+ctest --test-dir build/release -R $focused -j 1 --output-on-failure
+$pattern = '^(' + ($targets -join '|') + ')\.'
+ctest --test-dir build/release -R $pattern -j 1 --output-on-failure
+cmd /c scripts\msvc_env.cmd --build --preset win_release --target alcedo_main --parallel 4
+```
+
+**Native review:** passed in the compiled Release GUI, using the separate copy
+`build/review/library_photo_stack_order_review_2026-11-14.alcd`. Personal projects were not
+opened for stack mutations. The review used justified rows, Alcedo theme, and English:
+
+- The Stack submenu had exactly ten commands, with neither selection entry present.
+- Grouping four selected photos created one stack. Moving its second photo, DSC01175.ARW,
+  up made it first; collapsing the stack displayed that photo as its cover. Selection
+  remained one photo. Expanding restored the other three members in order.
+- Set as Stack Cover on the fourth photo, DSC06683.dng, moved it directly first. The other
+  three photos retained their relative order, and the selected photo stayed selected.
+- Splitting before the third saved member, DSC0027.ARW, produced two two-photo stacks.
+  All four photos remained visible with `1/2`, `2/2`, `1/2`, `2/2` controls. All four
+  accessible controls said Collapse stack, confirming both results stayed expanded.
+  The existing one-photo selection was preserved. No display preference was changed.
+- The application and the temporary headless fixture-opening session were closed after review.
+
+**Release artifact:** `build/release/alcedo_studio/src/alcedo_main.exe`, 55,147,008 bytes,
+linked on 2026-11-14 at 00:34:43 local time. The application build exited 0 and the existing
+PowerShell verifier matched all six embedded icons. The user was notified before that build.
+Temporary logs and tooling under `build/tmp/library_stack_cover_order/` are removed after
+the record is complete; the EXE and intentional review project remain.
+
+**Ownership and size review.** Ordered File-ID results are the minimal input needed for an
+atomic position change with unique positions; no live stack object or photo metadata is copied.
+Reordering uses O(n) ID reads and membership writes. No additional work is added to card reads.
+The existing Library query owner routes scoped expansion through its existing fragment-key
+worker and display owner; it adds no state or parallel membership representation. The large
+Library module receives a focused API and key filter, with no additional responsibility or
+method-only file split. DESIGN, VI, and the two centralized translation catalogs retain their
+existing roles. Tests stay in focused store, controller, and declarative component suites.
+
+The full suite, WorkspaceShellTest, private fixture cases, macOS, and sanitizers were not run.
+The original phase records and the 2026-11-13 revision remain historical evidence above.
+
+**Acceptance review:** no observed failure remains in these three requested improvements.
+Storage rollback and reopen, command entry points, filtered/grouped split expansion, selection,
+and submenu contents are demonstrated by executed tests and the native review above.
+
+| File | Total lines | Added | Deleted |
+| --- | ---: | ---: | ---: |
+| `alcedo_studio/src/include/app/photo_stack_service.hpp` | 59 | 3 | 2 |
+| `alcedo_studio/src/include/storage/store/sleeve/photo_stack_store.hpp` | 79 | 8 | 4 |
+| `alcedo_studio/src/include/ui/alcedo_main/album_backend/library_module.hpp` | 539 | 4 | 1 |
+| `alcedo_studio/src/storage/store/sleeve/photo_stack_store.cpp` | 562 | 35 | 23 |
+| `alcedo_studio/src/ui/alcedo_main/DESIGN.md` | 1537 | 6 | 4 |
+| `alcedo_studio/src/ui/alcedo_main/album_backend/library_module.cpp` | 1942 | 17 | 5 |
+| `alcedo_studio/src/ui/alcedo_main/album_backend/photo_stack_controller.cpp` | 232 | 7 | 2 |
+| `alcedo_studio/src/ui/alcedo_main/i18n/alcedo_main_en.ts` | 6895 | 1 | 5 |
+| `alcedo_studio/src/ui/alcedo_main/i18n/alcedo_main_zh_CN.ts` | 9379 | 1 | 5 |
+| `alcedo_studio/src/ui/alcedo_main/qml/PhotoStackActions.qml` | 86 | 6 | 15 |
+| `alcedo_studio/tests/app/photo_stack_store_test.cpp` | 635 | 85 | 19 |
+| `alcedo_studio/tests/ui/photo_stack_controller_test.cpp` | 388 | 92 | 2 |
+| `alcedo_studio/tests/ui/photo_stack_disclosure_test.cpp` | 245 | 8 | 13 |
+| `docs/VI/README.md` | 701 | 7 | 4 |
+
+#### PR5 upstream integration verification (2026-11-14)
+
+Verified `feature/library-photo-stacking-PR5` at `86e610c1`, after merge `eeab1698`.
+The parent chain includes upstream `main` at `e86edddb`. Commit `86e610c1` adds only
+the possible dragging direction in section 1.4. This verification changed no product code.
+The existing rubber-band selection interaction remains unchanged.
+
+**Application build:** Windows Release passed in `build/release`, with MSVC 14.44.35207,
+CUDA 12.8, Qt 6.12.0, and the existing `win_release` preset. The executable linked, all six
+embedded icon comparisons passed, and the runtime-copy steps completed.
+
+Two local environment adjustments were necessary:
+
+- The cached compiler was MSVC 14.44, but the default developer environment selected 14.51
+  headers. The initial compile stopped with STL1001. Set `VCToolsVersion=14.44.35207` before
+  the wrapper invocation. The subsequent compilation and linking passed.
+- The generated post-build command's Windows PowerShell invocation exited with `-1` without
+  a diagnostic. The unchanged icon verifier passed in PowerShell 7.6.9. For this local build,
+  its generated `post-build.bat` command invoked that host with `-NoLogo -NoProfile
+  -NonInteractive -Command` and the same script, executable, and ICO paths. The complete build
+  then returned zero. No source CMake file or verifier changed. Reconfiguration regenerates
+  this local command.
+
+**Targeted tests:** 146 distinct cases were discovered. Final outcomes were **141 passed,
+five skipped, and zero unresolved failures** across the following targets:
+
+| Target | Passed | Skipped |
+| --- | ---: | ---: |
+| PhotoStackStoreTest | 24 | 0 |
+| LibraryDisplayModelTest | 18 | 0 |
+| PhotoStackControllerTest | 13 | 0 |
+| LibraryStackLayoutTest | 12 | 0 |
+| LibraryPhotoStackIntegrationTest | 8 | 0 |
+| JustifiedLayoutTest | 24 | 0 |
+| AlbumBackendLibraryQueryTest | 32 | 0 |
+| AlbumBackendI18nTest | 2 | 0 |
+| PhotoStackDisclosureTest | 4 | 0 |
+| AlbumBackendThumbnailTest | 4 | 5 |
+
+The first CTest run took 279.34 seconds. It had 137 passes, five skips, and four failures.
+The four disclosure cases could not load Qt Quick Controls plugin dependencies. Add
+`C:/Qt/6.12.0/msvc2022_64/bin` to PATH and rerun only `PhotoStackDisclosureTest`.
+All four then passed in 0.74 seconds. No test assertion or product behavior changed.
+
+The thumbnail suite skipped its Metal case because this Windows build does not enable Metal.
+Four cases skipped because their RAW fixtures were absent: missing-source handling, zoom-tier
+requests, two-tier pin retention, and display-destination URL updates.
+
+Commands, from the repository root in PowerShell:
+
+```powershell
+$env:VCToolsVersion = '14.44.35207'
+$env:PATH = "C:/Qt/6.12.0/msvc2022_64/bin;$PWD/vcpkg/installed/x64-windows/bin;$env:PATH"
+cmd /c scripts\msvc_env.cmd --build --preset win_release --parallel 4
+$targets = @('PhotoStackStoreTest', 'LibraryDisplayModelTest', 'PhotoStackControllerTest',
+    'LibraryStackLayoutTest', 'LibraryPhotoStackIntegrationTest', 'JustifiedLayoutTest',
+    'AlbumBackendLibraryQueryTest', 'AlbumBackendI18nTest', 'PhotoStackDisclosureTest',
+    'AlbumBackendThumbnailTest')
+cmd /c scripts\msvc_env.cmd --build --preset win_release --target $targets --parallel 4
+$pattern = '^(' + ($targets -join '|') + ')\.'
+ctest --test-dir build/release -N -R $pattern
+ctest --test-dir build/release -j 1 -R $pattern --output-on-failure
+ctest --test-dir build/release -j 1 -R '^PhotoStackDisclosureTest\.' --output-on-failure
+```
+
+The application and targeted test builds both returned zero after the environment adjustments.
+The full test suite, Debug and macOS builds, sanitizers, and native GUI review were not run.
+Temporary logs and the local helper under `build/tmp/stacking_pr5_upstream_verify/` were
+removed after this record was written. Earlier completion records remain historical evidence.
+
+#### PR5 startup correction (2026-11-14)
+
+The user reported that the built executable exited before it showed a window. The startup
+logs recorded `LibraryWorkspace.qml:587:25: IconImage is not a type`. The merge retained
+upstream's file-drop overlay but removed `import QtQuick.Controls.impl`, which defines its
+`IconImage`. Restore that import. Keep the Basic style and the current photo input behavior.
+Track the failure in [#916](https://github.com/zidage/AlcedoStudio/issues/916).
+
+The preceding build and targeted test results are valid for their stated checks. They did not
+prove that production `Main.qml` loaded. The executable's `--verify-qml-imports` command also
+returned zero despite the normal startup failure; that command checks QuickQanava imports only.
+
+Added `MainQmlWorkflowTests.BasicStyleProductionWindowLoadsLibraryAndFileDropArea` in the
+existing `MainQmlWorkflowTest` target. It loads production `Main.qml` with Basic style and real
+application modules. It requires a window, the Library workspace, and the file-drop area.
+It sends no synthetic pointer or focus input. Before the import fix, it failed with the same
+`IconImage` diagnostic. After the fix, it passed in 2.28 seconds, including CTest overhead.
+
+Both the test-target build and `win_release` application build returned zero. All six icon
+comparisons passed again. A direct launch of the exact executable at
+`build/release/alcedo_studio/src/alcedo_main.exe` then showed the native welcome window and
+remained responsive. The process path was checked to exclude the separately installed copy.
+The native launch retained the configured CUDA backend on the NVIDIA GeForce RTX 3080.
+No complete editing workflow or full test suite was run for this correction.
+Temporary diagnostics under `build/tmp/pr5_startup_diagnostics/` were removed after this record.
+
+## 9. Cross-phase acceptance matrix
+
+| Behavior | Primary evidence | Required observable result |
+| --- | --- | --- |
+| Create/add/remove/order/cover | PS1 store tests | Exact persisted IDs, order, cover, and source repair. |
+| Invalid inputs and transaction failure | PS1, PS2A | No partial rows or dangling File references. |
+| Filter on a non-cover | PS3 example and integration | Matching fragment appears with a temporary cover. |
+| Combined predicates | PS3 independent evaluator | One File must satisfy the full predicate. |
+| Cross-day/camera/lens/rating/edit groups | PS3, PS9 | Correct fragment in every applicable group. |
+| Label fragments | PS3, PS6 | Active-model groups share one stack; unique photo counts and action targets. |
+| Album excludes saved cover | PS3, PS9 | Temporary cover; global membership unchanged. |
+| Single or zero matching member | PS3 | One-member fragment keeps stack identity; zero members hide it. |
+| Paging through a large expanded stack | PS4 | Exact order, bounded returned metadata, no duplicate representative. |
+| Expansion and filter clearing | PS5A | Session expansion returns; saved cover is unchanged. |
+| Group collapse versus stack collapse | PS5A, PS7 | Independent state and correct counts. |
+| Bulk photo actions | PS6 | Exact explicit unique targets, including unloaded selected photos. |
+| Save/package/reopen | PS2B, PS5C, PS9 | Saved membership persists; temporary covers and expansion do not persist. |
+| Failed package save and close | PS5B, PS5C | Working change remains visible; retry does not repeat mutation; failed save aborts close. |
+| Delete/unlink/import/metadata writes | PS2A, PS2B, PS9 | Delete repairs; unlink, other imports, and metadata writes preserve membership. |
+| Editor and automation callers | PS6 | All matching photo IDs remain available independent of Library collapse. |
+| Every layout and language | PS7, PS8 | Same behavior, accessible controls, correct real-item anchors. |
+| Performance and resources | PS4, PS9 | No whole-stack metadata load and no per-card SQL. |
+
+## 10. Build and verification commands
+
+### 10.1 Execution rules
+
+These commands are requirements for implementation. They were not run during plan creation.
+All new targets below are proposed until their phase registers them.
+Read each test manifest before building a target.
+
+Use one build at a time. Do not run tests while a build links or copies DLLs.
+Allow at least 10 minutes per Windows build invocation; use 20 minutes for the application.
+Poll the same healthy build process instead of restarting it after a short wait.
+Use PowerShell and the MSVC wrapper. Do not create another build directory.
+
+Run this setup from the repository root when new targets or QML files require reconfiguration:
+
+```powershell
+Set-Location C:\Users\Haidong\Data\Photography\AlcedoStudio
+cmd /c scripts\msvc_env.cmd --preset win_debug -DCMAKE_PREFIX_PATH="D:/Qt/6.9.3/msvc2022_64/lib/cmake" -DALCEDO_BUILD_TESTS=ON
+$env:PATH = "$PWD/build/debug/vcpkg_installed/x64-windows/debug/bin;$env:PATH"
+```
+
+For each V group below, build its targets and select only its test-name pattern:
+
+```powershell
+cmd /c scripts\msvc_env.cmd --build --preset win_debug --target <targets from the table> --parallel 4
+ctest --test-dir build/debug -N -R '<pattern from the table>'
+ctest --test-dir build/debug -j 1 -R '<pattern from the table>' --output-on-failure
+```
+
+| Group | Build targets | CTest name pattern |
+| --- | --- | --- |
+| V1 | `PhotoStackStoreTest` | `^PhotoStackStoreTest\.` |
+| V2A | `PhotoStackLifecycleTest SleeveServiceTest AlbumBackendImageDeleteTest ImportServiceTest` | `^(PhotoStackLifecycleTest|AlbumBackendImageDeleteTest)\.` |
+| V2B | `PhotoStackLifecycleTest ProjectCompatibilityTest StorageMaintenanceTest ProjectServiceTest ImportServiceTest SleeveServiceTest` | `^(PhotoStackLifecycleTest|ProjectCompatibilityTest|StorageMaintenanceTest|ProjectServiceTest)\.` |
+| V3 | `AlbumStackQueryTest AlbumQueryTest` | `^(AlbumStackQueryTest|AlbumQueryTest)\.` |
+| V4 | `AlbumStackPagingTest AlbumStackQueryTest AlbumQueryTest` | `^(AlbumStackPagingTest|AlbumStackQueryTest|AlbumQueryTest)\.` |
+| V5A | `LibraryDisplayModelTest AlbumSectionModelTest AlbumBackendLibraryQueryTest` | `^(LibraryDisplayModelTest|AlbumSectionModelTest|AlbumBackendLibraryQueryTest)\.` |
+| V5B | `PhotoStackControllerTest LibraryDisplayModelTest ProjectCompatibilityTest` | `^(PhotoStackControllerTest|LibraryDisplayModelTest|ProjectCompatibilityTest)\.` |
+| V5C | `ProjectStackSaveTest ProjectStackSaveDialogTest ApplicationCloseCoordinatorTest PhotoStackControllerTest ProjectCompatibilityTest` | `^(ProjectStackSaveTest|ProjectStackSaveDialogTest|ApplicationCloseCoordinatorTest|PhotoStackControllerTest|ProjectCompatibilityTest)\.` |
+| V6 | `LibraryStackActionsTest LibrarySelectionTest LibraryMutationOperationsTest AlbumBackendLibraryQueryTest AutomationLibraryCommandsTest` | `^(LibraryStackActionsTest|LibrarySelectionTest|LibraryMutationOperationsTest|AlbumBackendLibraryQueryTest|AutomationLibraryCommandsTest)\.` |
+| V7 | `alcedo_main LibraryDisplayModelTest PhotoStackControllerTest LibraryStackActionsTest` | `^(LibraryDisplayModelTest|PhotoStackControllerTest|LibraryStackActionsTest)\.` |
+| V8 | `alcedo_main LibraryStackLayoutTest AlbumBackendI18nTest` | `^(LibraryStackLayoutTest|AlbumBackendI18nTest)\.` |
+| V9 | `LibraryPhotoStackIntegrationTest PhotoStackStoreTest PhotoStackLifecycleTest AlbumStackQueryTest AlbumStackPagingTest LibraryDisplayModelTest PhotoStackControllerTest ProjectStackSaveTest LibraryStackActionsTest LibraryStackLayoutTest` | `^(LibraryPhotoStackIntegrationTest|PhotoStackStoreTest|PhotoStackLifecycleTest|AlbumStackQueryTest|AlbumStackPagingTest|LibraryDisplayModelTest|PhotoStackControllerTest|ProjectStackSaveTest|LibraryStackActionsTest|LibraryStackLayoutTest)\.` |
+
+StorageMaintenanceTest is the existing database summary/copy suite registered in tests/sleeve/CMakeLists.txt.
+It does not require the unmerged Project Maintenance feature or any ProjectMaintenance test target.
+ImportServiceTest and SleeveServiceTest have no CTest discovery on audited main.
+After building V2A and V2B, run these direct Windows commands with the PATH setup above:
+
+```powershell
+$sleeveBinary = 'build/debug/alcedo_studio/tests/app/SleeveServiceTest_runtime/SleeveServiceTest.exe'
+$sleeveFilter = 'SleeveServiceTests.*:ProjectVersionTests.*'
+& $sleeveBinary --gtest_list_tests "--gtest_filter=$sleeveFilter"
+& $sleeveBinary "--gtest_filter=$sleeveFilter"
+$importBinary = 'build/debug/alcedo_studio/tests/app/ImportServiceTest_runtime/ImportServiceTest.exe'
+$importFilter = 'ImportServiceTests.ImportEmptyTest:ImportServiceTests.ImportWithNonExistentFiles:ImportServiceTests.ImportedElementNameMatchesFileName:ImportServiceTests.ImportToSubfolder_KeepsUnsyncedAndModifiedSetsDisjoint'
+& $importBinary --gtest_list_tests "--gtest_filter=$importFilter"
+& $importBinary "--gtest_filter=$importFilter"
+```
+
+Record every direct command's exit code and actual case count.
+A successful process with zero selected cases is not evidence.
+On macOS, run those same filters against the built target files without the Windows runtime-directory suffix.
+PS9 runs the direct callers changed by the final diff, including rating, marks, deletion, import,
+project compatibility, and library automation. Select them by exact target prefixes.
+Confirm discovery before claiming execution. A missing executable or `_NOT_BUILT` is not a pass.
+Check stale runtime DLL copies when observed behavior does not match the linked sources.
+
+On macOS, use `macos_debug` in its existing build directory.
+Configure with `-DALCEDO_BUILD_TESTS=ON` and build only the same relevant targets.
+Run the same targeted CTest patterns with `--test-dir build/macos-debug`.
+No image-processing backend changes are planned. Record unavailable platform coverage explicitly.
+
+Only the user can request a full test suite. Never replace these commands with unfiltered CTest.
+Do not spend effort repairing WorkspaceShellTest or synthetic offscreen pointer/focus delivery.
+Use C++ owner/service assertions and record actual manual application checks.
+
+### 10.2 Performance and evidence
+
+Use identical fixture data, build configuration, and hardware for before/after measurements.
+Before PS3 changes the query, run its benchmark fixture against the current photo-read implementation.
+Record those unstacked query timings in the PS3 completion record for the later comparison.
+Record first read and the median and p95 of at least ten warm reads.
+Measure no-stack, many-small-stack, and one-large-stack libraries separately.
+Include first display page, deep page, display position, matching-fragment IDs, and expand/collapse.
+
+Acceptance requirements:
+
+- Each display page returns at most `kMaxAlbumQueryPageRows` photo rows.
+- A collapsed 10,000-member stack loads one representative's metadata for its visible card.
+- Expanded paging loads requested pages, not every earlier member's metadata.
+- No per-card database query or source decode runs on the GUI thread.
+- Thumbnail pins track visible photo occurrences and release on pooling, collapse, and teardown.
+- The no-stack warm-read median must not exceed the pre-change median by more than 25%.
+  Investigate and correct a larger regression before PS9 completes. Record absolute times too.
+- Stack presentation never lowers decode resolution or changes render quality.
+
+Store transient logs under `build/tmp/library_photo_stacking/<phase>/`.
+Write stable commands, results, and resource measurements into the phase completion record.
+Remove that phase's transient files after recording evidence, as required by AGENTS.md.
+Do not commit temporary logs or test packages.
+
+## 11. Risks and implementation checks
+
+| Risk | Detection signal | Required response |
+| --- | --- | --- |
+| Photo and display positions become mixed | Page/position/selection IDs disagree | Correct the shared projection and use separate position types. |
+| Global counts are computed after label expansion | Repeated labels inflate total or matching counts | Count unique Files before occurrence expansion. |
+| A cover from another group affects this group's order | Temporary representative sorts with excluded metadata | Apply the comparator to the actual displayed File. |
+| Deletion leaves a cover or membership behind | Storage invariant check fails after a real delete path | Move cleanup into the shared deletion transaction. |
+| Package failure is reported as a successful save | Reopened package lacks the shown stack change | Preserve committed-unsaved status and retry through the Project owner. |
+| Branch-only API or test slips into a phase | An input file or target is absent from audited main | Remove that prerequisite; use the explicit main-branch APIs and proposed additions in this plan. |
+| Large stacks defeat paging | Metadata count scales with complete stack size | Move fragment/rank computation into storage; keep result metadata bounded. |
+| One layout ignores the feature | Switching layout reveals all hidden members | Complete the layout before product release; do not change user layout preferences. |
+| Source branch differs from this audit | Owners, schema version, or save operations have changed | Re-audit and update this plan before implementing affected work. |
+| A phase approaches its size limit | Updated upper estimate exceeds 2000 lines | Split the phase before writing more implementation. |
+
+Stop an affected phase if its required owner API has changed or its invariants cannot hold.
+Update the plan with the concrete implementation path. Do not add a weaker substitute.
+Do not add a consistency mechanism for an imagined race.
+Report proved defects through the repository issue rules. Search existing issues first.
+The known scroll item #612 remains tracked there; this plan must not claim to have fixed it.
+
+Before completion, search first-party source, tests, docs, and the entire roadmap tree for prohibited
+terminology. Check roadmap filenames too. Rename violations in touched files and update callers/links.
+Review new data copies, async request values, and forward declarations against AGENTS.md.
+Use LF. Do not reformat complete existing source files.
+
+## 12. Completion records
+
+Use this template under each phase. Keep actual failures, skips, and unavailable results.
+Do not fill implementation evidence during plan creation.
+
+```text
+Phase / date / status:
+Source revision and branch:
+Actual changed modules and total diff:
+Implemented product behavior:
+Design details selected or revised, with reason:
+Primary success call chain:
+Primary failure and save-retry call chain:
+Build commands and exit codes:
+Test discovery / passed / failed / skipped:
+Persistence and storage invariant evidence:
+Resource and performance evidence:
+Manual layouts / themes / languages / input states:
+Unavailable coverage and linked issues:
+Temporary evidence removed after recording:
+```
+
+Original plan verification: source and documentation audit only. The 2026-11-11 review checked the latest
+upstream main revision, existing owner APIs, caller chains, and CMake test registration.
+All maintenance-branch prerequisites were removed. The approved product matching rules are unchanged.
+Product code was unchanged during that plan review. No build, automated product test, or manual
+application verification ran during that review. Phase records above contain later execution evidence.

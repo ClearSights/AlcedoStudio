@@ -10,6 +10,7 @@
 #include <QVariantMap>
 #include <map>
 #include <set>
+#include <span>
 #include <vector>
 
 #include "type/type.hpp"
@@ -26,6 +27,8 @@ namespace alcedo::ui {
 /// as it was emits no SelectionChanged.
 class LibrarySelection final : public QObject {
   Q_OBJECT
+  Q_PROPERTY(int hiddenSelectedCount READ HiddenSelectedCount NOTIFY QueryCountsChanged)
+  Q_PROPERTY(int outsideResultCount READ OutsideResultCount NOTIFY QueryCountsChanged)
   Q_PROPERTY(int selectedCount READ SelectedCount NOTIFY SelectionChanged)
   /// Increments on each change of the selection. Bindings that call IsSelected read it.
   Q_PROPERTY(int revision READ Revision NOTIFY SelectionChanged)
@@ -44,6 +47,12 @@ class LibrarySelection final : public QObject {
   explicit LibrarySelection(const IAlbumCatalog* catalog, QObject* parent = nullptr);
 
   [[nodiscard]] auto SelectedCount() const -> int { return static_cast<int>(selected_.size()); }
+  [[nodiscard]] int  HiddenSelectedCount() const { return hidden_selected_count_; }
+  [[nodiscard]] int  OutsideResultCount() const { return outside_result_count_; }
+  /// Apply ID-only read results to live selection. Only a predicate/scope replacement intersects.
+  void ApplyQueryMembership(std::span<const sl_element_id_t> matching,
+                            std::span<const sl_element_id_t> displayed, bool intersect,
+                            bool display_mode);
   [[nodiscard]] auto Revision() const -> int { return revision_; }
   [[nodiscard]] auto SelectedElementIds() const -> std::vector<sl_element_id_t>;
 
@@ -78,6 +87,7 @@ class LibrarySelection final : public QObject {
 
  signals:
   void SelectionChanged();
+  void QueryCountsChanged();
 
  private:
   [[nodiscard]] auto ItemMap(const SelectedImage& image) const -> QVariantMap;
@@ -91,6 +101,8 @@ class LibrarySelection final : public QObject {
   /// Photos that the open additive range added (see SetRangeItems).
   std::set<sl_element_id_t>                range_added_;
   int                                      revision_ = 0;
+  int                                      hidden_selected_count_ = 0;
+  int                                      outside_result_count_  = 0;
 };
 
 }  // namespace alcedo::ui

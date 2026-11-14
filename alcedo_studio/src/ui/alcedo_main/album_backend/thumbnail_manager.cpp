@@ -484,11 +484,6 @@ void ThumbnailManager::UpdateThumbnailState(sl_element_id_t elementId, const QSt
     return;
   }
 
-  item->thumb_url             = thumbUrl;
-  item->thumb_loading         = loading;
-  item->thumb_missing_source  = missingSource;
-  item->thumb_error_text      = errorText;
-
   library_.model().updateThumbnailState(elementId, thumbUrl, loading, missingSource, errorText);
 
   library_.EmitThumbnailUpdated(static_cast<uint>(elementId), thumbUrl, loading, missingSource,
@@ -618,6 +613,18 @@ void ThumbnailManager::RemoveThumbnailState(sl_element_id_t elementId, image_id_
   }
 }
 
+void ThumbnailManager::ReleaseUnloadedThumbnailPins() {
+  // Minimal operation keys are necessary because release erases both pin and request maps.
+  std::vector<ThumbnailCacheKey> removed;
+  for (const auto& [key, pin] : thumbnail_pins_) {
+    if (!library_.FindAlbumItem(key.element_id)) removed.push_back(key);
+  }
+  std::erase_if(visible_occurrences_, [this](const auto& occurrence) {
+    return !library_.FindAlbumItem(std::get<1>(occurrence));
+  });
+  for (const auto& key : removed) ReleasePinnedThumbnailRequest(key);
+}
+
 void ThumbnailManager::ReleaseVisibleThumbnailPins() {
   visible_occurrences_.clear();
   if (thumbnail_pins_.empty()) {
@@ -637,10 +644,9 @@ void ThumbnailManager::ReleaseVisibleThumbnailPins() {
   }();
 
   for (const auto& key : pinned_keys) {
-    auto* item = library_.FindAlbumItem(key.element_id);
-    if (item) {
-      item->thumb_url.clear();
-      item->thumb_loading = false;
+    if (const auto* item = library_.FindAlbumItem(key.element_id)) {
+      library_.model().updateThumbnailState(key.element_id, {}, false, item->thumb_missing_source,
+                                            item->thumb_error_text);
     }
 
     DeactivateThumbnailRequest(key);

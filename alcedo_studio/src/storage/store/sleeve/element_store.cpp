@@ -34,7 +34,10 @@
 #include "storage/store/semantic/semantic_embedding_store.hpp"
 #include "storage/store/semantic/semantic_vector_search.hpp"
 #include "storage/store/sleeve/album_edit_state_sql.hpp"
+#include "storage/store/sleeve/album_query_rows.hpp"
 #include "storage/store/sleeve/album_query_sql.hpp"
+#include "storage/store/sleeve/album_stack_query.hpp"
+#include "storage/store/sleeve/photo_stack_store.hpp"
 #include "type/type.hpp"
 #include "utils/diagnostics/app_logging.hpp"
 #include "utils/string/convert.hpp"
@@ -113,34 +116,9 @@ constexpr const char* kSearchResultColumns =
     "e.id, fi.image_id, i.file_name, i.camera_model, i.lens, "
     "CAST(i.capture_date AS VARCHAR), i.rating, CAST(epoch(e.added_time) AS BIGINT), "
     "i.color_labels, i.delete_mark";
-// The same columns read from the match set table (alias `s`).
-constexpr const char* kMatchSetResultColumns =
-    "s.file_id, s.image_id, s.file_name, s.camera_model, s.lens, "
-    "CAST(s.capture_date AS VARCHAR), s.rating, CAST(epoch(s.added_time) AS BIGINT), "
-    "s.color_labels, s.delete_mark";
-
-/// One row of kSearchResultColumns or kMatchSetResultColumns. The text, rating, and mark
-/// columns are optional: databases written before their NOT NULL defaults (and the #768 mark
-/// migration, which adds no NOT NULL constraint) can hold NULL there, and a NULL reads as the
-/// empty text, rating 0, no color label, and no Delete mark.
-struct SearchResultDbRow {
-  int64_t                    file_id  = 0;
-  int64_t                    image_id = 0;
-  std::optional<std::string> file_name;
-  std::optional<std::string> camera_model;
-  std::optional<std::string> lens;
-  std::optional<std::string> capture_date;
-  std::optional<int32_t>     rating;
-  std::optional<int64_t>     added_time;
-  std::optional<uint8_t>     color_labels;
-  std::optional<bool>        delete_mark;
-  using Columns =
-      duckorm::RowColumns<&SearchResultDbRow::file_id, &SearchResultDbRow::image_id,
-                          &SearchResultDbRow::file_name, &SearchResultDbRow::camera_model,
-                          &SearchResultDbRow::lens, &SearchResultDbRow::capture_date,
-                          &SearchResultDbRow::rating, &SearchResultDbRow::added_time,
-                          &SearchResultDbRow::color_labels, &SearchResultDbRow::delete_mark>;
-};
+using album_query_rows::kMatchSetResultColumns;
+using album_query_rows::SearchResultDbRow;
+using album_query_rows::ToSearchResultRow;
 
 /// A search result row followed by `COUNT(*) OVER ()`: the rows that match before LIMIT.
 struct SearchResultPageDbRow : SearchResultDbRow {
@@ -148,20 +126,6 @@ struct SearchResultPageDbRow : SearchResultDbRow {
   using Columns =
       duckorm::AppendRowColumns<SearchResultDbRow::Columns, &SearchResultPageDbRow::total_count>;
 };
-
-auto ToSearchResultRow(const SearchResultDbRow& row) -> SearchResultRow {
-  return SearchResultRow{.file_id_      = static_cast<sl_element_id_t>(row.file_id),
-                         .image_id_     = static_cast<image_id_t>(row.image_id),
-                         .file_name_    = row.file_name.value_or(std::string{}),
-                         .camera_model_ = row.camera_model.value_or(std::string{}),
-                         .lens_         = row.lens.value_or(std::string{}),
-                         .capture_date_ = row.capture_date.value_or(std::string{}),
-                         .rating_       = static_cast<int>(row.rating.value_or(0)),
-                         .color_labels_ = static_cast<ColorLabelMask>(row.color_labels.value_or(0) &
-                                                                      kColorLabelMaskAll),
-                         .delete_mark_  = row.delete_mark.value_or(false),
-                         .added_time_   = row.added_time};
-}
 
 /// One file id column (`e.id`, `s.file_id`, or an occurrence file id).
 struct FileIdRow {
@@ -271,6 +235,26 @@ class MatchSetTable {
  private:
   duckorm::Connection conn_;
 };
+
+/// Run one focused projection against one evaluated predicate. The match table dies before
+/// commit and connection release, including on exceptions. Results hold no live references.
+template <typename Read>
+auto WithAlbumMatchSet(Database& database, sl_element_id_t folder_id,
+                       const std::optional<duckorm::SqlFragment>&   filter,
+                       const AlbumQueryOptions&                     options,
+                       const std::optional<SemanticQueryEmbedding>& semantic, Read&& read) {
+  auto                 guard = database.GetConnectionGuard();
+  auto                 lock  = guard.Lock();
+  duckorm::Transaction transaction(guard.conn_);
+  auto                 result = [&] {
+    const auto scope = BuildScopedFileQuery(folder_id, filter,
+                                            RelevanceSelectOf(guard.conn_, folder_id, semantic));
+    const MatchSetTable match_set(guard.conn_, scope, options.local_day_time_zone_);
+    return read(guard.conn_, scope.joins_relevance_);
+  }();
+  transaction.commit();
+  return result;
+}
 
 // GROUPING(d, m, l, r, im) of each grouping set in ReadMatchSetBuckets: the bit of a column is
 // 1 when the set does not group by it (first argument is the highest bit).
@@ -594,7 +578,7 @@ auto ReadAlbumQueryFromMatchSet(duckorm::Connection conn, const AlbumQueryOption
     });
   }
 
-  if (read.limit_ > 0) {
+  if (read.limit_ > 0 && read.mode == AlbumReadMode::kPhotos) {
     // Every photo row carries its edit state, so the card shows the edit mark in any
     // presentation, not only when the edit-time sort or group reads the relation.
     auto query = album_sql::RelationsPrefix(options, active_semantic_model_key,
@@ -645,6 +629,18 @@ auto ReadAlbumQueryFromMatchSet(duckorm::Connection conn, const AlbumQueryOption
 /// Validate the scalar inputs of an album read before any statement runs.
 void ValidateAlbumQueryRead(const AlbumQueryOptions& options, const AlbumQueryRead& read) {
   ValidateAlbumQueryOptions(options);
+  if (read.mode != AlbumReadMode::kPhotos && read.mode != AlbumReadMode::kDisplay) {
+    throw std::invalid_argument("Album query: unknown read mode");
+  }
+  if (read.mode == AlbumReadMode::kPhotos && read.read_display_items) {
+    throw std::invalid_argument("Album query: display-item reads require display mode");
+  }
+  if (read.display_offset < 0 ||
+      (read.mode == AlbumReadMode::kPhotos &&
+       (read.display_offset != 0 || !read.expanded_fragments.empty())) ||
+      (read.mode == AlbumReadMode::kDisplay && read.offset_ != 0)) {
+    throw std::invalid_argument("Album query: use the offset of the selected read mode");
+  }
   if (read.offset_ < 0) {
     throw std::invalid_argument("Album query: the page offset is negative");
   }
@@ -693,29 +689,11 @@ ElementStore::ElementStore(Database& database) : database_(database) {}
  * @param element
  */
 void ElementStore::AddElement(const std::shared_ptr<SleeveElement> element) {
-  auto guard   = database_.GetConnectionGuard();
-  auto db_lock = guard.Lock();
-  InsertElementRows(guard.conn_, element);
-  MarkFolderContentsSynced(std::span<const std::shared_ptr<SleeveElement>>(&element, 1));
-  element->sync_flag_ = SyncFlag::SYNCED;
+  ApplyElementChanges(std::span<const std::shared_ptr<SleeveElement>>(&element, 1), {}, {});
 }
 
-void ElementStore::InsertElementRows(duckorm::Connection&                  conn,
-                                     const std::shared_ptr<SleeveElement>& element) {
-  ElementMapper(conn).Insert(element);
-  if (element->type_ == ElementType::FILE) {
-    auto file = std::static_pointer_cast<SleeveFile>(element);
-    FileMapper(conn).Insert({file->element_id_, file->image_id_});
-  } else if (element->type_ == ElementType::FOLDER) {
-    auto folder = std::static_pointer_cast<SleeveFolder>(element);
-    FolderMapper(conn).InsertFolderContents(folder->element_id_, folder->ListElements());
-  }
-}
-
-void ElementStore::AddElements(std::span<const std::shared_ptr<SleeveElement>> elements) {
-  if (elements.empty()) {
-    return;
-  }
+void ElementStore::InsertElementRows(duckorm::Connection&                            conn,
+                                     std::span<const std::shared_ptr<SleeveElement>> elements) {
   // Element and file binding rows go in multi-row statements; one prepared insert per row
   // dominated the project sync after an import.
   std::vector<ElementMapperParams> element_rows;
@@ -730,25 +708,69 @@ void ElementStore::AddElements(std::span<const std::shared_ptr<SleeveElement>> e
     }
   }
 
-  auto guard   = database_.GetConnectionGuard();
-  auto db_lock = guard.Lock();
-  {
-    duckorm::Transaction transaction(guard.conn_);
-    ElementMapper(guard.conn_).InsertParamsRows(element_rows);
-    FileMapper(guard.conn_).InsertParamsRows(file_rows);
-    FolderMapper folder_mapper(guard.conn_);
+  ElementMapper(conn).InsertParamsRows(element_rows);
+  FileMapper(conn).InsertParamsRows(file_rows);
+  FolderMapper folders(conn);
+  for (const auto& element : elements) {
+    if (element->type_ == ElementType::FOLDER) {
+      const auto folder = std::static_pointer_cast<SleeveFolder>(element);
+      folders.InsertFolderContents(folder->element_id_, folder->ListElements());
+    }
+  }
+}
+
+void ElementStore::AddElements(std::span<const std::shared_ptr<SleeveElement>> elements) {
+  ApplyElementChanges(elements, {}, {});
+}
+
+void ElementStore::ApplyElementChanges(
+    std::span<const std::shared_ptr<SleeveElement>> additions,
+    std::span<const std::shared_ptr<SleeveElement>> modifications,
+    std::span<const std::shared_ptr<SleeveElement>> deletions) {
+  if (additions.empty() && modifications.empty() && deletions.empty()) {
+    return;
+  }
+  auto                                guard = database_.GetConnectionGuard();
+  auto                                lock  = guard.Lock();
+  duckorm::Transaction                transaction(guard.conn_);
+  std::unordered_set<sl_element_id_t> seen;
+  for (const auto elements : {additions, modifications, deletions}) {
     for (const auto& element : elements) {
-      if (element->type_ == ElementType::FOLDER) {
-        const auto folder = std::static_pointer_cast<SleeveFolder>(element);
-        folder_mapper.InsertFolderContents(folder->element_id_, folder->ListElements());
+      if (!element || !seen.insert(element->element_id_).second) {
+        throw std::invalid_argument("Element sync requires distinct, non-null targets");
       }
     }
-    transaction.commit();
   }
-  MarkFolderContentsSynced(elements);
-  for (const auto& element : elements) {
-    element->sync_flag_ = SyncFlag::SYNCED;
+  InsertElementRows(guard.conn_, additions);
+  for (const auto& element : modifications) {
+    UpdateElementRows(guard.conn_, element);
   }
+  RemoveElementRows(guard.conn_, deletions);
+  transaction.commit();
+  for (const auto elements : {additions, modifications}) {
+    MarkFolderContentsSynced(elements);
+    for (const auto& element : elements) {
+      element->sync_flag_ = SyncFlag::SYNCED;
+    }
+  }
+}
+
+auto ElementStore::RestoreElement(SleeveElement& element) -> bool {
+  auto       guard = database_.GetConnectionGuard();
+  auto       lock  = guard.Lock();
+  const auto row   = ElementMapper(guard.conn_).GetById(element.element_id_);
+  if (!row) {
+    return false;
+  }
+  std::optional<image_id_t> image_id;
+  if (element.type_ == ElementType::FILE) {
+    image_id = FileMapper(guard.conn_).GetBoundImageById(element.element_id_);
+  }
+  ElementMapper::RestoreFields(element, *row);
+  if (image_id) {
+    static_cast<SleeveFile&>(element).image_id_ = *image_id;
+  }
+  return true;
 }
 
 /**
@@ -847,10 +869,11 @@ auto ElementStore::GetFolderContent(const sl_element_id_t folder_id)
  * element is 0.
  *
  * Low-level row delete: removes the Element row only. It does NOT cascade
- * AI / semantic / pipeline / file-binding rows — that orchestration
+ * AI / semantic / pipeline / file-binding rows â€” that orchestration
  * lives at the service layer (SleeveServiceImpl::DeleteElement flows through
- * Write -> Sync -> RemoveElements / RemoveElement(shared_ptr), which call
- * DeleteSemanticAndAiRowsForFiles on the same connection). Keep this primitive
+ * Write -> SyncLocked -> ApplyElementChanges -> RemoveElementRows; standalone full removal
+ * also uses RemoveElementRows, including stack repair and DeleteSemanticAndAiRowsForFiles
+ * on the same transaction connection). Keep this primitive
  * a pure row delete so the storage-controller layer does not reach back up
  * into element-fetch / cascade orchestration.
  *
@@ -863,29 +886,22 @@ void ElementStore::RemoveElement(const sl_element_id_t id) {
 }
 
 void ElementStore::RemoveElement(const std::shared_ptr<SleeveElement> element) {
-  auto guard   = database_.GetConnectionGuard();
-  auto db_lock = guard.Lock();
-  if (element->type_ == ElementType::FILE) {
-    auto file = std::static_pointer_cast<SleeveFile>(element);
-    DeleteSemanticAndAiRowsForFiles(guard.conn_,
-                                    std::span<const sl_element_id_t>(&file->element_id_, 1));
-    PipelineMapper(guard.conn_).RemoveById(file->element_id_);
-    FileMapper(guard.conn_).RemoveById(file->element_id_);
-    FolderMapper(guard.conn_).RemoveContentById(file->element_id_);
-  } else if (element->type_ == ElementType::FOLDER) {
-    auto folder = std::static_pointer_cast<SleeveFolder>(element);
-    FolderMapper(guard.conn_).RemoveById(folder->element_id_);
-  }
-  ElementMapper(guard.conn_).RemoveById(element->element_id_);
+  RemoveElements(std::span<const std::shared_ptr<SleeveElement>>(&element, 1));
 }
 
 void ElementStore::RemoveElements(std::span<const std::shared_ptr<SleeveElement>> elements) {
   if (elements.empty()) {
     return;
   }
-  auto                         guard   = database_.GetConnectionGuard();
-  auto                         db_lock = guard.Lock();
+  auto                 guard = database_.GetConnectionGuard();
+  auto                 lock  = guard.Lock();
+  duckorm::Transaction transaction(guard.conn_);
+  RemoveElementRows(guard.conn_, elements);
+  transaction.commit();
+}
 
+void ElementStore::RemoveElementRows(duckorm::Connection&                            conn,
+                                     std::span<const std::shared_ptr<SleeveElement>> elements) {
   std::vector<sl_element_id_t> file_ids;
   std::vector<sl_element_id_t> folder_ids;
   std::vector<sl_element_id_t> element_ids;
@@ -908,18 +924,19 @@ void ElementStore::RemoveElements(std::span<const std::shared_ptr<SleeveElement>
     }
   }
 
-  FolderMapper folder_mapper(guard.conn_);
+  FolderMapper folder_mapper(conn);
   if (!file_ids.empty()) {
-    DeleteSemanticAndAiRowsForFiles(guard.conn_, file_ids);
-    PipelineMapper(guard.conn_).RemoveByIds(file_ids);
-    FileMapper(guard.conn_).RemoveByIds(file_ids);
-    folder_mapper.RemoveContentByIds(file_ids);
+    PhotoStackStore::RemoveFileMemberships(conn, file_ids);
+    DeleteSemanticAndAiRowsForFiles(conn, file_ids);
+    PipelineMapper(conn).RemoveByIds(file_ids);
+    FileMapper(conn).RemoveByIds(file_ids);
   }
   if (!folder_ids.empty()) {
     folder_mapper.RemoveByIds(folder_ids);
   }
   if (!element_ids.empty()) {
-    ElementMapper(guard.conn_).RemoveByIds(element_ids);
+    folder_mapper.RemoveContentByIds(element_ids);
+    ElementMapper(conn).RemoveByIds(element_ids);
   }
 }
 
@@ -929,11 +946,7 @@ void ElementStore::RemoveElements(std::span<const std::shared_ptr<SleeveElement>
  * @param element
  */
 void ElementStore::UpdateElement(const std::shared_ptr<SleeveElement> element) {
-  auto guard   = database_.GetConnectionGuard();
-  auto db_lock = guard.Lock();
-  UpdateElementRows(guard.conn_, element);
-  MarkFolderContentsSynced(std::span<const std::shared_ptr<SleeveElement>>(&element, 1));
-  element->sync_flag_ = SyncFlag::SYNCED;
+  ApplyElementChanges({}, std::span<const std::shared_ptr<SleeveElement>>(&element, 1), {});
 }
 
 void ElementStore::UpdateElementRows(duckorm::Connection&                  conn,
@@ -955,22 +968,7 @@ void ElementStore::UpdateElementRows(duckorm::Connection&                  conn,
 }
 
 void ElementStore::UpdateElements(std::span<const std::shared_ptr<SleeveElement>> elements) {
-  if (elements.empty()) {
-    return;
-  }
-  auto guard   = database_.GetConnectionGuard();
-  auto db_lock = guard.Lock();
-  {
-    duckorm::Transaction transaction(guard.conn_);
-    for (const auto& element : elements) {
-      UpdateElementRows(guard.conn_, element);
-    }
-    transaction.commit();
-  }
-  MarkFolderContentsSynced(elements);
-  for (const auto& element : elements) {
-    element->sync_flag_ = SyncFlag::SYNCED;
-  }
+  ApplyElementChanges({}, elements, {});
 }
 
 auto ElementStore::GetElementsInFolderByFilter(const std::shared_ptr<FilterCombo> filter,
@@ -1030,21 +1028,99 @@ auto ElementStore::ReadAlbumQuery(
     const AlbumQueryRead&                        read,
     const std::optional<SemanticQueryEmbedding>& semantic_relevance) const -> AlbumQueryResult {
   ValidateAlbumQueryRead(options, read);
-  auto                 guard   = database_.GetConnectionGuard();
-  auto                 db_lock = guard.Lock();
-  duckorm::Transaction transaction(guard.conn_);
-  AlbumQueryResult     out;
-  {
-    // The only statement that evaluates the filter and the relevance select; every read below
-    // uses its rows.
-    const auto scope = BuildScopedFileQuery(
-        folder_id, extra_filter, RelevanceSelectOf(guard.conn_, folder_id, semantic_relevance));
-    const MatchSetTable match_set(guard.conn_, scope, options.local_day_time_zone_);
-    out = ReadAlbumQueryFromMatchSet(guard.conn_, options, active_semantic_model_key, read,
-                                     scope.joins_relevance_);
+  album_stack_query::ValidateExpansion(folder_id, options, read.expanded_fragments);
+  return WithAlbumMatchSet(database_, folder_id, extra_filter, options, semantic_relevance,
+                           [&](duckorm::Connection connection, bool relevance) {
+                             // With no saved memberships, each photo is exactly one display
+                             // occurrence. Use the existing indexed photo ordering under this
+                             // same read transaction; full identity reads retain their SQL path.
+                             if (read.mode == AlbumReadMode::kDisplay && !read.read_display_items &&
+                                 !album_stack_query::HasMemberships(connection)) {
+                               const AlbumQueryRead photos{
+                                   .offset_                   = read.display_offset,
+                                   .limit_                    = read.limit_,
+                                   .read_groups_              = read.read_groups_,
+                                   .read_statistics_          = read.read_statistics_,
+                                   .read_occurrence_file_ids_ = read.read_occurrence_file_ids_};
+                               auto result = ReadAlbumQueryFromMatchSet(connection, options,
+                                                                        active_semantic_model_key,
+                                                                        photos, relevance);
+                               album_stack_query::ProjectUnstackedPage(folder_id, options,
+                                                                       read.display_offset, result);
+                               return result;
+                             }
+                             auto result = ReadAlbumQueryFromMatchSet(
+                                 connection, options, active_semantic_model_key, read, relevance);
+                             if (read.mode == AlbumReadMode::kDisplay) {
+                               album_stack_query::ReadDisplay(connection, folder_id, options,
+                                                              active_semantic_model_key, read,
+                                                              relevance, result);
+                             }
+                             return result;
+                           });
+}
+
+auto ElementStore::ReadAlbumDisplayPosition(
+    sl_element_id_t folder_id, const std::optional<duckorm::SqlFragment>& extra_filter,
+    const AlbumQueryOptions& options, const std::string& active_semantic_model_key,
+    std::span<const AlbumStackFragmentKey> expanded_fragments, sl_element_id_t file_id,
+    const std::optional<AlbumGroupKey>&          preferred_group,
+    const std::optional<SemanticQueryEmbedding>& semantic_relevance) const
+    -> std::optional<AlbumDisplayPosition> {
+  album_stack_query::ValidateExpansion(folder_id, options, expanded_fragments);
+  album_stack_query::ValidatePreferredGroup(options.group_field_, preferred_group);
+  return WithAlbumMatchSet(database_, folder_id, extra_filter, options, semantic_relevance,
+                           [&](duckorm::Connection connection, bool relevance) {
+                             return album_stack_query::ReadPosition(
+                                 connection, folder_id, options, active_semantic_model_key,
+                                 expanded_fragments, relevance, file_id, preferred_group);
+                           });
+}
+
+auto ElementStore::ReadAlbumDisplayFileIds(
+    sl_element_id_t folder_id, const std::optional<duckorm::SqlFragment>& extra_filter,
+    const AlbumQueryOptions& options, const std::string& active_semantic_model_key,
+    std::span<const AlbumStackFragmentKey> expanded_fragments, int64_t display_begin,
+    int64_t display_end, const std::optional<SemanticQueryEmbedding>& semantic_relevance) const
+    -> std::vector<sl_element_id_t> {
+  album_stack_query::ValidateExpansion(folder_id, options, expanded_fragments);
+  if (display_begin < 0 || display_end < display_begin) {
+    throw std::invalid_argument("Album display: the display range is invalid");
   }
-  transaction.commit();
-  return out;
+  if (display_begin == display_end) return {};
+  return WithAlbumMatchSet(database_, folder_id, extra_filter, options, semantic_relevance,
+                           [&](duckorm::Connection connection, bool relevance) {
+                             return album_stack_query::ReadFileIds(
+                                 connection, options, active_semantic_model_key, expanded_fragments,
+                                 relevance, display_begin, display_end);
+                           });
+}
+
+auto ElementStore::ReadAlbumStackFragmentKeys(
+    sl_element_id_t folder_id, const std::optional<duckorm::SqlFragment>& filter,
+    const AlbumQueryOptions& options, const std::string& model,
+    const std::optional<SemanticQueryEmbedding>& relevance) const
+    -> std::vector<AlbumStackFragmentKey> {
+  return WithAlbumMatchSet(database_, folder_id, filter, options, relevance,
+                           [&](duckorm::Connection connection, bool has_relevance) {
+                             return album_stack_query::ReadFragmentKeys(
+                                 connection, folder_id, options, model, has_relevance);
+                           });
+}
+
+auto ElementStore::ReadAlbumMatchingFragmentIds(
+    sl_element_id_t folder_id, const std::optional<duckorm::SqlFragment>& extra_filter,
+    const AlbumQueryOptions& options, const std::string& active_semantic_model_key,
+    const AlbumStackFragmentKey&                 fragment,
+    const std::optional<SemanticQueryEmbedding>& semantic_relevance) const
+    -> std::vector<sl_element_id_t> {
+  album_stack_query::ValidateExpansion(folder_id, options, {&fragment, 1});
+  return WithAlbumMatchSet(database_, folder_id, extra_filter, options, semantic_relevance,
+                           [&](duckorm::Connection connection, bool relevance) {
+                             return album_stack_query::ReadFragmentIds(connection, options,
+                                                                       active_semantic_model_key,
+                                                                       relevance, fragment);
+                           });
 }
 
 auto ElementStore::ReadAlbumFilePosition(

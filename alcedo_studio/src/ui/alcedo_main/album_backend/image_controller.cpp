@@ -1287,12 +1287,6 @@ auto ImageController::SetImageRating(uint elementId, uint imageId, int rating) -
       return result;
     }
 
-    for (auto& item : library_->view_state().all_images_) {
-      if ((target.element_id_ != 0 && item.element_id == target.element_id_) ||
-          (target.element_id_ == 0 && item.image_id == target.image_id_)) {
-        item.rating = rating;
-      }
-    }
     library_->model().updateRating(target.element_id_, target.image_id_, rating);
     library_->NoteRatingsChanged();
 
@@ -1418,8 +1412,8 @@ auto ImageController::SetViewRatings(const std::vector<RatingTarget>& targets,
     }
   }
 
-  // One pass over the view state for the whole batch.
-  for (auto& item : library_->view_state().all_images_) {
+  // Read previous values through the photo owner, then apply its focused updates.
+  for (const auto& item : library_->model().items()) {
     auto index_it = index_by_element.find(item.element_id);
     if (index_it == index_by_element.end()) {
       index_it = index_by_image.find(item.image_id);
@@ -1431,7 +1425,6 @@ auto ImageController::SetViewRatings(const std::vector<RatingTarget>& targets,
     if (previous[index] < 0) {
       previous[index] = item.rating;
     }
-    item.rating = ratings[index];
   }
   for (size_t i = 0; i < targets.size(); ++i) {
     library_->model().updateRating(targets[i].element_id_, targets[i].image_id_, ratings[i]);
@@ -1720,8 +1713,8 @@ auto ImageController::ApplyViewMarkChange(const std::vector<RatingTarget>& targe
     }
   }
 
-  // One pass over the view state for the whole batch.
-  for (auto& item : library_->view_state().all_images_) {
+  // Read previous values through the photo owner, then apply its focused updates.
+  for (const auto& item : library_->model().items()) {
     auto index_it = index_by_element.find(item.element_id);
     if (index_it == index_by_element.end()) {
       index_it = index_by_image.find(item.image_id);
@@ -1734,9 +1727,6 @@ auto ImageController::ApplyViewMarkChange(const std::vector<RatingTarget>& targe
     if (!previous[index].has_value()) {
       previous[index] = current;
     }
-    const ViewMarks next = ApplyMarkChange(current, change);
-    item.color_labels    = next.color_labels_;
-    item.delete_mark     = next.delete_mark_;
   }
   for (size_t i = 0; i < targets.size(); ++i) {
     if (!previous[i].has_value()) {
@@ -1758,26 +1748,6 @@ auto ImageController::ApplyViewMarkChange(const std::vector<RatingTarget>& targe
 
 void ImageController::SetViewMarks(const std::vector<RatingTarget>& targets,
                                    const std::vector<ViewMarks>&    marks) {
-  std::unordered_map<sl_element_id_t, size_t> index_by_element;
-  std::unordered_map<image_id_t, size_t>      index_by_image;
-  for (size_t i = 0; i < targets.size(); ++i) {
-    if (targets[i].element_id_ != 0) {
-      index_by_element.emplace(targets[i].element_id_, i);
-    } else {
-      index_by_image.emplace(targets[i].image_id_, i);
-    }
-  }
-  for (auto& item : library_->view_state().all_images_) {
-    auto index_it = index_by_element.find(item.element_id);
-    if (index_it == index_by_element.end()) {
-      index_it = index_by_image.find(item.image_id);
-      if (index_it == index_by_image.end()) {
-        continue;
-      }
-    }
-    item.color_labels = marks[index_it->second].color_labels_;
-    item.delete_mark  = marks[index_it->second].delete_mark_;
-  }
   for (size_t i = 0; i < targets.size(); ++i) {
     library_->model().updateMarks(targets[i].element_id_, targets[i].image_id_,
                                   marks[i].color_labels_, marks[i].delete_mark_);
@@ -2248,12 +2218,6 @@ void ImageController::ApplyStarRatingLight(uint elementId, uint imageId, int rat
       metadata.rating_ = ExifDisplayMetaData::NormalizeRating(rating);
       image->SetExifDisplayMetaData(std::move(metadata));
     });
-    for (auto& item : library_->view_state().all_images_) {
-      if ((target.element_id_ != 0 && item.element_id == target.element_id_) ||
-          (target.element_id_ == 0 && item.image_id == target.image_id_)) {
-        item.rating = rating;
-      }
-    }
     library_->model().updateRating(target.element_id_, target.image_id_, rating);
   } catch (...) {
     // Best-effort light write: a transient pool failure leaves the prior rating; the

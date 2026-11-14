@@ -16,6 +16,8 @@ Popup {
     property var host: null
     property Item blurSource: null
     property bool busy: false
+    property bool pendingStackSave: false
+    property string stackSaveError: ""
 
     signal saveRequested()
     signal discardRequested()
@@ -83,7 +85,7 @@ Popup {
             objectName: "editorCloseConfirmTitle"
             Layout.fillWidth: true
             wrapMode: Text.WordWrap
-            text: qsTr("Unsaved Edits")
+            text: root.pendingStackSave ? qsTr("Unsaved Project Changes") : qsTr("Unsaved Edits")
             font.family: root.theme ? root.theme.headlineFontFamily : appTheme.headlineFontFamily
             font.pixelSize: appTheme.fontSizeSection
             font.weight: appTheme.fontWeightHeading
@@ -96,10 +98,18 @@ Popup {
             wrapMode: Text.WordWrap
             text: root.busy
                   ? qsTr("Saving current edits…")
-                  : qsTr("Save edits for the current image before quitting, or discard them.")
+                  : root.pendingStackSave
+                    ? qsTr("Save the project before quitting, or discard all changes since the last project save.")
+                    : qsTr("Save edits for the current image before quitting, or discard them.")
             color: root.theme ? root.theme.colTextMuted : appTheme.textMutedColor
             font.pixelSize: appTheme.fontSizeBody
             font.family: root.theme ? root.theme.uiFontFamily : appTheme.uiFontFamily
+        }
+
+        AlertBadge {
+            objectName: "editorCloseStackSaveError"
+            Layout.fillWidth: true
+            text: root.pendingStackSave ? root.stackSaveError : ""
         }
 
         RowLayout {
@@ -145,7 +155,7 @@ Popup {
 
             DialogActionButton {
                 objectName: "editorCloseSaveButton"
-                text: qsTr("Save")
+                text: root.pendingStackSave ? qsTr("Retry Save") : qsTr("Save")
                 kind: "accent"
                 enabled: !root.busy
                 buttonWidth: appTheme.spaceXl * 4

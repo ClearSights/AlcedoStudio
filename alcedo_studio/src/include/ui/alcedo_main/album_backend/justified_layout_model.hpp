@@ -14,15 +14,16 @@
 
 #include "ui/alcedo_main/album_backend/album_thumbnail_model.hpp"
 #include "ui/alcedo_main/album_backend/justified_row_layout.hpp"
+#include "ui/alcedo_main/album_backend/library_display_model.hpp"
 
 namespace alcedo::ui {
 
 /**
- * @brief The justified-rows Library layout of the loaded photos of an AlbumThumbnailModel, and
- *        the window of the photos whose tiles are near the viewport.
+ * @brief The justified-rows Library layout of source occurrences and their viewport window.
  *
- * @details The model lays out the photos of `source` with JustifiedRowLayout (row height
- * `rowHeight`, view width `viewWidth`). The window is the photos of the layout rows that
+ * @details The source is a LibraryDisplayModel or AlbumThumbnailModel. The model lays out its
+ * loaded occurrences with JustifiedRowLayout (row height `rowHeight`, view width `viewWidth`).
+ * The window is the occurrences of the layout rows that
  * intersect `[viewportY - overscan, viewportY + viewportHeight + overscan]`: source photos
  * `[firstIndex, firstIndex + count)`.
  *
@@ -88,7 +89,7 @@ class JustifiedLayoutModel : public QAbstractListModel {
   QHash<int, QByteArray> roleNames() const override;
 
   [[nodiscard]] auto     source() const -> QObject* { return source_.data(); }
-  /// The AlbumThumbnailModel to lay out; any other object reads as no source.
+  /// The LibraryDisplayModel or AlbumThumbnailModel to lay out.
   void                   setSource(QObject* source);
   [[nodiscard]] auto     viewWidth() const -> qreal { return geometry_.view_width; }
   void                   setViewWidth(qreal value);
@@ -167,7 +168,9 @@ class JustifiedLayoutModel : public QAbstractListModel {
     kPhotos,  ///< Source rows were inserted or removed: an index can name another photo.
   };
 
-  [[nodiscard]] auto thumbnailModel() const -> AlbumThumbnailModel*;
+  [[nodiscard]] auto sourceModel() const -> QAbstractListModel*;
+  /// Loaded extent supplied by the source owner; total rows may include unloaded pages.
+  [[nodiscard]] auto SourceCount() const -> int;
   [[nodiscard]] auto AspectRatioAt(int source_row) const -> double;
   [[nodiscard]] auto AspectRatios(int first, int last) const -> std::vector<double>;
   void               ApplyGeometry(const JustifiedLayoutGeometry& geometry);
@@ -185,7 +188,7 @@ class JustifiedLayoutModel : public QAbstractListModel {
   void OnSourceDataChanged(const QModelIndex& top_left, const QModelIndex& bottom_right,
                            const QList<int>& roles);
 
-  QPointer<AlbumThumbnailModel>        source_;
+  QPointer<QAbstractListModel>         source_;
   std::vector<QMetaObject::Connection> source_connections_;
   JustifiedLayoutGeometry              geometry_{};
   JustifiedRowLayout                   layout_{};

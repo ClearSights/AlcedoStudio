@@ -9,7 +9,10 @@
 #include <QTimeZone>
 #include <algorithm>
 #include <cstddef>
+#include <functional>
 #include <iterator>
+#include <stdexcept>
+#include <unordered_set>
 #include <utility>
 
 namespace alcedo::ui {
@@ -51,7 +54,7 @@ QVariant AlbumThumbnailModel::data(const QModelIndex& index, int role) const {
   return roleValue(rows_[static_cast<size_t>(index.row())], role);
 }
 
-QVariant AlbumThumbnailModel::roleValue(const AlbumItem& item, int role) const {
+QVariant AlbumThumbnailModel::roleValue(const AlbumItem& item, int role) {
   switch (role) {
     case ElementId:
       return static_cast<uint>(item.element_id);
@@ -182,34 +185,89 @@ void AlbumThumbnailModel::beginReplace() {
   beginResetModel();
 }
 
-void AlbumThumbnailModel::endReplace(std::vector<AlbumItem> items, size_t totalCount,
-                                     bool hasMore) {
-  if (!replacing_) {
-    beginResetModel();
-  }
-  const bool total_count_changed = total_count_ != totalCount;
-  rows_                          = std::move(items);
-  total_count_                   = totalCount;
-  rebuildElementIdIndex();
-  replacing_ = false;
-  endResetModel();
-  setHasMore(hasMore);
-  emit countChanged();
-  if (total_count_changed) {
-    emit totalCountChanged();
+void AlbumThumbnailModel::installItems(std::vector<AlbumItem> items, size_t totalCount,
+                                       bool hasMore) {
+  preserveThumbnailState(items);
+  installRows(std::move(items), totalCount, hasMore);
+}
+void AlbumThumbnailModel::preserveThumbnailState(std::vector<AlbumItem>& items) {
+  for (auto& item : items) {
+    const auto row = rowByElementId(item.element_id);
+    if (row >= 0 && rows_[static_cast<size_t>(row)].image_id == item.image_id) {
+      auto& previous            = rows_[static_cast<size_t>(row)];
+      item.thumb_url            = std::move(previous.thumb_url);
+      item.thumb_loading        = previous.thumb_loading;
+      item.thumb_missing_source = previous.thumb_missing_source;
+      item.thumb_error_text     = std::move(previous.thumb_error_text);
+    }
   }
 }
+void AlbumThumbnailModel::installRows(std::vector<AlbumItem> items, size_t totalCount,
+                                      bool hasMore) {
+  replace_total_changed_ = total_count_ != totalCount;
+  replace_more_changed_  = has_more_ != hasMore;
+  rows_                  = std::move(items);
+  total_count_           = totalCount;
+  has_more_              = hasMore;
+  rebuildElementIdIndex();
+}
+void AlbumThumbnailModel::installPageItems(std::vector<AlbumItem>              items,
+                                           const std::vector<sl_element_id_t>& order,
+                                           size_t totalCount, bool hasMore) {
+  std::unordered_map<sl_element_id_t, size_t> supplied;
+  for (size_t i = 0; i < items.size(); ++i) supplied.emplace(items[i].element_id, i);
+  std::unordered_set<sl_element_id_t> unique;
+  for (auto id : order) {
+    if (!unique.insert(id).second || (!supplied.contains(id) && rowByElementId(id) < 0)) {
+      throw std::invalid_argument("Retained photo values are missing or repeated");
+    }
+  }
+  preserveThumbnailState(items);
+  std::vector<AlbumItem> rows;
+  rows.reserve(order.size());
+  for (auto id : order) {
+    const auto found = supplied.find(id);
+    if (found != supplied.end())
+      rows.push_back(std::move(items[found->second]));
+    else {
+      const auto old = rowByElementId(id);
+      if (old < 0) throw std::invalid_argument("Retained photo values are missing");
+      rows.push_back(std::move(rows_[static_cast<size_t>(old)]));
+    }
+  }
+  installRows(std::move(rows), totalCount, hasMore);
+}
+void AlbumThumbnailModel::endReplace() {
+  replacing_ = false;
+  endResetModel();
+  emit countChanged();
+  if (replace_total_changed_) emit totalCountChanged();
+  if (replace_more_changed_) emit hasMoreChanged();
+}
+void AlbumThumbnailModel::endReplace(std::vector<AlbumItem> items, size_t totalCount,
+                                     bool hasMore) {
+  beginReplace();
+  installItems(std::move(items), totalCount, hasMore);
+  endReplace();
+}
+auto AlbumThumbnailModel::itemByFile(sl_element_id_t id) const -> const AlbumItem* {
+  const auto row = rowByElementId(id);
+  return row < 0 ? nullptr : &rows_[static_cast<size_t>(row)];
+}
 
-void AlbumThumbnailModel::appendPage(const std::vector<AlbumItem>& newItems) {
+void AlbumThumbnailModel::appendPage(std::vector<AlbumItem> newItems,
+                                     std::function<void()>  install_other_owners) {
   if (newItems.empty()) return;
   const int oldCount = static_cast<int>(rows_.size());
   beginInsertRows(QModelIndex(), oldCount, oldCount + static_cast<int>(newItems.size()) - 1);
-  rows_.insert(rows_.end(), newItems.begin(), newItems.end());
+  rows_.insert(rows_.end(), std::make_move_iterator(newItems.begin()),
+               std::make_move_iterator(newItems.end()));
   for (const auto& item : newItems) {
     if (item.element_id > 0) {
       element_id_to_row_[item.element_id] = oldCount + static_cast<int>(&item - newItems.data());
     }
   }
+  if (install_other_owners) install_other_owners();
   setHasMore(rows_.size() < total_count_);
   endInsertRows();
   emit countChanged();
@@ -217,7 +275,8 @@ void AlbumThumbnailModel::appendPage(const std::vector<AlbumItem>& newItems) {
 
 void AlbumThumbnailModel::applyOrder(const std::vector<sl_element_id_t>& elementIds,
                                      const std::unordered_map<sl_element_id_t, AlbumItem>& newItems,
-                                     size_t totalCount, bool hasMore) {
+                                     size_t totalCount, bool hasMore,
+                                     std::function<void()> install_other_owners) {
   // The loaded rows that stay in place: in the new order, each one after the previous kept row.
   std::vector<bool> keep(rows_.size(), false);
   int               last_kept = -1;
@@ -282,11 +341,14 @@ void AlbumThumbnailModel::applyOrder(const std::vector<sl_element_id_t>& element
 
   const bool total_count_changed = total_count_ != totalCount;
   total_count_                   = totalCount;
-  setHasMore(hasMore);
+  const bool more_changed        = has_more_ != hasMore;
+  has_more_                      = hasMore;
+  if (install_other_owners) install_other_owners();
   emit countChanged();
   if (total_count_changed) {
     emit totalCountChanged();
   }
+  if (more_changed) emit hasMoreChanged();
 }
 
 void AlbumThumbnailModel::updateThumbnailState(sl_element_id_t elementId, const QString& thumbUrl,
@@ -313,6 +375,7 @@ void AlbumThumbnailModel::updateThumbnailState(sl_element_id_t elementId, const 
   item.thumb_missing_source = missingSource;
   item.thumb_error_text = errorText;
 
+  if (replacing_) return;
   const QModelIndex idx = index(row);
   emit dataChanged(idx, idx, {ThumbUrl, ThumbLoading, ThumbMissingSource, ThumbErrorText});
   emit thumbnailUpdated(static_cast<uint>(elementId), thumbUrl, loading, missingSource, errorText);

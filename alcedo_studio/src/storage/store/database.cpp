@@ -94,6 +94,7 @@ void Database::InitializeDB() {
       byte_size UBIGINT NOT NULL
     );
   )sql");
+  RunDdl(guard.conn_, photo_stack_table_query);
   PopulateSemanticLabelQueries(guard.conn_);
   initialized_ = true;
 }

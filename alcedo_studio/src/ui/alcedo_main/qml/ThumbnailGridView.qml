@@ -39,6 +39,8 @@ Item {
     readonly property real dataLetterSpacing: -0.2
 
     // The library selection (LibrarySelection). A delegate asks it for its own photo.
+    readonly property var occurrences: appModules.library.displayModel
+    property int occurrenceRevision: 0
     readonly property var selection: appModules.library.selection
     property var exportQueueById: ({})
 
@@ -69,6 +71,8 @@ Item {
     property int committedZoomLevel: Math.max(0, Math.min(zoomLevelCount - 1, zoomLevel))
     property bool thumbnailBindingSuspended: false
     property var _deferredThumbnailReleases: ({})
+    property real pendingSelectRequest: 0
+    property bool pendingSelectAdditive: false
     property int selectionAnchorIndex: -1
     // Zoom level of the shown layout. applyZoomTransition sets it after the shown cards are
     // recorded, so every size below changes together with the layout.
@@ -264,11 +268,11 @@ Item {
     }
 
     function modelCount() {
-        return appModules.library.thumbnailModel.count
+        return root.occurrences.count
     }
 
     function modelTotalCount() {
-        return Math.max(modelCount(), appModules.library.thumbnailModel.totalCount)
+        return Math.max(modelCount(), root.occurrences.totalCount)
     }
 
     function clampedZoomLevel(nextZoomLevel) {
@@ -560,10 +564,10 @@ Item {
     }
 
     function scrollToElementAtTop(elementId) {
-        if (!appModules.library || !appModules.library.thumbnailModel) {
+        if (!appModules.library || !root.occurrences) {
             return false
         }
-        const index = appModules.library.thumbnailModel.rowByElementId(Number(elementId))
+        const index = root.occurrences.rowByElementId(Number(elementId))
         return index >= 0 ? root.scrollToIndexAtTop(index) : false
     }
 
@@ -820,7 +824,7 @@ Item {
         }
 
         // Cards that leave the view slide to their new rectangle as ghosts.
-        const model = appModules.library.thumbnailModel
+        const model = root.occurrences
         for (const key in before) {
             const from = before[key]
             if (seen[key] || !from.onScreen) {
@@ -893,30 +897,45 @@ Item {
     }
 
     function maybeLoadMoreThumbnails() {
-        if (thumbnailBindingSuspended
-                || !appModules.library.thumbnailModel.hasMore
-                || appModules.library.thumbnailModel.loading
-                || root.rowPitch() <= 0) {
+        if (thumbnailBindingSuspended || root.rowPitch() <= 0) {
             return
         }
-        const threshold = Math.max(root.rowPitch() * 3, root.view.height * 0.5)
-        const loadedMaxY = maxContentYForHeight(loadedContentHeight(), root.view.originY)
-        if (root.view.contentY >= loadedMaxY - threshold) {
-            appModules.library.LoadMoreThumbnails()
-        }
+        const first = _layoutJustified ? justifiedModel.indexAtY(justifiedView.contentY)
+            : Math.max(0, Math.floor((grid.contentY - grid.originY) / grid.cellHeight)) * root.effectiveColumnCount()
+        const last = _layoutJustified
+            ? justifiedModel.indexAtY(justifiedView.contentY + justifiedView.height + root.rowPitch())
+            : first + (Math.ceil(grid.height / grid.cellHeight) + 1) * root.effectiveColumnCount()
+        appModules.library.RequestDisplayRange(first, last + 1)
     }
 
     // A position read (RequestFocusPosition) loaded the page of the file; in the flat view the
     // occurrence is the grid index.
     Connections {
         target: appModules.library
+        function onOrderedFileIdsReady(requestId, items) {
+            if (requestId !== root.pendingSelectRequest) return
+            root.pendingSelectRequest = 0
+            if (root.pendingSelectAdditive) root.selection.AddItems(items)
+            else root.replaceSelection(items)
+        }
         function onFocusPositionReady(fileId, occurrence, sectionRow) {
             if (occurrence >= 0) {
                 root.scrollToIndexAtTop(occurrence)
             }
         }
-        function onLibraryChangeAboutToApply() { root.captureChange() }
+        function onLibraryChangeAboutToApply() { if (!root._changeCapture) root.captureChange() }
         function onLibraryChangeApplied() { root.applyChange() }
+    }
+
+    Connections {
+        target: root.occurrences
+        function onModelAboutToBeReset() { if (!root._changeCapture) root.captureChange() }
+        function onModelReset() {
+            root.occurrenceRevision++
+            Qt.callLater(root.applyChange)
+            Qt.callLater(root.maybeLoadMoreThumbnails)
+        }
+        function onDataChanged() { root.occurrenceRevision++ }
     }
 
     // ── In-place change (import or delete) ──
@@ -932,7 +951,8 @@ Item {
             if (card.elementId <= 0) {
                 continue
             }
-            cards.push({ target: card, elementId: card.elementId, index: card.cardIndex,
+            cards.push({ target: card, elementId: card.elementId, occurrenceKey: card.occurrenceKey, index: card.cardIndex,
+                         disclosureFocused: card.stackDisclosure && card.stackDisclosure.controlFocused,
                          x: card.x - root.view.contentX, y: card.y - root.view.contentY,
                          w: card.width, h: card.height, thumb: card.liveThumbUrl })
         }
@@ -966,25 +986,34 @@ Item {
             cards[i].onScreen = cards[i].y + cards[i].h > 0 && cards[i].y < root.view.height
             byId[cards[i].elementId] = cards[i]
         }
-        const anchorRow = appModules.library.thumbnailModel.getItemAt(selectionAnchorIndex)
+        const anchorRow = root.occurrences.getItemAt(selectionAnchorIndex)
         _changeCapture = { cards: cards, byId: byId,
+                           focusedDisclosureKey: (cards.find(function(card) { return card.disclosureFocused }) || {}).occurrenceKey || "",
                            selectionAnchorId: anchorRow && anchorRow.elementId
                                               ? Number(anchorRow.elementId) : 0 }
     }
 
     function keepChangeAnchor(cards) {
-        const model = appModules.library.thumbnailModel
+        const model = root.occurrences
         for (let i = 0; i < cards.length; ++i) {
             const card = cards[i]
             if (card.y + card.h <= 0) {
                 continue
             }
-            const index = model.rowByElementId(card.elementId)
+            let index = model.rowByKey(card.occurrenceKey)
+            if (index < 0) index = model.rowByElementId(card.elementId)
             if (index < 0) {
                 continue
             }
-            const item = root.delegateForIndex(index)
-            const y = item ? item.y : root.view.originY + root.rowTopOfIndex(index)
+            let item = root.delegateForIndex(index)
+            if (!item && !_layoutJustified) {
+                grid.positionViewAtIndex(index, GridView.Beginning)
+                grid.forceLayout()
+                item = root.delegateForIndex(index)
+            }
+            const rect = root.layoutRect(index)
+            if (!item && (!_layoutJustified || !rect || rect.height <= 0)) continue
+            const y = item ? item.y : rect.y + root.view.originY
             root.view.contentY = root.clampYForHeight(root.layoutContentHeight(), y - card.y)
             if (!_layoutJustified) {
                 grid.forceLayout()
@@ -1009,6 +1038,10 @@ Item {
         }
 
         const after = changeCards()
+        for (let f = 0; f < after.length; ++f) {
+            if (capture.focusedDisclosureKey === after[f].occurrenceKey && after[f].target.stackDisclosure)
+                after[f].target.stackDisclosure.focusControl()
+        }
         const shown = {}
         const moves = []
         const fades = []
@@ -1189,7 +1222,7 @@ Item {
     }
 
     function selectionItemForIndex(index) {
-        const row = appModules.library.thumbnailModel.getItemAt(index)
+        const row = root.occurrences.getItemAt(index)
         if (!row || !row.elementId) {
             return null
         }
@@ -1201,6 +1234,7 @@ Item {
         return {
             elementId: elementId,
             fileId: Number(row.fileId || row.elementId),
+            occurrenceKey: String(row.occurrenceKey || ""),
             imageId: Number(row.imageId),
             folderId: Number(row.folderId || 0),
             scopeType: row.scopeType ? String(row.scopeType) : "",
@@ -1211,7 +1245,7 @@ Item {
     }
 
     function selectionItemsForRange(firstIndex, lastIndex) {
-        const rows = appModules.library.thumbnailModel.getItemsInRange(firstIndex, lastIndex)
+        const rows = root.occurrences.getItemsInRange(firstIndex, lastIndex)
         const items = []
         for (let i = 0; i < rows.length; ++i) {
             const row = rows[i]
@@ -1225,6 +1259,7 @@ Item {
             items.push({
                 elementId: elementId,
                 fileId: Number(row.fileId || row.elementId),
+            occurrenceKey: String(row.occurrenceKey || ""),
                 imageId: Number(row.imageId),
                 folderId: Number(row.folderId || 0),
                 scopeType: row.scopeType ? String(row.scopeType) : "",
@@ -1237,7 +1272,7 @@ Item {
     }
 
     function loadedIndexForElement(elementId) {
-        return appModules.library.thumbnailModel.rowByElementId(Number(elementId))
+        return root.occurrences.rowByElementId(Number(elementId))
     }
 
     function updateSelectionAnchor(index) {
@@ -1251,13 +1286,9 @@ Item {
             return
         }
         const anchor = selectionAnchorIndex >= 0 ? selectionAnchorIndex : index
-        appModules.library.LoadThumbnailsThroughIndex(Math.max(anchor, index))
-        const rangeItems = selectionItemsForRange(anchor, index)
-        if (additive) {
-            root.selection.AddItems(rangeItems)
-        } else {
-            root.replaceSelection(rangeItems)
-        }
+        pendingSelectAdditive = additive
+        pendingSelectRequest = appModules.library.RequestOrderedFileIds(
+            [{begin: Math.min(anchor, index), end: Math.max(anchor, index) + 1}])
         updateSelectionAnchor(index)
     }
 
@@ -1265,7 +1296,7 @@ Item {
     JustifiedLayoutModel {
         id: justifiedModel
         objectName: "thumbnailGridView_justifiedModel"
-        source: root._layoutJustified ? appModules.library.thumbnailModel : null
+        source: root._layoutJustified ? root.occurrences : null
         viewportY: justifiedView.contentY
         viewportHeight: justifiedView.height
         // The tile count stays while a scroll moves the window, so the window asks for pages.
@@ -1315,7 +1346,7 @@ Item {
         z: 0
         anchors.fill: parent
         visible: !root._layoutJustified
-        model: root._layoutJustified ? null : appModules.library.thumbnailModel
+        model: root._layoutJustified ? null : root.occurrences
         clip: true
         cacheBuffer: 0
         // A scroll gives the cards that leave the view to the rows that enter it.
@@ -1346,6 +1377,7 @@ Item {
             objectName: index === 0 ? "thumbnailGridView_firstCard"
                                     : ("thumbnailGridView_card_" + index)
             required property int index
+            required property string occurrenceKey
             required property int elementId
             required property int imageId
             required property string fileName
@@ -1366,6 +1398,28 @@ Item {
             required property bool thumbLoading
             required property bool thumbMissingSource
             required property string thumbErrorText
+            readonly property var stackItem: { const revision = root.occurrenceRevision; return root.occurrences.getStackAt(index) }
+            readonly property alias stackDisclosure: stackDisclosure
+            PhotoStackDisclosure {
+                id: stackDisclosure
+                x: root.cardInset
+                y: root.cardInset
+                z: 4
+                occurrenceKey: cardDelegate.stackItem.occurrenceKey || ""
+                matchingCount: Number(cardDelegate.stackItem.fragmentMatchCount || 0)
+                matchingPosition: Number(cardDelegate.stackItem.fragmentPosition || 1)
+                filtered: appModules.library.hasActiveFilter
+                queryCount: Number(cardDelegate.stackItem.queryMatchCount || 0)
+                totalCount: Number(cardDelegate.stackItem.stackTotal || 0)
+                expanded: cardDelegate.stackItem.stackExpanded === true
+                temporaryCover: cardDelegate.stackItem.temporaryCover === true
+                availableWidth: cardDelegate.width - root.cardInset * 2
+                compact: root.compactText || availableWidth < fullTextWidth
+                interactive: !appModules.library.queryUpdating
+                pointerInside: root.hoveredCardIndex === index
+                    && root.inputOverlay.disclosureAt(index, root.inputOverlay.mouseX, root.inputOverlay.mouseY)
+                onToggled: { root.captureChange(); appModules.library.ToggleStack(occurrenceKey) }
+            }
             // Photo index of the card; the view reads it from every delegate kind.
             readonly property int cardIndex: index
             readonly property alias liveThumbUrl: thumbPin.liveThumbUrl
@@ -1834,6 +1888,7 @@ Item {
         // Card index whose edit mark is under the pointer, or -1.
         property int hoveredEditMarkIndex: -1
         // Star and card under the left press; a release on the same star rates the photo.
+        property int pressedDisclosure: -1
         property int pressedStar: 0
         property int pressedStarIndex: -1
         property point dragStart: Qt.point(0, 0)
@@ -1848,6 +1903,14 @@ Item {
 
         function gridIndexAt(viewX, viewY) {
             return root.cardIndexAt(viewX, viewY)
+        }
+
+        function disclosureAt(idx, viewX, viewY) {
+            const card = root.delegateForIndex(idx)
+            const control = card ? card.stackDisclosure : null
+            if (!control || !control.visible) return false
+            const p = overlay.mapToItem(control, viewX, viewY)
+            return p.x >= 0 && p.y >= 0 && p.x < control.width && p.y < control.height
         }
 
         function starAt(idx, viewX, viewY) {
@@ -1999,7 +2062,7 @@ Item {
         }
 
         onPositionChanged: function(mouse) {
-            if (pressed && (pressedButtons & Qt.LeftButton)) {
+            if (pressedDisclosure < 0 && pressed && (pressedButtons & Qt.LeftButton)) {
                 const dx = mouse.x - dragStart.x
                 const dy = mouse.y - dragStart.y
                 if (!isDragging && (dx * dx + dy * dy) > 64) {
@@ -2026,6 +2089,9 @@ Item {
                 }
                 return
             }
+            const disclosureIndex = gridIndexAt(mouse.x, mouse.y)
+            pressedDisclosure = disclosureAt(disclosureIndex, mouse.x, mouse.y) ? disclosureIndex : -1
+            if (pressedDisclosure >= 0) { mouse.accepted = true; return }
             dragStart = Qt.point(mouse.x, mouse.y)
             dragCurrent = Qt.point(mouse.x, mouse.y)
             dragStartContentY = layoutContentY()
@@ -2038,6 +2104,15 @@ Item {
         }
 
         onReleased: function(mouse) {
+            if (pressedDisclosure >= 0) {
+                const idx = pressedDisclosure
+                pressedDisclosure = -1
+                if (disclosureAt(idx, mouse.x, mouse.y)) {
+                    const card = root.delegateForIndex(idx)
+                    if (card) card.stackDisclosure.activate()
+                }
+                return
+            }
             if (mouse.button !== Qt.LeftButton) {
                 isDragging = false
                 return
@@ -2089,9 +2164,10 @@ Item {
         }
 
         onDoubleClicked: function(mouse) {
+            if (mouse.button !== Qt.LeftButton) return
             const idx = gridIndexAt(mouse.x, mouse.y)
             // Two quick star clicks rate twice; they do not open the editor.
-            if (starAt(idx, mouse.x, mouse.y) > 0) {
+            if (disclosureAt(idx, mouse.x, mouse.y) || starAt(idx, mouse.x, mouse.y) > 0) {
                 return
             }
             if (idx >= 0) {

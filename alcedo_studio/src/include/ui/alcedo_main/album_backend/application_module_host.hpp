@@ -39,6 +39,7 @@ class QQmlEngine;
 #include "ui/alcedo_main/album_backend/import_behavior_preferences.hpp"
 #include "ui/alcedo_main/album_backend/import_export.hpp"
 #include "ui/alcedo_main/album_backend/interaction_policy_controller.hpp"
+#include "ui/alcedo_main/album_backend/library_display_model.hpp"
 #include "ui/alcedo_main/album_backend/library_module.hpp"
 #include "ui/alcedo_main/album_backend/library_mutation_operations.hpp"
 #include "ui/alcedo_main/album_backend/library_view_preferences.hpp"
@@ -48,6 +49,7 @@ class QQmlEngine;
 #include "ui/alcedo_main/album_backend/lut_preview_controller.hpp"
 #include "ui/alcedo_main/album_backend/model_download_controller.hpp"
 #include "ui/alcedo_main/album_backend/nikon_he_recovery_controller.hpp"
+#include "ui/alcedo_main/album_backend/photo_stack_controller.hpp"
 #include "ui/alcedo_main/album_backend/project_launch_coordinator.hpp"
 #include "ui/alcedo_main/album_backend/project_maintenance_controller.hpp"
 #include "ui/alcedo_main/album_backend/project_module.hpp"
@@ -65,6 +67,8 @@ class ApplicationModuleHost final : public QObject {
   Q_OBJECT
   Q_PROPERTY(ProjectModule* project READ project CONSTANT)
   Q_PROPERTY(LibraryModule* library READ library CONSTANT)
+  Q_PROPERTY(LibraryDisplayModel* libraryDisplayModel READ library_display CONSTANT)
+  Q_PROPERTY(PhotoStackController* photoStacks READ photo_stacks CONSTANT)
   Q_PROPERTY(FolderController* folders READ folders CONSTANT)
   Q_PROPERTY(ImageController* images READ images CONSTANT)
   Q_PROPERTY(StatsEngine* stats READ stats CONSTANT)
@@ -146,8 +150,12 @@ class ApplicationModuleHost final : public QObject {
   // Typed accessors (C++ / tests).
   [[nodiscard]] auto project() -> ProjectModule* { return project_.get(); }
   [[nodiscard]] auto project() const -> const ProjectModule* { return project_.get(); }
+  /// C++ command owner; QML stack controls remain unavailable until all layouts are complete.
+  [[nodiscard]] auto photo_stacks() -> PhotoStackController* { return photo_stacks_.get(); }
   [[nodiscard]] auto library() -> LibraryModule* { return library_.get(); }
   [[nodiscard]] auto library() const -> const LibraryModule* { return library_.get(); }
+  /// The library-owned display model, registered once for all layouts.
+  [[nodiscard]] auto library_display() -> LibraryDisplayModel* { return library_->display_model(); }
   [[nodiscard]] auto folders() -> FolderController* { return folders_.get(); }
   [[nodiscard]] auto images() -> ImageController* { return images_.get(); }
   [[nodiscard]] auto stats() -> StatsEngine* { return stats_.get(); }
@@ -263,6 +271,7 @@ class ApplicationModuleHost final : public QObject {
   std::unique_ptr<alcedo::CameraProfileLibraryService> camera_profiles_;
   std::unique_ptr<ProjectModule>                       project_;
   std::unique_ptr<LibraryModule>                       library_;
+  std::unique_ptr<PhotoStackController>                photo_stacks_;
   std::unique_ptr<FolderController>                    folders_;
   std::unique_ptr<ImageController>                     images_;
   std::unique_ptr<StatsEngine>                         stats_;

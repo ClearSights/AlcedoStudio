@@ -45,6 +45,24 @@ auto Item(uint element_id, uint image_id, const QString& file_name) -> QVariantM
                      {QStringLiteral("isHdr"), false}};
 }
 
+TEST(LibrarySelectionTest, HiddenAndOutsideCountsAreDisjointAndCollapseKeepsExplicitSelection) {
+  LibrarySelection selection(nullptr);
+  selection.Replace(
+      QVariantList{Item(1, 10, "cover"), Item(2, 20, "hidden"), Item(3, 30, "outside")});
+  const std::vector<sl_element_id_t> matches{1, 2}, visible{1};
+  selection.ApplyQueryMembership(matches, visible, false, true);
+  EXPECT_EQ(selection.SelectedCount(), 3);
+  EXPECT_EQ(selection.HiddenSelectedCount(), 1);
+  EXPECT_EQ(selection.OutsideResultCount(), 1);
+  selection.ApplyQueryMembership(matches, matches, false, true);
+  EXPECT_EQ(selection.HiddenSelectedCount(), 0);
+  EXPECT_EQ(selection.OutsideResultCount(), 1);
+  selection.ApplyQueryMembership(matches, visible, true, true);
+  EXPECT_EQ(selection.SelectedElementIds(), (std::vector<sl_element_id_t>{1, 2}));
+  EXPECT_EQ(selection.HiddenSelectedCount(), 1);
+  EXPECT_EQ(selection.OutsideResultCount(), 0);
+}
+
 TEST(LibrarySelectionTest, SetSelectedIsNoOpWhenStateMatches) {
   LibrarySelection selection(nullptr);
   QSignalSpy       changed(&selection, &LibrarySelection::SelectionChanged);

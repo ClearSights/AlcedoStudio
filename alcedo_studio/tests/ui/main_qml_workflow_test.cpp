@@ -319,6 +319,29 @@ auto LoadMainQml(ApplicationModuleHost& host, LanguageManager& language_manager,
   return engine.rootObjects().empty() ? nullptr : engine.rootObjects().front();
 }
 
+TEST_F(MainQmlWorkflowTests, BasicStyleProductionWindowLoadsLibraryAndFileDropArea) {
+  ASSERT_TRUE(QCoreApplication::instance());
+  AppTheme::RegisterFonts();
+  QQuickStyle::setStyle(QStringLiteral("Basic"));
+
+  ApplicationModuleHost host;
+  ASSERT_TRUE(CreateTestProject(host));
+  LanguageManager language_manager(QCoreApplication::instance());
+  QQmlApplicationEngine engine;
+  std::vector<QQmlError> warnings;
+  auto* root = LoadMainQml(host, language_manager, engine, warnings);
+  std::ostringstream errors;
+  for (const auto& warning : warnings) {
+    errors << warning.toString().toStdString() << '\n';
+  }
+  ASSERT_NE(root, nullptr) << errors.str();
+  auto* window = qobject_cast<QQuickWindow*>(root);
+  ASSERT_NE(window, nullptr);
+  EXPECT_NE(root->findChild<QObject*>(QStringLiteral("libraryWorkspace")), nullptr);
+  EXPECT_NE(root->findChild<QObject*>(QStringLiteral("libraryGridFileDropArea")), nullptr);
+  window->close();
+}
+
 TEST_F(MainQmlWorkflowTests, SettingsDoneDoesNotOverwriteCommittedShortcutChanges) {
   ASSERT_TRUE(QCoreApplication::instance());
   // The capture field writes through the registry into QSettings; isolate the

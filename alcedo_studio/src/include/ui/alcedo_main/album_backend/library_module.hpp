@@ -30,19 +30,20 @@
 #include "ui/alcedo_main/album_backend/album_section_model.hpp"
 #include "ui/alcedo_main/album_backend/album_thumbnail_model.hpp"
 #include "ui/alcedo_main/album_backend/album_types.hpp"
+#include "ui/alcedo_main/album_backend/folder_controller.hpp"
+#include "ui/alcedo_main/album_backend/library_display_model.hpp"
 #include "ui/alcedo_main/album_backend/library_selection.hpp"
 #include "ui/alcedo_main/album_backend/library_selection_marks.hpp"
+#include "ui/alcedo_main/album_backend/library_selection_operations.hpp"
+#include "ui/alcedo_main/album_backend/project_module.hpp"
 #include "ui/alcedo_main/album_backend/search_controller.hpp"
 #include "ui/alcedo_main/album_backend/search_request_worker.hpp"
+#include "ui/alcedo_main/album_backend/stats_engine.hpp"
 #include "ui/alcedo_main/album_backend/thumbnail_manager.hpp"
 #include "ui/alcedo_main/i18n.hpp"
 #include "ui/edit_viewer/window_display_destination.hpp"
 
 namespace alcedo::ui {
-
-class FolderController;
-class ProjectModule;
-class StatsEngine;
 
 /**
  * @brief Immutable input of one library read on the query worker.
@@ -61,6 +62,8 @@ struct LibraryQueryInput {
   LibrarySearchInput                   search_{};
   AlbumQueryOptions                    options_{};
   std::string                          active_model_key_{};
+  /// Includes minimal expansion keys when display mode is requested. They travel with the
+  /// immutable query message, and never retain an owner reference or member metadata.
   AlbumQueryRead                       read_{};
   int64_t                              page_size_ = 0;
   std::shared_ptr<AlbumBrowseService>  browse_{};
@@ -80,7 +83,7 @@ struct LibraryQueryOutput {
   /// natural-language text, else the accepted embedding of the input. Empty for other searches.
   std::optional<SemanticQueryEmbedding> semantic_query_{};
   QString                   error_{};
-  /// Display values of result_.rows_ (same order) that SQL does not return: extension, ISO,
+  /// Display values of result_.display_rows (same order) that SQL does not return: extension, ISO,
   /// aperture, focal length, HDR flag (from the image pool) and the semantic label text. The
   /// query worker reads them, so publishing a page runs no per-row database read on the UI
   /// thread.
@@ -100,14 +103,15 @@ struct LibraryQueryOutput {
 /// and IAlbumCatalog for sibling modules.
 ///
 /// It owns the accepted library query: the presentation options (one optional group field and
-/// one optional photo sort field), the accepted result's photos and sections, and the query
-/// worker that runs every library read (refresh, page, position, and id reads) and the search
-/// dialog previews. StatsEngine owns the Inspector filter values and SearchController owns the
-/// search term; both request a refresh here instead of reading pages themselves.
+/// one optional photo sort field), the accepted result's display, photo, and section owners, and
+/// the query worker that runs every library read (refresh, page, position, and id reads) and the
+/// search dialog previews. StatsEngine owns the Inspector filter values and SearchController owns
+/// the search term; both request a refresh here instead of reading pages themselves.
 class LibraryModule final : public QObject, public IAlbumCatalog {
   Q_OBJECT
   Q_PROPERTY(QVariantList thumbnails READ Thumbnails NOTIFY ThumbnailsChanged)
   Q_PROPERTY(QObject* thumbnailModel READ ThumbnailModel CONSTANT)
+  Q_PROPERTY(LibraryDisplayModel* displayModel READ display_model CONSTANT)
   Q_PROPERTY(int shownCount READ ShownCount NOTIFY CountsChanged)
   Q_PROPERTY(int totalCount READ TotalCount NOTIFY CountsChanged)
   Q_PROPERTY(bool hasMoreThumbnails READ HasMoreThumbnails NOTIFY CountsChanged)
@@ -127,6 +131,7 @@ class LibraryModule final : public QObject, public IAlbumCatalog {
   Q_PROPERTY(QString groupField READ GroupFieldName NOTIFY PresentationChanged)
   Q_PROPERTY(bool grouped READ Grouped NOTIFY PresentationChanged)
   Q_PROPERTY(bool queryUpdating READ QueryUpdating NOTIFY QueryStateChanged)
+  Q_PROPERTY(bool hasActiveFilter READ HasActiveFilter NOTIFY QueryStateChanged)
   /// A refresh that replaces the shown result (scope, filter, search, presentation) is
   /// scheduled or running. The Library shows the loading grid only for these refreshes.
   Q_PROPERTY(bool queryReplacing READ QueryReplacing NOTIFY QueryStateChanged)
@@ -176,6 +181,15 @@ class LibraryModule final : public QObject, public IAlbumCatalog {
   [[nodiscard]] auto query_worker() -> SearchRequestWorker& { return *query_worker_; }
   [[nodiscard]] auto section_model() -> AlbumSectionModel& { return section_model_; }
   [[nodiscard]] auto section_model() const -> const AlbumSectionModel& { return section_model_; }
+  [[nodiscard]] auto display_model() -> LibraryDisplayModel* { return &display_model_; }
+  [[nodiscard]] auto display_model() const -> const LibraryDisplayModel* { return &display_model_; }
+  /// C++ composition setting only. Production keeps photo mode until every layout supports
+  /// stacks. Changing it requests a replacement through the existing query worker.
+  void               SetStackDisplayEnabled(bool enabled);
+  /// Use raw photo reads while the editor filmstrip owns the thumbnail surface. GUI thread.
+  void               SetEditorPhotoView(bool active);
+  /// Project-close owner operation: invalidate reads and release photos, pages, and choices.
+  void               ClearProjectPresentation();
   [[nodiscard]] auto accepted_options() const -> const AlbumQueryOptions& {
     return accepted_options_;
   }
@@ -200,6 +214,12 @@ class LibraryModule final : public QObject, public IAlbumCatalog {
   QString GroupFieldName() const { return InspectorFieldName(accepted_options_.group_field_); }
   bool    Grouped() const { return accepted_options_.group_field_ != AlbumGroupField::kNone; }
   bool    QueryUpdating() const { return refresh_in_flight_; }
+  /// Accepted search/Inspector predicates only; grouping and sort do not mark a query filtered.
+  bool    HasActiveFilter() const {
+    return accepted_input_ && (accepted_input_->stats_filter_.has_value() ||
+                               accepted_input_->search_.filter_.has_value() ||
+                               accepted_input_->search_.semantic_query_.has_value());
+  }
   bool    QueryReplacing() const {
     return refresh_in_flight_ &&
            (unpublished_replace_ ||
@@ -250,12 +270,36 @@ class LibraryModule final : public QObject, public IAlbumCatalog {
   /// Load the occurrence pages that the section rows [@p firstRow, @p lastRow] show, with a
   /// margin; pages far from them are released (bounded retention).
   Q_INVOKABLE void       RequestSectionRows(int firstRow, int lastRow);
+  /// Request a flat viewport's half-open display range, including holes in retained pages.
+  /// GUI thread; query worker reads bounded pages and retains at most three nearby windows.
+  Q_INVOKABLE void       RequestDisplayRange(qint64 begin, qint64 end);
   /// Read the ordered unique files of the occurrence ranges (`[{begin, end}]`) on the worker.
   /// They arrive with OrderedFileIdsReady as selection items `{elementId, fileId, imageId,
   /// fileName}`. Reads ids and typed columns only, no thumbnail metadata.
   Q_INVOKABLE qulonglong RequestOrderedFileIds(const QVariantList& ranges);
-  /// Find @p fileId in the accepted result with SQL ranking on the worker and load its page.
-  /// The occurrence arrives with FocusPositionReady (-1 when the file no longer matches).
+  /// Toggle exactly the loaded occurrence's fragment; refuse absent keys without changing
+  /// selection.
+  Q_INVOKABLE void       ToggleStack(const QString& occurrence_key);
+  /// Read all matching fragment keys on the worker and change only their session choices.
+  Q_INVOKABLE void       SetAllStacksExpanded(bool expanded);
+  /// Expand all accepted matching fragments if any is collapsed, otherwise collapse them all.
+  /// Read unloaded keys on the existing query worker; selection and saved rows are unchanged.
+  Q_INVOKABLE void       ToggleAllStacksExpanded();
+  /// Expand matching fragments of the split result, including unloaded groups, then refresh.
+  /// GUI-thread entry; the query worker reads keys only. Selection and stored rows are unchanged.
+  void                   ExpandSplitStacks(std::vector<std::string> stack_ids);
+  /// Select exact fragment or entire saved stack from a loaded occurrence; no implicit selection.
+  Q_INVOKABLE void       SelectStack(const QString& occurrence_key, bool entire);
+  /// Capture minimal query input and explicit IDs for command ordering on a worker. No GUI SQL.
+  auto                   StackCommandOrder(std::vector<sl_element_id_t> ids) const
+      -> std::function<std::vector<sl_element_id_t>()>;
+  /// Replace selection with this fragment's matching Files on the worker. GUI entry; failure
+  /// keeps selection and reports the diagnostic through the query owner.
+  void                   SelectMatchingStackPhotos(const AlbumStackFragmentKey& fragment);
+  /// Explicitly select all saved members, including Files outside the result. GUI entry.
+  void                   SelectEntireStack(const std::string& stack_id);
+  /// Find @p fileId on the worker; expand its hidden fragment before loading its display page.
+  /// FocusPositionReady reports -1 for a nonmatch, preserving the current filter and scope.
   Q_INVOKABLE void       RequestFocusPosition(uint fileId, const QString& preferredGroupTitle = {},
                                               bool preferredGroupUnknown = false);
   /**
@@ -282,10 +326,8 @@ class LibraryModule final : public QObject, public IAlbumCatalog {
    */
   void                   RevealLastEditedFile();
   /**
-   * @brief Find the pending reveal file in the accepted result (RequestFocusPosition). When
-   *        the current folder does not hold it, select the root folder (every project file,
-   *        filters and search cleared) once and find it there. The pending reveal ends when
-   *        the position is delivered or the file is not in the project.
+   * @brief Find the pending reveal in the accepted result. Expand its matching fragment when
+   *        collapsed. A nonmatching File reports an error and leaves scope and filters intact.
    */
   Q_INVOKABLE void       RequestPendingReveal();
   /**
@@ -343,11 +385,7 @@ class LibraryModule final : public QObject, public IAlbumCatalog {
   void                   RequestLibraryContentRefresh();
 
   // ── IAlbumCatalog ──────────────────────────────────────────────────────
-  auto FindAlbumItem(sl_element_id_t elementId) -> AlbumItem* override;
   auto FindAlbumItem(sl_element_id_t elementId) const -> const AlbumItem* override;
-  void AddOrUpdateAlbumItem(sl_element_id_t elementId, image_id_t imageId, sl_element_id_t folderId,
-                            const QString& scopeType, const file_name_t& fallbackName,
-                            const std::filesystem::path& filePath) override;
   void SetAlbumItemHdrFlag(sl_element_id_t elementId, image_id_t imageId, bool isHdr) override;
   void SetAlbumItemEditState(sl_element_id_t elementId, image_id_t imageId,
                              std::optional<std::int64_t> editedAtNs,
@@ -396,6 +434,8 @@ class LibraryModule final : public QObject, public IAlbumCatalog {
   void libraryChangeApplied();
 
  private:
+  /// Queue one complete expansion update. nullopt toggles from the live choices after key read.
+  void ChangeStackExpansion(std::optional<bool> expanded, std::vector<std::string> stack_ids = {});
   /// How a submitted refresh changes the shown result.
   enum class RefreshKind : std::uint8_t {
     kReplace,  ///< A new result replaces the shown one (model reset).
@@ -405,16 +445,19 @@ class LibraryModule final : public QObject, public IAlbumCatalog {
   /// (grouped mode) or the loaded rows (flat mode) in the new occurrence order, and the photos
   /// among them whose rows the refresh must read before the change is applied.
   struct InPlaceChange {
-    AlbumSectionModel::PageMap   pages_{};               ///< Grouped mode: retained pages.
+    LibraryDisplayModel::PageMap pages_{};               ///< Retained display ranges.
     std::vector<sl_element_id_t> loaded_order_{};        ///< Photo rows of the thumbnail model.
     int64_t                      loaded_end_ = 0;        ///< Flat mode: loaded occurrence prefix.
     std::vector<int64_t>         unread_occurrences_{};  ///< One occurrence per unread photo.
   };
 
   void               ScheduleRefresh(RefreshKind kind);
-  /// The in-place change from the shown result to @p output (a read with occurrence ids).
-  [[nodiscard]] auto PlanInPlaceChange(const LibraryQueryInput&  input,
-                                       const LibraryQueryOutput& output) const -> InPlaceChange;
+  /// Store the published query and expansion choices without retaining project services.
+  /// GUI thread only, during publication, before subsequent paging or selection reads.
+  void AcceptQueryInput(const LibraryQueryInput& input, const LibraryQueryOutput& output);
+  /// Consume the minimal display stream to plan retained ranges and unread photo positions.
+  [[nodiscard]] auto PlanInPlaceChange(const LibraryQueryInput& input,
+                                       LibraryQueryOutput&      output) const -> InPlaceChange;
   /// Step 1 of an in-place refresh: plan the change, then read the unread photo rows (step 2)
   /// or apply the change at once.
   void               PublishInPlaceRefresh(std::shared_ptr<const LibraryQueryInput> input,
@@ -423,11 +466,13 @@ class LibraryModule final : public QObject, public IAlbumCatalog {
                                         InPlaceChange change, const LibraryQueryOutput& rows);
   /// A failed refresh: the accepted content stays and the pending changes stay for Retry.
   void               FailRefresh(const QString& error);
-  /// Finish an accepted refresh: counts, statistics, and the deferred actions.
-  void               FinishRefresh(const LibraryQueryOutput& output, bool search_changed);
+  /// Notify the fully installed accepted result, then run its deferred actions.
+  void               FinishRefresh(bool search_changed);
+  /// Update selection counts on the existing worker; predicate replacements also intersect.
+  void               RefreshSelectionMembership(bool intersect = false);
   void SaveThumbnailDiskCacheSettings();
   /// Release the pins and empty the grid model, the sections, and the counts.
-  void               ResetThumbnailWindow();
+  void               ResetThumbnailWindow(bool close_session = false);
   /// Options of the next request: the pending change, else the accepted options.
   [[nodiscard]] auto RequestedOptions() const -> AlbumQueryOptions;
   void               SubmitPendingRefresh();
@@ -456,13 +501,8 @@ class LibraryModule final : public QObject, public IAlbumCatalog {
   void               ContinuePaging();
   /// Album item of one query row: SQL display values and edit state, plus the image pool
   /// fields SQL lacks.
-  auto               ItemFromRow(const AlbumQueryRow& row, const AlbumItem& display,
-                                 sl_element_id_t folderId) -> AlbumItem;
-  /// Find or append the item of @p elementId and set its identity and path.
-  auto               UpsertAlbumItem(sl_element_id_t elementId, image_id_t imageId,
-                                     sl_element_id_t folderId, const QString& scopeType,
-                                     const file_name_t&           fallbackName,
-                                     const std::filesystem::path& filePath) -> AlbumItem&;
+  auto ItemFromRow(const AlbumQueryRow& row, const AlbumItem& display, sl_element_id_t folderId)
+      -> AlbumItem;
   void               SetQueryError(const QString& message);
   void               RunAfterRefresh(std::function<void()> action);
   /// Give the thumbnails the destination of the display window, and the shown thumbnails new URLs.
@@ -470,8 +510,8 @@ class LibraryModule final : public QObject, public IAlbumCatalog {
   /// Run request @p requestId of RequestEditorListPosition unless a newer one replaced it.
   void                SubmitEditorListPosition(qulonglong requestId, uint fileId, bool loadPage);
   void                SetPendingReveal(uint fileId);
-  /// Position read of @p fileId finished (@p found). Returns true when it started a second
-  /// read in the root folder, so the miss is not delivered.
+  /// Finish the pending reveal and report a miss without changing scope. Returns false so
+  /// the caller always delivers this position result.
   auto                SettlePendingReveal(uint fileId, bool found) -> bool;
 
   ProjectModule*     project_ = nullptr;
@@ -496,14 +536,18 @@ class LibraryModule final : public QObject, public IAlbumCatalog {
   std::function<QString(sl_element_id_t)> semantic_label_provider_{};
 
   // Accepted library query. The pending options are the change description only.
-  AlbumSectionModel                        section_model_{};
+  LibraryDisplayModel                      display_model_{&thumbnail_model_};
+  AlbumSectionModel                        section_model_{display_model_};
+  bool                                     stack_display_enabled_ = false;
+  bool                                     editor_photo_view_              = false;
+  bool                                     intersect_selection_on_refresh_ = false;
   AlbumQueryOptions                        accepted_options_{};
   std::optional<AlbumQueryOptions>         pending_options_{};
   std::shared_ptr<const LibraryQueryInput> accepted_input_{};
   int64_t                                  occurrence_count_  = 0;
-  int64_t                              loaded_occurrence_end_ = 0;  ///< Flat mode: loaded prefix.
+  int64_t loaded_display_end_ = 0;  ///< End of the most recently loaded display page.
   int64_t                              load_through_          = -1;
-  int64_t                              requested_begin_       = 0;  ///< Grouped viewport range.
+  int64_t                                  requested_begin_ = 0;  ///< Requested display range.
   int64_t                              requested_end_         = 0;
   bool                                 refresh_scheduled_     = false;
   /// Combined kind of the refresh requests since the last submit (kReplace wins).
@@ -519,12 +563,12 @@ class LibraryModule final : public QObject, public IAlbumCatalog {
   /// An edit was written while the library was hidden and the presentation reads edit state.
   bool                                     edit_order_stale_       = false;
   uint                                     pending_reveal_file_id_ = 0;
-  /// The pending reveal already selected the root folder after a miss.
-  bool                                     reveal_scope_widened_   = false;
+
   /// Id of the newest RequestEditorListPosition request.
   qulonglong                               editor_list_request_id_ = 0;
   /// Last member: destroyed first, so no job outlives the state it posts to.
   std::unique_ptr<SearchRequestWorker> query_worker_;
+  std::unique_ptr<LibrarySelectionOperations> selection_operations_;
 };
 
 }  // namespace alcedo::ui

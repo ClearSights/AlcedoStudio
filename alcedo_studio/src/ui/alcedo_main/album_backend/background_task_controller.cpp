@@ -298,6 +298,8 @@ auto BackgroundTaskController::ToVariantMap(const TaskRecord& record) -> QVarian
 
 auto BackgroundTaskController::KindToString(BackgroundTaskKind kind) -> QString {
   switch (kind) {
+    case BackgroundTaskKind::PhotoStackUpdate:
+      return QStringLiteral("photoStackUpdate");
     case BackgroundTaskKind::SemanticGeneration:
       return QStringLiteral("semanticGeneration");
     case BackgroundTaskKind::ModelDownload:
@@ -361,6 +363,8 @@ auto BackgroundTaskController::ShutdownPolicyToString(BackgroundTaskShutdownPoli
 
 auto BackgroundTaskController::CapabilityToString(InteractionCapability capability) -> QString {
   switch (capability) {
+    case InteractionCapability::EditPhotoStacks:
+      return QStringLiteral("editPhotoStacks");
     case InteractionCapability::EditImageDescription:
       return QStringLiteral("editImageDescription");
     case InteractionCapability::EditImageRating:

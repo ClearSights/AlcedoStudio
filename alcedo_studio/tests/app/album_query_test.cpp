@@ -1433,7 +1433,7 @@ auto Percentile(std::vector<double> values, double fraction) -> double {
 // repeated timestamps, unknown fields, one large and many small camera groups, and one active
 // model label per file. Records the warm read timings and the physical plan of the deep page,
 // and checks that every page stays bounded and that the stream holds every file once.
-TEST_F(AlbumQueryTest, LargeLibraryPagesStayBoundedAndRecordTimings) {
+TEST_F(AlbumQueryTest, UnstackedLibraryReadsStayWithinTheMeasuredQueryCostTarget) {
   const char* profile = std::getenv("ALCEDO_ALBUM_QUERY_PROFILE");
   if (profile == nullptr) {
     GTEST_SKIP() << "Set ALCEDO_ALBUM_QUERY_PROFILE=<file count> to record album query timings";
@@ -1519,6 +1519,24 @@ TEST_F(AlbumQueryTest, LargeLibraryPagesStayBoundedAndRecordTimings) {
         std::cout << "cold " << name << " ms: " << value << "\n";
       }
     };
+    for (const auto& [name, options] :
+         {std::pair{"scalar", scalar}, std::pair{"label", labels}, std::pair{"edit-day", edits}}) {
+      record(std::string("display ") + name + " initial", time_ms([&] {
+               auto read         = initial_read;
+               read.mode         = AlbumReadMode::kDisplay;
+               const auto result = store.ReadAlbumQuery(0, {}, options, kActiveModel, read);
+               EXPECT_EQ(result.display_count, kFiles);
+               EXPECT_EQ(result.display_rows.size(), 1000);
+               EXPECT_TRUE(result.rows_.empty());
+             }));
+      record(
+          std::string("display ") + name + " deep", time_ms([&] {
+            const auto result = store.ReadAlbumQuery(
+                0, {}, options, kActiveModel,
+                {.limit_ = 1000, .mode = AlbumReadMode::kDisplay, .display_offset = kFiles - 1000});
+            EXPECT_EQ(result.display_rows.size(), 1000);
+          }));
+    }
     record("scalar initial (groups+stats+page)", time_ms([&] {
              first = store.ReadAlbumQuery(0, std::nullopt, scalar, kActiveModel, initial_read);
            }));
@@ -1591,6 +1609,16 @@ TEST_F(AlbumQueryTest, LargeLibraryPagesStayBoundedAndRecordTimings) {
   for (const auto& [name, values] : samples) {
     std::cout << name << " ms p50 " << Percentile(values, 0.5) << " p95 "
               << Percentile(values, 0.95) << "\n";
+  }
+  for (const auto& [display, photo] :
+       {std::pair{"display scalar initial", "scalar initial (groups+stats+page)"},
+        std::pair{"display scalar deep", "scalar deep page"},
+        std::pair{"display label initial", "label initial (groups+stats+page)"},
+        std::pair{"display label deep", "label deep page"},
+        std::pair{"display edit-day initial", "edit-day initial (groups+stats+page)"},
+        std::pair{"display edit-day deep", "edit-day deep page"}}) {
+    EXPECT_LE(Percentile(samples[display], 0.5), Percentile(samples[photo], 0.5) * 1.25)
+        << display << " exceeds the same-fixture photo read median by more than 25%";
   }
   // The physical plan of the deep page statement on the same match set columns.
   std::cout << QueryColumnText(project,

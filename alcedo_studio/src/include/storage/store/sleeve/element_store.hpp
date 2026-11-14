@@ -131,12 +131,36 @@ struct AlbumQueryRow {
   std::string            edit_version_name_{};
 };
 
+/// Minimal display-page values, owned by their result or the GUI display model. Actual File
+/// ID and stable identity differ for representatives. No photo metadata or member list is kept.
+/// These values are read results, never editable copies of persisted stack organization.
+struct AlbumDisplayItem {
+  AlbumDisplayIdentity identity;
+  sl_element_id_t      file_id                                           = 0;
+  sl_element_id_t      saved_cover_file_id                               = 0;
+  int64_t              stack_total                                       = 1;
+  int64_t              query_match_count                                 = 1;
+  int64_t              fragment_match_count                              = 1;
+  bool                 temporary_cover                                   = false;
+  bool                 expanded                                          = false;
+  int64_t fragment_position = 1;  ///< One-based displayed cover first, then saved order.
+  auto                 operator==(const AlbumDisplayItem&) const -> bool = default;
+};
+
+/// One bounded display result. Move its item into the display owner and its photo values
+/// into the thumbnail owner; neither owner retains a second copy of the other's data.
+struct AlbumDisplayRow : AlbumDisplayItem {
+  AlbumQueryRow photo;
+};
+
 /// One group of an album query: its key, its photo count, and the position of its first
 /// occurrence in the ordered occurrence stream. It does not hold the photos.
 struct AlbumGroupDescriptor {
   AlbumGroupKey key_{};
   int64_t       photo_count_      = 0;
   int64_t       first_occurrence_ = 0;
+  int64_t       display_count     = 0;
+  int64_t       first_display     = 0;
 };
 
 /// Parts of one album query read. A read without groups and statistics is a scroll page.
@@ -148,10 +172,17 @@ struct AlbumQueryRead {
   /// Read the file id of every occurrence in occurrence order (AlbumQueryResult::
   /// occurrence_file_ids_), in the same transaction as the counts and the groups.
   bool    read_occurrence_file_ids_ = false;
+  /// Read the complete minimal display stream for retained-page relocation, without metadata.
+  bool                               read_display_items        = false;
+  AlbumReadMode mode                      = AlbumReadMode::kPhotos;
+  /// Display offsets never use the raw occurrence offset. limit_ bounds either page mode.
+  int64_t       display_offset            = 0;
+  /// Immutable request values, captured with the query; no member metadata or owner state.
+  std::vector<AlbumStackFragmentKey> expanded_fragments;
 };
 
 /// Result of ElementStore::ReadAlbumQuery: counts, the requested groups and statistics, and one
-/// bounded page of the ordered occurrence stream.
+/// bounded photo-occurrence or display-item page, selected by the request mode.
 struct AlbumQueryResult {
   /// Matching unique files. The occurrence count can be larger in the label group.
   int64_t                           unique_file_count_ = 0;
@@ -164,12 +195,25 @@ struct AlbumQueryResult {
   /// several label groups is listed once per group). Empty unless
   /// AlbumQueryRead::read_occurrence_file_ids_.
   std::vector<sl_element_id_t>      occurrence_file_ids_{};
+  int64_t                           display_count = 0;
+  int64_t                           first_display = 0;
+  std::vector<AlbumDisplayRow>      display_rows;
+  /// Empty unless read_display_items; independent algorithm output, never a second GUI cache.
+  std::vector<AlbumDisplayItem>     display_items;
 };
 
 /// Position of one file's occurrence in the ordered occurrence stream.
 struct AlbumFilePosition {
   int64_t       occurrence_index_ = 0;
   AlbumGroupKey group_key_{};
+};
+
+/// A display location, distinct from a raw occurrence or a layout's visual row. A matching
+/// collapsed member points to its representative; a nonmatching File has no location.
+struct AlbumDisplayPosition {
+  int64_t              display_index = 0;
+  AlbumDisplayIdentity identity;
+  bool                 hidden_by_collapse = false;
 };
 
 /// Whole-project counts that the welcome surface shows for a loaded project. A query result
@@ -213,11 +257,12 @@ class ElementStore {
  private:
   Database&   database_;
 
-  // Insert the element row plus its child rows (file binding / folder content) on @p conn.
-  // Does not touch sync_flag_ and does not manage a transaction, so it can run
-  // either autocommit (AddElement) or inside a shared transaction (AddElements).
-  static void InsertElementRows(duckorm::Connection&                  conn,
-                                const std::shared_ptr<SleeveElement>& element);
+  /// Batched insert on the caller's transaction, without changing live sync flags.
+  static void InsertElementRows(duckorm::Connection&                            conn,
+                                std::span<const std::shared_ptr<SleeveElement>> elements);
+  /// Full element removal and stack repair on the caller's transaction connection.
+  static void RemoveElementRows(duckorm::Connection&                            conn,
+                                std::span<const std::shared_ptr<SleeveElement>> elements);
   // Update the element row plus its child rows. For a folder, only the FolderContent rows of
   // the children added or removed since the last sync are written. Same
   // transaction-neutrality behavior as InsertElementRows; the caller clears the folder's
@@ -228,6 +273,18 @@ class ElementStore {
  public:
   explicit ElementStore(Database& database);
 
+  /// Atomically apply one Sleeve sync on one connection under the database lock. The spans
+  /// refer to owner-held elements, with no repeated or overlapping IDs. Publish sync flags and
+  /// clear pending folder changes only after commit. Throws on invalid input or any SQL failure.
+  void ApplyElementChanges(std::span<const std::shared_ptr<SleeveElement>> additions,
+                           std::span<const std::shared_ptr<SleeveElement>> modifications,
+                           std::span<const std::shared_ptr<SleeveElement>> deletions);
+  /// Reload committed scalar fields and the File binding into an existing live identity.
+  /// The FileSystem owner must hold its lock. Returns false only when no stored row exists;
+  /// throws on malformed rows or SQL failure. Does not copy or replace the live object.
+  auto RestoreElement(SleeveElement& element) -> bool;
+
+  /// Single-element form of ApplyElementChanges; updates sync flags only after commit.
   void AddElement(const std::shared_ptr<SleeveElement> element);
   // Bulk-insert a batch of elements (and their file/folder-content child
   // rows) in a single transaction. Import sync should prefer this over the per-row
@@ -239,9 +296,13 @@ class ElementStore {
   void RemoveFolderContent(sl_element_id_t folder_id, sl_element_id_t content_id);
   auto GetFolderContent(const sl_element_id_t folder_id) -> std::vector<sl_element_id_t>;
 
+  /// Primitive Element-row deletion only. Full live File removal must use the overload below.
   void RemoveElement(const sl_element_id_t id);
+  /// Full removal on one transaction, including File bindings, folder links, and stack repair.
   void RemoveElement(const std::shared_ptr<SleeveElement> element);
+  /// Full batch removal through the same transaction-local helper. SQL failures roll back all rows.
   void RemoveElements(std::span<const std::shared_ptr<SleeveElement>> elements);
+  /// Single-element form of ApplyElementChanges; retains pending state until commit.
   void UpdateElement(const std::shared_ptr<SleeveElement> element);
   // Bulk-update a batch of elements in a single transaction.
   void UpdateElements(std::span<const std::shared_ptr<SleeveElement>> elements);
@@ -326,7 +387,7 @@ class ElementStore {
   /**
    * @brief Read the matching files of a scope with the presentation @p options: counts, the
    *        groups and the Inspector statistics when @p read asks for them, and one bounded
-   *        page of the ordered occurrence stream.
+   *        page of photo occurrences or stack display items, selected by read.mode.
    *
    * @details The filter is evaluated once into a temporary match set inside one read
    * transaction; every count, group, statistic, and row of the call comes from that set. The
@@ -376,6 +437,43 @@ class ElementStore {
       sl_element_id_t folder_id, const std::optional<duckorm::SqlFragment>& extra_filter,
       const AlbumQueryOptions& options, const std::string& active_semantic_model_key,
       int64_t occurrence_begin, int64_t occurrence_end,
+      const std::optional<SemanticQueryEmbedding>& semantic_relevance = std::nullopt) const
+      -> std::vector<sl_element_id_t>;
+
+  /// Display position in the same stream as a display page. A preferred typed group wins
+  /// when present, otherwise use the first occurrence. A collapsed matching member returns
+  /// its representative with hidden_by_collapse; a nonmatching File returns nullopt.
+  /// Worker-safe, read-only, and throws like ReadAlbumQuery, including invalid fragment keys.
+  auto ReadAlbumDisplayPosition(
+      sl_element_id_t folder_id, const std::optional<duckorm::SqlFragment>& extra_filter,
+      const AlbumQueryOptions& options, const std::string& active_semantic_model_key,
+      std::span<const AlbumStackFragmentKey> expanded_fragments, sl_element_id_t file_id,
+      const std::optional<AlbumGroupKey>&          preferred_group,
+      const std::optional<SemanticQueryEmbedding>& semantic_relevance = std::nullopt) const
+      -> std::optional<AlbumDisplayPosition>;
+  /// Unique represented Files in [display_begin, display_end), in first-use order. Hidden
+  /// members are excluded; the raw ID API still selects all matches. Reads no metadata.
+  /// Worker-safe; throws like ReadAlbumQuery and rejects negative or reversed bounds.
+  auto ReadAlbumDisplayFileIds(
+      sl_element_id_t folder_id, const std::optional<duckorm::SqlFragment>& extra_filter,
+      const AlbumQueryOptions& options, const std::string& active_semantic_model_key,
+      std::span<const AlbumStackFragmentKey> expanded_fragments, int64_t display_begin,
+      int64_t                                      display_end,
+      const std::optional<SemanticQueryEmbedding>& semantic_relevance = std::nullopt) const
+      -> std::vector<sl_element_id_t>;
+  /// Every matching File in the exact scoped fragment, including unloaded members. Cover
+  /// first, then saved order. An absent valid key returns empty. Reads no metadata or writes.
+  /// Worker-safe; invalid scope/group/type throws invalid_argument; SQL failure throws.
+  /// Read typed keys of every matching stack fragment, without photo metadata. Worker-safe.
+  auto ReadAlbumStackFragmentKeys(
+      sl_element_id_t folder_id, const std::optional<duckorm::SqlFragment>& filter,
+      const AlbumQueryOptions& options, const std::string& model,
+      const std::optional<SemanticQueryEmbedding>& relevance = std::nullopt) const
+      -> std::vector<AlbumStackFragmentKey>;
+  auto ReadAlbumMatchingFragmentIds(
+      sl_element_id_t folder_id, const std::optional<duckorm::SqlFragment>& extra_filter,
+      const AlbumQueryOptions& options, const std::string& active_semantic_model_key,
+      const AlbumStackFragmentKey&                 fragment,
       const std::optional<SemanticQueryEmbedding>& semantic_relevance = std::nullopt) const
       -> std::vector<sl_element_id_t>;
 

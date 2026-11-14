@@ -522,7 +522,49 @@ edit state and the rating. The shared parts are `ThumbnailEditMark.qml` and
   no render (`ThumbnailTier.js`); a card without a thumbnail requests the new
   tier. The grouped view uses the same rules (260 ms).
 
-### Library justified rows
+### Library photo stacks
+
+`PhotoStackDisclosure.qml` reads scalar occurrence roles from `LibraryDisplayModel`.
+The control is independent of photo selection, rating, group-header collapse, and editor input.
+The displayed File opens in the editor, including a temporary cover.
+
+- User review (2026-11-13) explicitly requests the rounded stack control. It uses
+  `inspectorHeaderActionSize` (24 px) height, half-height radius, `spaceXs` side padding,
+  and `panel_icons/photo-stack.svg` in `iconOpticalSizeCompact` (body size on compact tiles).
+  The whole control is the pointer/keyboard target; focus has a 1 px white outline.
+- `photoStackBadgeFillColor` is black with alpha 180; `photoStackBadgeTextColor` is white.
+  Both are constant across themes so the control reads on bright and dark photographs.
+- Numbers use `headlineFontFamily`, `fontSizeTitle` (`fontSizeBody` at compact zoom),
+  `fontWeightStrong`, and tabular figures. A collapsed badge shows `3`; expanded badges
+  show `1/3`, `2/3`, `3/3` in actual displayed member order. With an accepted Inspector or
+  search filter, the text is `3 matched` or `2/3 matched`. Grouping alone adds no suffix.
+  The user approved omitting `matched` only when the full label cannot fit; its tooltip
+  still gives that status. The fraction is one ordinal value, not independent labels.
+  Compact counts of 1,000 or more use whole thousands (`12K`, `12千`); the accessible
+  description and tooltip always state the exact fragment, query, and saved totals.
+- The control stays on the top-left of the photo at caption-free zoom. Its target stays
+  24 px high. Existing edit and source marks keep their own hit areas. Space and Enter
+  on the disclosure change that fragment only and do not select or open its photo.
+- A temporary cover's accessible description explicitly identifies it. No error causes a
+  different cover to be selected. Selection summaries separately report hidden and
+  outside-result selections.
+- Context commands use one `Stack` submenu in the existing Basic menu family: Group into
+  Stack, Ungroup Stack, Add Selected to Stack, Remove from Stack, Set as Stack Cover,
+  Move Up/Down in Stack, Split Stack, Expand/Collapse Stack, Expand/Collapse All Stacks
+  (All Matched Stacks with a filter). The two stack-selection entries were removed by the
+  user review of 2026-11-14.
+  Stack captions stay on one line; submenu width follows actual row font and padding.
+  Split uses the right-clicked member in cover-first order; singleton sides become unstacked,
+  and both surviving stacks expand in the accepted view before display publication.
+  Set as Stack Cover moves the photo first. Moving across the first position updates the cover.
+  Ungrouping confirms when the clicked fragment hides members.
+  Cover changes explain their project-wide scope in the tooltip.
+- Query, command, and save errors use `AlertBadge`; Retry Save calls the project owner.
+  Expansion and cover replacement retain the first surviving occurrence using its opaque
+  typed identity and the real card or tile rectangle. Motion follows the existing view
+  transitions and `reduceMotion`.
+
+### Library justified row geometry
 
 Settings "Language / Theme" > Library > Photo layout selects the layout of the
 ungrouped Library: "Classic grid" (the cards above) or "Justified rows"

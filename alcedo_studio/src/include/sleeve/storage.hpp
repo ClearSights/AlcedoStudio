@@ -20,6 +20,7 @@
 #include "storage/store/semantic/semantic_vector_search.hpp"
 #include "storage/store/sleeve/element_store.hpp"
 #include "storage/store/sleeve/project_maintenance_store.hpp"
+#include "storage/store/sleeve/photo_stack_store.hpp"
 #include "storage/store/storage_maintenance.hpp"
 #include "storage/store/storage_session.hpp"
 #include "type/type.hpp"
@@ -52,6 +53,7 @@ class Storage {
  private:
   Database                                                              database_;
   ElementStore                                                         element_store_;
+  PhotoStackStore                                                       photo_stack_store_;
   ImageStore                                                           image_store_;
   SourceFileStore                                                       source_files_;
   SemanticModelRegistry                                                 semantic_models_;
@@ -82,6 +84,8 @@ class Storage {
   /// Project-entry inspection and removal through scoped storage operations.
   auto GetProjectMaintenanceStore() -> ProjectMaintenanceStore&;
   auto GetElementStore() -> ElementStore&;
+  /// Project-owned stack operations; callers never retain a connection or mutable membership.
+  auto GetPhotoStackStore() -> PhotoStackStore&;
   auto GetImageStore() -> ImageStore&;
   /// Source path and byte-size records; each operation owns its database connection.
   auto GetSourceFileStore() -> SourceFileStore&;

@@ -44,7 +44,7 @@ class InteractionPolicyController final : public QObject {
                  SetPendingDeleteTargets NOTIFY PolicyChanged)
   // Search-settings natural-language toggle (UI mutual-exclusion input). When
   // true the search field-filter checkboxes are disabled (see
-  // CanChangeSearchFieldFilters). This is a UI-only gate — it does NOT go
+  // CanChangeSearchFieldFilters). This is a UI-only rule — it does NOT go
   // through the task-lock model (no InteractionCapability, no lock); it is the
   // documented exception to the locks-only design because the
   // natural-language / field-filter exclusion is a pure UI concern, not a
@@ -52,24 +52,24 @@ class InteractionPolicyController final : public QObject {
   Q_PROPERTY(bool naturalLanguageSearchEnabled READ NaturalLanguageSearchEnabled WRITE
                  SetNaturalLanguageSearchEnabled NOTIFY PolicyChanged)
 
-  // Focused-image edit gates (depend on focusedElementId + locks).
+  // Focused-image edit checks (depend on focusedElementId + locks).
   Q_PROPERTY(bool canEditFocusedDescription READ CanEditFocusedDescription NOTIFY PolicyChanged)
   Q_PROPERTY(bool canEditFocusedRating READ CanEditFocusedRating NOTIFY PolicyChanged)
   Q_PROPERTY(bool canEditFocusedRatingReason READ CanEditFocusedRatingReason NOTIFY PolicyChanged)
   Q_PROPERTY(QString focusedEditReason READ FocusedEditReason NOTIFY PolicyChanged)
-  // Pending delete gate (depends on pendingDeleteTargets + locks).
+  // Pending delete rule (depends on pendingDeleteTargets + locks).
   Q_PROPERTY(bool canDeletePendingTargets READ CanDeletePendingTargets NOTIFY PolicyChanged)
   Q_PROPERTY(QString pendingDeleteReason READ PendingDeleteReason NOTIFY PolicyChanged)
-  // Global task gates.
+  // Global task checks.
   Q_PROPERTY(bool canChangeSemanticModel READ CanChangeSemanticModel NOTIFY PolicyChanged)
   Q_PROPERTY(bool canRunSemanticGeneration READ CanRunSemanticGeneration NOTIFY PolicyChanged)
   Q_PROPERTY(bool canChangeModelDownloadSettings READ CanChangeModelDownloadSettings NOTIFY
                  PolicyChanged)
-  // Search field-filter gate (depends on naturalLanguageSearchEnabled only).
+  // Search field-filter rule (depends on naturalLanguageSearchEnabled only).
   Q_PROPERTY(bool canChangeSearchFieldFilters READ CanChangeSearchFieldFilters NOTIFY
                  PolicyChanged)
   Q_PROPERTY(QString searchFieldFiltersReason READ SearchFieldFiltersReason NOTIFY PolicyChanged)
-  // Phase 6C-5: editor navigation gates while a global save checkpoint holds locks.
+  // Phase 6C-5: editor navigation checks while a global save checkpoint holds locks.
   Q_PROPERTY(bool canSelectEditorImage READ CanSelectEditorImage NOTIFY PolicyChanged)
   Q_PROPERTY(QString selectEditorImageReason READ SelectEditorImageReason NOTIFY PolicyChanged)
   Q_PROPERTY(bool canSwitchWorkspace READ CanSwitchWorkspace NOTIFY PolicyChanged)
@@ -81,6 +81,7 @@ class InteractionPolicyController final : public QObject {
   // Automation agent control: false while an agent holds control of the GUI session. Only the
   // user-facing adapters read it; editor session admission does not.
   Q_PROPERTY(bool canChangeStateAsUser READ CanChangeStateAsUser NOTIFY PolicyChanged)
+  Q_PROPERTY(bool canEditPhotoStacks READ CanEditPhotoStacks NOTIFY PolicyChanged)
   Q_PROPERTY(QString changeStateAsUserReason READ ChangeStateAsUserReason NOTIFY PolicyChanged)
 
  public:
@@ -116,6 +117,8 @@ class InteractionPolicyController final : public QObject {
   bool    CanPasteAdjustments() const;
   QString PasteAdjustmentsReason() const;
   bool    CanChangeStateAsUser() const;
+  /// Current user ownership and project-write locks for stack organization, on the GUI thread.
+  bool    CanEditPhotoStacks() const { return EvaluateEditPhotoStacks().value("allowed").toBool(); }
   QString ChangeStateAsUserReason() const;
 
   // ── Q_INVOKABLE one-shot queries (return {allowed, reason, blockingTaskIds}) ─
@@ -135,6 +138,8 @@ class InteractionPolicyController final : public QObject {
   Q_INVOKABLE QVariantMap EvaluateSwitchWorkspace() const;
   Q_INVOKABLE QVariantMap EvaluateCheckoutVersion() const;
   Q_INVOKABLE QVariantMap EvaluatePasteAdjustments() const;
+  /// Project-wide organization command admission; GUI thread only.
+  Q_INVOKABLE QVariantMap EvaluateEditPhotoStacks() const;
   Q_INVOKABLE QVariantMap EvaluateChangeStateAsUser() const;
 
  signals:

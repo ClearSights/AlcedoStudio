@@ -98,6 +98,7 @@ class ApplicationCloseCoordinator final : public QObject {
   bool                              project_close_persist_ = true;
   std::function<void()>             begin_project_close_;
   std::function<bool()>             project_work_busy_;
+  bool                              application_save_      = true;
 };
 
 }  // namespace alcedo::ui

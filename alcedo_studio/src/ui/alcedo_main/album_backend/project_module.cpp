@@ -642,7 +642,9 @@ auto ProjectModule::ProjectCloseBlockReason() const -> QString {
   if (!handler_.project()) {
     return PL_TEXT("No project is loaded yet.").Render();
   }
-  return ProjectSwitchBlockReason();
+  return lifecycle_hooks_.project_switch_block_reason
+             ? lifecycle_hooks_.project_switch_block_reason()
+             : QString{};
 }
 
 bool ProjectModule::CloseProject(bool persist) {
@@ -661,6 +663,7 @@ bool ProjectModule::CloseProject(bool persist) {
   if (persist) {
     QString error;
     if (!handler_.PersistProjectForClose(&error)) {
+      if (HasUnsavedStackChanges()) SetStackSaveState(true, error);
       SetServiceMessageForCurrentProject(error.isEmpty() ? PL_TEXT("Project save failed.")
                                                          : PL_TEXT("%1", error));
       SetTaskState(PL_TEXT("Project save failed."), 0, false);
@@ -668,6 +671,7 @@ bool ProjectModule::CloseProject(bool persist) {
     }
   }
   handler_.CloseProject();
+  SetStackSaveState(false);
   welcome_project_path_.clear();
   preview_error_message_.clear();
   SetServiceState(false, PL_TEXT("Project closed."));
@@ -771,7 +775,44 @@ bool ProjectModule::CreateProjectInFolderNamed(const QString& folderUrlOrPath,
   return started;
 }
 
+bool ProjectModule::StackCommandBusy() const {
+  return lifecycle_hooks_.stack_command_busy && lifecycle_hooks_.stack_command_busy();
+}
+
+void ProjectModule::SetStackSaveState(bool pending, const QString& diagnostic) {
+  if (pending == unsaved_stack_changes_ && diagnostic == stack_save_error_) return;
+  unsaved_stack_changes_ = pending;
+  stack_save_error_      = pending ? diagnostic : QString{};
+  emit StackSaveStateChanged();
+  emit stackSaveStateChanged();
+}
+
+bool ProjectModule::RetryStackSave() {
+  if (StackCommandBusy() || handler_.project_loading() || !handler_.project()) return false;
+  QString error;
+  if (!handler_.MakeSaveAndPackageJob()(&error)) {
+    SetStackSaveState(true, error);
+    SetServiceMessageForCurrentProject(
+        PL_TEXT("Stack changed, but project save failed: %1", error));
+    return false;
+  }
+  SetStackSaveState(false);
+  return true;
+}
+
+void ProjectModule::NoteProjectSaved() {
+  if (!StackCommandBusy()) SetStackSaveState(false);
+}
+
+bool ProjectModule::DiscardUnsavedProject() {
+  return !HasUnsavedStackChanges() || CloseProject(false);
+}
+
 bool ProjectModule::SaveProject() {
+  if (StackCommandBusy()) {
+    SetServiceMessageForCurrentProject(PL_TEXT("A photo stack command is running."));
+    return false;
+  }
   if (handler_.project_loading()) {
     SetServiceMessageForCurrentProject(PL_TEXT("Please wait until project loading finishes."));
     return false;
@@ -793,14 +834,17 @@ bool ProjectModule::SaveProject() {
     }
   }
 
-  if (!handler_.PersistCurrentProjectState()) {
-    SetServiceMessageForCurrentProject(PL_TEXT("Project save failed."));
+  QString save_error;
+  if (!handler_.PersistCurrentProjectState(&save_error)) {
+    if (HasUnsavedStackChanges()) SetStackSaveState(true, save_error);
+    SetServiceMessageForCurrentProject(PL_TEXT("Project save failed: %1", save_error));
     SetTaskState(PL_TEXT("Project save failed."), 0, false);
     return false;
   }
 
   QString package_error;
   if (!handler_.PackageCurrentProjectFiles(&package_error)) {
+    if (HasUnsavedStackChanges()) SetStackSaveState(true, package_error);
     SetServiceMessageForCurrentProject(package_error.isEmpty()
                                            ? PL_TEXT("Project saved, but packing failed.")
                                            : PL_TEXT("%1", package_error));
@@ -815,6 +859,7 @@ bool ProjectModule::SaveProject() {
   SetTaskState(handler_.package_path().empty() ? PL_TEXT("Project saved.")
                                                : PL_TEXT("Project saved and packed."),
                100, false);
+  SetStackSaveState(false);
   ScheduleIdleTaskStateReset(1200);
   return true;
 }
@@ -877,6 +922,11 @@ void ProjectModule::ClearProjectUiState() {
 }
 
 auto ProjectModule::ProjectSwitchBlockReason() const -> QString {
+  if (HasUnsavedStackChanges())
+    return PL_TEXT(
+               "Save pending photo stack changes or explicitly close the project with Discard "
+               "before replacing it.")
+        .Render();
   return lifecycle_hooks_.project_switch_block_reason
              ? lifecycle_hooks_.project_switch_block_reason()
              : QString{};

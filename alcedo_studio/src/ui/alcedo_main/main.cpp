@@ -344,6 +344,7 @@ int main(int argc, char* argv[]) {
   int exit_code = 0;
   {
     alcedo::ui::ApplicationModuleHost app_modules;
+    app_modules.library()->SetStackDisplayEnabled(true);
     app_modules.project()->SetRuntimeAcceleratorPreference(
         ToAcceleratorPreference(editor_backend));
     alcedo::ui::RegisterApplicationModuleTypes();

@@ -615,9 +615,8 @@ TEST_F(LibraryQueryTests, ProjectOpenRevealsTheLastEditedPhoto) {
   EXPECT_EQ(module->section_model().GroupCount(), 2);  // today's edit day and the unedited group
 }
 
-// A pending reveal outside the current folder selects the root folder once and finds the photo
-// there; a project without edits has no pending reveal.
-TEST_F(LibraryQueryTests, RevealSelectsTheRootFolderWhenTheCurrentFolderLacksThePhoto) {
+// A pending reveal outside the current album reports absence and preserves the chosen scope.
+TEST_F(LibraryQueryTests, PendingRevealOutsideAlbumReportsAbsenceAndKeepsTheAlbumScope) {
   ApplicationModuleHost backend;
   LoadedLibrary         library;
   ASSERT_TRUE(library.Load(temp_dir_, backend, SixPhotoSpecs(), 0, EditPhotosFourThenTwo));
@@ -645,10 +644,11 @@ TEST_F(LibraryQueryTests, RevealSelectsTheRootFolderWhenTheCurrentFolderLacksThe
   ASSERT_TRUE(WaitUntil([&]() { return positions.count() == 1; }));
   const auto args = positions.takeFirst();
   EXPECT_EQ(args.at(0).toUInt(), target);
-  EXPECT_EQ(args.at(1).toLongLong(), 2);
-  EXPECT_EQ(folders->CurrentFolderId(), 0u);
+  EXPECT_EQ(args.at(1).toLongLong(), -1);
+  EXPECT_EQ(folders->CurrentFolderId(), empty_folder);
   EXPECT_EQ(module->PendingRevealFileId(), 0u);
-  EXPECT_EQ(ModelIds(*module).size(), 6u);
+  EXPECT_TRUE(ModelIds(*module).empty());
+  EXPECT_FALSE(module->QueryError().isEmpty());
 }
 
 TEST_F(LibraryQueryTests, ProjectWithoutEditsHasNoPendingReveal) {

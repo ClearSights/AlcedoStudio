@@ -11,6 +11,7 @@
 #include <QVariantList>
 #include <QVariantMap>
 #include <cstdint>
+#include <functional>
 #include <optional>
 #include <unordered_map>
 #include <vector>
@@ -67,7 +68,7 @@ class AlbumThumbnailModel : public QAbstractListModel {
   static auto RoleNameTable() -> QHash<int, QByteArray>;
   /// Value of @p role for @p item, as data() returns it for a row of the item. A model that
   /// forwards these roles reads the values of an empty row from a default AlbumItem.
-  QVariant                roleValue(const AlbumItem& item, int role) const;
+  static QVariant         roleValue(const AlbumItem& item, int role);
 
   int count() const { return static_cast<int>(rows_.size()); }
   int totalCountInt() const { return static_cast<int>(total_count_); }
@@ -87,8 +88,21 @@ class AlbumThumbnailModel : public QAbstractListModel {
   /// Install @p items and end the reset that beginReplace started. @p hasMore says whether
   /// later rows exist (it is not derived from @p totalCount in the grouped mode).
   void                    endReplace(std::vector<AlbumItem> items, size_t totalCount, bool hasMore);
-  /// Append one page — emits beginInsertRows/endInsertRows.
-  void appendPage(const std::vector<AlbumItem>& newItems);
+  /// Install unique producer photo values silently during a reset. Move the thumbnail state
+  /// of remaining File IDs into those values. No independent copy of live photo state remains.
+  void installItems(std::vector<AlbumItem> items, size_t totalCount, bool hasMore);
+  /// Merge producer page values with retained rows through the owner, moving the retained
+  /// AlbumItems rather than copying them. Every requested ID must be loaded or supplied.
+  void installPageItems(std::vector<AlbumItem> items, const std::vector<sl_element_id_t>& order,
+                        size_t totalCount, bool hasMore);
+  /// End the reset after other accepted owners are complete, then emit property changes.
+  void endReplace();
+  /// Scoped read, valid until the next model mutation on the GUI thread.
+  [[nodiscard]] auto itemByFile(sl_element_id_t id) const -> const AlbumItem*;
+  /// Append producer values on the GUI thread. The optional synchronous callback installs
+  /// related owners after the rows are ready and before completion notifications.
+  /// It must not throw or change these rows.
+  void appendPage(std::vector<AlbumItem> newItems, std::function<void()> install_other_owners = {});
 
   /**
    * @brief Change the rows in place to the photos @p elementIds in that order, without a model
@@ -98,10 +112,12 @@ class AlbumThumbnailModel : public QAbstractListModel {
    * photos that left, and rows that changed their order, are removed in contiguous runs; then
    * the photos that are not loaded are inserted in contiguous runs from @p newItems (keyed by
    * element id). Every id of @p elementIds must be loaded or in @p newItems.
+   * The optional synchronous callback installs related owners after the rows are ready and
+   * before property completion notifications. It must not throw or change these rows.
    */
-  void                    applyOrder(const std::vector<sl_element_id_t>&                   elementIds,
-                                     const std::unordered_map<sl_element_id_t, AlbumItem>& newItems, size_t totalCount,
-                                     bool hasMore);
+  void applyOrder(const std::vector<sl_element_id_t>&                   elementIds,
+                  const std::unordered_map<sl_element_id_t, AlbumItem>& newItems, size_t totalCount,
+                  bool hasMore, std::function<void()> install_other_owners = {});
 
   /// Patch thumbnail state for a single row — emits dataChanged.
   void updateThumbnailState(sl_element_id_t elementId, const QString& thumbUrl, bool loading,
@@ -151,7 +167,13 @@ class AlbumThumbnailModel : public QAbstractListModel {
                         const QString& errorText);
 
  private:
+  bool                   replace_total_changed_ = false;
+  bool                   replace_more_changed_  = false;
   void rebuildElementIdIndex();
+  /// Move existing thumbnail scalars into fresh producer values before replacing photo rows.
+  void                   preserveThumbnailState(std::vector<AlbumItem>& items);
+  /// Install final owner-produced row values without another preservation pass or signal.
+  void                   installRows(std::vector<AlbumItem> items, size_t totalCount, bool hasMore);
 
   std::vector<AlbumItem> rows_{};
   std::unordered_map<sl_element_id_t, int> element_id_to_row_{};

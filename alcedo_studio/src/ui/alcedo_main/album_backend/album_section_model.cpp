@@ -27,7 +27,24 @@ auto RangeMap(int64_t begin, int64_t end) -> QVariantMap {
 
 }  // namespace
 
-AlbumSectionModel::AlbumSectionModel(QObject* parent) : QAbstractListModel(parent) {}
+AlbumSectionModel::AlbumSectionModel(QObject* parent)
+    : QAbstractListModel(parent),
+      owned_display_(std::make_unique<LibraryDisplayModel>()),
+      display_(owned_display_.get()) {
+  BindDisplay();
+}
+AlbumSectionModel::AlbumSectionModel(LibraryDisplayModel& display, QObject* parent)
+    : QAbstractListModel(parent), display_(&display) {
+  BindDisplay();
+}
+void AlbumSectionModel::BindDisplay() {
+  connect(display_, &LibraryDisplayModel::PagesChanged, this, [this] {
+    if (!replacing_) {
+      EmitRowsChangedForOccurrences(0, occurrence_count_);
+      emit PagesChanged();
+    }
+  });
+}
 
 int AlbumSectionModel::rowCount(const QModelIndex& parent) const {
   if (parent.isValid()) {
@@ -103,9 +120,9 @@ QHash<int, QByteArray> AlbumSectionModel::roleNames() const {
 
 void AlbumSectionModel::ResetGroups(std::vector<AlbumGroupDescriptor> groups,
                                     int64_t unique_file_count, int64_t occurrence_count,
-                                    bool keep_collapse_state) {
+                                    bool keep_collapse_state, AlbumReadMode mode) {
   BeginReplace();
-  InstallGroups(std::move(groups), unique_file_count, occurrence_count, keep_collapse_state);
+  InstallGroups(std::move(groups), unique_file_count, occurrence_count, keep_collapse_state, mode);
   EndReplace();
 }
 
@@ -115,11 +132,20 @@ void AlbumSectionModel::BeginReplace() {
   }
   replacing_ = true;
   beginResetModel();
+  if (owned_display_) display_->BeginReplace();
 }
 
 void AlbumSectionModel::InstallGroups(std::vector<AlbumGroupDescriptor> groups,
                                       int64_t unique_file_count, int64_t occurrence_count,
-                                      bool keep_collapse_state) {
+                                      bool keep_collapse_state, AlbumReadMode mode) {
+  mode_ = mode;
+  if (mode == AlbumReadMode::kPhotos) {
+    for (auto& group : groups) {
+      group.display_count = group.photo_count_;
+      group.first_display = group.first_occurrence_;
+    }
+  }
+  if (owned_display_) display_->Install(occurrence_count, {});
   if (keep_collapse_state) {
     std::set<std::string> kept;
     for (const auto& group : groups) {
@@ -135,7 +161,7 @@ void AlbumSectionModel::InstallGroups(std::vector<AlbumGroupDescriptor> groups,
   groups_            = std::move(groups);
   unique_file_count_ = unique_file_count;
   occurrence_count_  = occurrence_count;
-  pages_.clear();
+
   RebuildRowStarts();
 }
 
@@ -143,6 +169,7 @@ void AlbumSectionModel::EndReplace() {
   if (!replacing_) {
     beginResetModel();
   }
+  if (owned_display_) display_->EndReplace();
   replacing_ = false;
   endResetModel();
   emit SectionsChanged();
@@ -153,7 +180,7 @@ void AlbumSectionModel::Clear() { ResetGroups({}, 0, 0, false); }
 
 auto AlbumSectionModel::GroupRowCount(int group_index) const -> int64_t {
   const auto& group = groups_[static_cast<size_t>(group_index)];
-  return RowsOfGroup(CollapseKey(group.key_), group.photo_count_);
+  return RowsOfGroup(CollapseKey(group.key_), group.display_count);
 }
 
 auto AlbumSectionModel::RowsOfGroup(const std::string& collapse_key, int64_t photo_count) const
@@ -191,10 +218,9 @@ auto AlbumSectionModel::GroupOfOccurrence(int64_t occurrence) const -> int {
   if (occurrence < 0 || occurrence >= occurrence_count_ || groups_.empty()) {
     return -1;
   }
-  const auto it = std::upper_bound(groups_.begin(), groups_.end(), occurrence,
-                                   [](int64_t value, const AlbumGroupDescriptor& group) {
-                                     return value < group.first_occurrence_;
-                                   });
+  const auto it = std::upper_bound(
+      groups_.begin(), groups_.end(), occurrence,
+      [](int64_t value, const AlbumGroupDescriptor& group) { return value < group.first_display; });
   return static_cast<int>(std::distance(groups_.begin(), it)) - 1;
 }
 
@@ -209,90 +235,28 @@ auto AlbumSectionModel::RowAt(int row) const -> Row {
   out.group_index_        = group_index;
   if (local_row == 0) {
     out.type_             = RowType::kHeader;
-    out.first_occurrence_ = group.first_occurrence_;
+    out.first_occurrence_ = group.first_display;
     return out;
   }
   out.type_             = RowType::kPhotos;
   const int64_t start   = (local_row - 1) * column_count_;
-  out.first_occurrence_ = group.first_occurrence_ + start;
-  out.occurrence_count_ = std::min<int64_t>(column_count_, group.photo_count_ - start);
+  out.first_occurrence_ = group.first_display + start;
+  out.occurrence_count_ = std::min<int64_t>(column_count_, group.display_count - start);
   return out;
 }
 
 auto AlbumSectionModel::LoadedOccurrenceCount() const -> size_t {
-  size_t count = 0;
-  for (const auto& [start, ids] : pages_) {
-    count += ids.size();
-  }
-  return count;
+  return display_->LoadedOccurrenceCount();
 }
-
 auto AlbumSectionModel::LoadedPageStarts() const -> std::vector<int64_t> {
-  std::vector<int64_t> starts;
-  starts.reserve(pages_.size());
-  for (const auto& [start, ids] : pages_) {
-    starts.push_back(start);
-  }
-  return starts;
+  return display_->LoadedPageStarts();
 }
-
 auto AlbumSectionModel::LoadedUniqueFileIds() const -> std::vector<sl_element_id_t> {
-  std::vector<sl_element_id_t>        out;
-  std::unordered_set<sl_element_id_t> seen;
-  for (const auto& [start, ids] : pages_) {
-    for (const auto id : ids) {
-      if (seen.insert(id).second) {
-        out.push_back(id);
-      }
-    }
-  }
-  return out;
+  return display_->LoadedUniqueFileIds();
 }
-
-void AlbumSectionModel::StorePage(int64_t                             first_occurrence,
-                                  const std::vector<sl_element_id_t>& file_ids,
-                                  size_t                              max_retained_pages) {
-  if (file_ids.empty()) {
-    return;
-  }
-  // Loaded pages that overlap the stored range join it, so no two pages overlap.
-  int64_t       page_begin = first_occurrence;
-  const int64_t store_end  = first_occurrence + static_cast<int64_t>(file_ids.size());
-  int64_t       page_end   = store_end;
-  auto          it         = pages_.upper_bound(first_occurrence);
-  if (it != pages_.begin() &&
-      std::prev(it)->first + static_cast<int64_t>(std::prev(it)->second.size()) >
-          first_occurrence) {
-    --it;
-  }
-  std::vector<std::pair<int64_t, std::vector<sl_element_id_t>>> joined;
-  while (it != pages_.end() && it->first < store_end) {
-    page_begin = std::min(page_begin, it->first);
-    page_end   = std::max(page_end, it->first + static_cast<int64_t>(it->second.size()));
-    joined.emplace_back(it->first, std::move(it->second));
-    it = pages_.erase(it);
-  }
-  std::vector<sl_element_id_t> page(static_cast<size_t>(page_end - page_begin), 0);
-  for (const auto& [start, ids] : joined) {
-    std::copy(ids.begin(), ids.end(), page.begin() + (start - page_begin));
-  }
-  std::copy(file_ids.begin(), file_ids.end(), page.begin() + (first_occurrence - page_begin));
-  pages_[page_begin] = std::move(page);
-  // Evict the page farthest from the stored page until the retention limit holds.
-  while (pages_.size() > std::max<size_t>(1, max_retained_pages)) {
-    const auto first          = pages_.begin();
-    const auto last           = std::prev(pages_.end());
-    const auto front_distance = first_occurrence - first->first;
-    const auto back_distance  = last->first - first_occurrence;
-    const auto victim         = back_distance > front_distance ? last : first;
-    const auto begin          = victim->first;
-    const auto end            = victim->first + static_cast<int64_t>(victim->second.size());
-    pages_.erase(victim);
-    EmitRowsChangedForOccurrences(begin, end);
-  }
-  EmitRowsChangedForOccurrences(first_occurrence,
-                                first_occurrence + static_cast<int64_t>(file_ids.size()));
-  emit PagesChanged();
+void AlbumSectionModel::StorePage(int64_t first, const std::vector<sl_element_id_t>& ids,
+                                  size_t max_pages) {
+  display_->StorePhotoPage(first, ids, max_pages);
 }
 
 void AlbumSectionModel::EmitRowsChangedForOccurrences(int64_t begin, int64_t end) {
@@ -309,35 +273,12 @@ void AlbumSectionModel::EmitRowsChangedForOccurrences(int64_t begin, int64_t end
 }
 
 auto AlbumSectionModel::FirstUnloadedOccurrence(int64_t begin, int64_t end) const -> int64_t {
-  begin = std::max<int64_t>(0, begin);
-  end   = std::min(end, occurrence_count_);
-  for (int64_t occurrence = begin; occurrence < end;) {
-    auto it = pages_.upper_bound(occurrence);
-    if (it != pages_.begin()) {
-      const auto page     = std::prev(it);
-      const auto page_end = page->first + static_cast<int64_t>(page->second.size());
-      if (occurrence < page_end) {
-        occurrence = page_end;
-        continue;
-      }
-    }
-    return occurrence;
-  }
-  return -1;
+  return display_->FirstUnloadedOccurrence(begin, end);
 }
-
 auto AlbumSectionModel::NextLoadedPageStart(int64_t occurrence) const -> int64_t {
-  const auto it = pages_.upper_bound(occurrence);
-  return it == pages_.end() ? occurrence_count_ : it->first;
+  return display_->NextLoadedPageStart(occurrence);
 }
-
-auto AlbumSectionModel::LoadedEnd() const -> int64_t {
-  if (pages_.empty()) {
-    return 0;
-  }
-  const auto& last = *pages_.rbegin();
-  return last.first + static_cast<int64_t>(last.second.size());
-}
+auto AlbumSectionModel::LoadedEnd() const -> int64_t { return display_->LoadedEnd(); }
 
 auto AlbumSectionModel::RetainedPagesInResult(
     const std::vector<AlbumGroupDescriptor>& groups,
@@ -345,10 +286,10 @@ auto AlbumSectionModel::RetainedPagesInResult(
   // New occurrences of the loaded files, with the group that holds each one. One pass over the
   // new result; only the loaded files are recorded.
   std::unordered_map<sl_element_id_t, std::vector<std::pair<int64_t, int>>> new_occurrences;
-  for (const auto& [start, ids] : pages_) {
-    for (const auto id : ids) {
-      if (id != 0) {
-        new_occurrences.try_emplace(id);
+  for (const auto& [start, ids] : display_->pages()) {
+    for (const auto& item : ids) {
+      if (item.file_id != 0) {
+        new_occurrences.try_emplace(item.file_id);
       }
     }
   }
@@ -371,12 +312,12 @@ auto AlbumSectionModel::RetainedPagesInResult(
 
   // The new occurrence range of each page: from its first to its last remaining photo.
   std::vector<std::pair<int64_t, int64_t>> ranges;
-  for (const auto& [start, ids] : pages_) {
+  for (const auto& [start, ids] : display_->pages()) {
     int64_t begin = -1;
     int64_t end   = -1;
     for (size_t offset = 0; offset < ids.size(); ++offset) {
-      const auto found = new_occurrences.find(ids[offset]);
-      if (ids[offset] == 0 || found == new_occurrences.end() || found->second.empty()) {
+      const auto found = new_occurrences.find(ids[offset].file_id);
+      if (ids[offset].file_id == 0 || found == new_occurrences.end() || found->second.empty()) {
         continue;
       }
       // The same group key: a label group keeps the occurrence of its own label.
@@ -422,6 +363,18 @@ auto AlbumSectionModel::RetainedPagesInResult(
 void AlbumSectionModel::ApplyResultChange(std::vector<AlbumGroupDescriptor> groups,
                                           int64_t unique_file_count, int64_t occurrence_count,
                                           PageMap pages) {
+  ApplyGroupResultChange(std::move(groups), unique_file_count, occurrence_count);
+  display_->InstallPhotoPages(occurrence_count, std::move(pages));
+}
+void AlbumSectionModel::ApplyGroupResultChange(std::vector<AlbumGroupDescriptor> groups,
+                                               int64_t                           unique_file_count,
+                                               int64_t                           occurrence_count) {
+  if (mode_ == AlbumReadMode::kPhotos) {
+    for (auto& group : groups) {
+      group.display_count = group.photo_count_;
+      group.first_display = group.first_occurrence_;
+    }
+  }
   std::set<std::string> new_keys;
   for (const auto& group : groups) {
     new_keys.insert(CollapseKey(group.key_));
@@ -462,7 +415,7 @@ void AlbumSectionModel::ApplyResultChange(std::vector<AlbumGroupDescriptor> grou
     if (position >= groups_.size() || !old_keys.contains(new_key)) {
       const int first = position < groups_.size() ? static_cast<int>(row_starts_[position])
                                                   : static_cast<int>(row_count_);
-      const int rows  = static_cast<int>(RowsOfGroup(new_key, groups[next].photo_count_));
+      const int rows  = static_cast<int>(RowsOfGroup(new_key, groups[next].display_count));
       beginInsertRows({}, first, first + rows - 1);
       groups_.insert(groups_.begin() + static_cast<std::ptrdiff_t>(position), groups[next]);
       RebuildRowStarts();
@@ -475,7 +428,7 @@ void AlbumSectionModel::ApplyResultChange(std::vector<AlbumGroupDescriptor> grou
     // The same group: photo rows are inserted or removed at its end.
     const int  start    = static_cast<int>(row_starts_[position]);
     const auto old_rows = GroupRowCount(static_cast<int>(position));
-    const auto new_rows = RowsOfGroup(new_key, groups[next].photo_count_);
+    const auto new_rows = RowsOfGroup(new_key, groups[next].display_count);
     if (new_rows > old_rows) {
       beginInsertRows({}, start + static_cast<int>(old_rows),
                       start + static_cast<int>(new_rows) - 1);
@@ -489,9 +442,8 @@ void AlbumSectionModel::ApplyResultChange(std::vector<AlbumGroupDescriptor> grou
       RebuildRowStarts();
       endRemoveRows();
     }
-    changed = changed || groups_[position].photo_count_ != groups[next].photo_count_ ||
-              groups_[position].first_occurrence_ != groups[next].first_occurrence_ ||
-              new_rows != old_rows;
+    changed = changed || groups_[position].display_count != groups[next].display_count ||
+              groups_[position].first_display != groups[next].first_display || new_rows != old_rows;
     groups_[position] = groups[next];
     ++position;
     ++next;
@@ -502,8 +454,7 @@ void AlbumSectionModel::ApplyResultChange(std::vector<AlbumGroupDescriptor> grou
   groups_            = std::move(groups);
   unique_file_count_ = unique_file_count;
   occurrence_count_  = occurrence_count;
-  changed            = changed || pages != pages_;
-  pages_             = std::move(pages);
+  changed            = true;
   RebuildRowStarts();
   if (changed && row_count_ > 0) {
     emit dataChanged(index(0), index(static_cast<int>(row_count_) - 1));
@@ -526,7 +477,7 @@ void AlbumSectionModel::ApplyGroupCollapse(int group_index, bool collapsed) {
   // so a view keeps its scroll position (a model reset moves it to the top).
   const auto& group      = groups_[static_cast<size_t>(group_index)];
   const int   header_row = static_cast<int>(row_starts_[static_cast<size_t>(group_index)]);
-  const int   photo_rows = static_cast<int>(CeilDiv(group.photo_count_, column_count_));
+  const int   photo_rows = static_cast<int>(CeilDiv(group.display_count, column_count_));
   if (photo_rows > 0) {
     if (collapsed) {
       beginRemoveRows({}, header_row + 1, header_row + photo_rows);
@@ -601,7 +552,7 @@ int AlbumSectionModel::RowForOccurrence(qint64 occurrence) const {
   if (IsGroupCollapsed(group_index)) {
     return static_cast<int>(start);
   }
-  const auto local = occurrence - groups_[static_cast<size_t>(group_index)].first_occurrence_;
+  const auto local = occurrence - groups_[static_cast<size_t>(group_index)].first_display;
   return static_cast<int>(start + 1 + local / column_count_);
 }
 
@@ -654,14 +605,14 @@ QVariantList AlbumSectionModel::VisibleOccurrenceRanges(qint64 first, qint64 las
   for (int group_index = std::max(0, GroupOfOccurrence(first));
        group_index >= 0 && group_index < GroupCount(); ++group_index) {
     const auto& group = groups_[static_cast<size_t>(group_index)];
-    if (group.first_occurrence_ > last) {
+    if (group.first_display > last) {
       break;
     }
     if (IsGroupCollapsed(group_index)) {
       continue;
     }
-    const auto begin = std::max<int64_t>(first, group.first_occurrence_);
-    const auto end   = std::min<int64_t>(last + 1, group.first_occurrence_ + group.photo_count_);
+    const auto begin = std::max<int64_t>(first, group.first_display);
+    const auto end   = std::min<int64_t>(last + 1, group.first_display + group.display_count);
     if (begin < end) {
       ranges.push_back(RangeMap(begin, end));
     }
@@ -669,18 +620,7 @@ QVariantList AlbumSectionModel::VisibleOccurrenceRanges(qint64 first, qint64 las
   return ranges;
 }
 
-uint AlbumSectionModel::FileIdAt(qint64 occurrence) const {
-  auto it = pages_.upper_bound(occurrence);
-  if (it == pages_.begin()) {
-    return 0;
-  }
-  --it;
-  const auto offset = occurrence - it->first;
-  if (offset < 0 || offset >= static_cast<int64_t>(it->second.size())) {
-    return 0;
-  }
-  return static_cast<uint>(it->second[static_cast<size_t>(offset)]);
-}
+uint AlbumSectionModel::FileIdAt(qint64 occurrence) const { return display_->FileIdAt(occurrence); }
 
 int AlbumSectionModel::GroupIndexForTitle(const QString& title, bool unknown) const {
   const auto text = title.toStdString();
@@ -699,16 +639,16 @@ qint64 AlbumSectionModel::LoadedOccurrenceOf(uint file_id, int group_index) cons
     return -1;
   }
   const auto& group = groups_[static_cast<size_t>(group_index)];
-  const auto  begin = group.first_occurrence_;
-  const auto  end   = group.first_occurrence_ + group.photo_count_;
-  auto        it    = pages_.upper_bound(begin);
-  if (it != pages_.begin()) {
+  const auto  begin = group.first_display;
+  const auto  end   = group.first_display + group.display_count;
+  auto        it    = display_->pages().upper_bound(begin);
+  if (it != display_->pages().begin()) {
     --it;
   }
-  for (; it != pages_.end() && it->first < end; ++it) {
+  for (; it != display_->pages().end() && it->first < end; ++it) {
     for (size_t offset = 0; offset < it->second.size(); ++offset) {
       const auto occurrence = it->first + static_cast<int64_t>(offset);
-      if (occurrence >= begin && occurrence < end && it->second[offset] == file_id) {
+      if (occurrence >= begin && occurrence < end && it->second[offset].file_id == file_id) {
         return occurrence;
       }
     }

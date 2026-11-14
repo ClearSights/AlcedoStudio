@@ -33,6 +33,13 @@
 - [x] Added deployment workflow for the website.
 - [x] Updated the zh-CN website font stack.
 
+### Library organization
+
+- [x] Implemented Library photo stacks with filter-first matching, temporary covers, and separate
+      fragments in each Library group on `feature/library-photo-stacking-PR5`. Targeted tests,
+      native UI review, and local verification limits are recorded in the
+      [Library Photo Stacking Plan](alcedo_studio/ui/library_photo_stacking_plan.md).
+
 ## Still Planned
 
 - [ ] Skip duplicate imports by normalized full source path and byte size, with a

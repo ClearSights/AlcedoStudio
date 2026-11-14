@@ -30,6 +30,8 @@ namespace alcedo::ui {
 struct ProjectLifecycleHooks {
   std::function<QString()>            project_switch_block_reason;
   std::function<void()>               finalize_editor_session;
+  /// True until a stack command and its save completion have reached the GUI thread.
+  std::function<bool()>               stack_command_busy;
   /// True while the editor session has an image or runs a close or a persist.
   std::function<bool()>               editor_session_busy;
   std::function<void()>               clear_project_ui_state;
@@ -45,6 +47,8 @@ struct ProjectLifecycleHooks {
 /// other modules report status without depending on the host.
 class ProjectModule final : public QObject, public IUiStatusSink {
   Q_OBJECT
+  Q_PROPERTY(bool hasUnsavedStackChanges READ HasUnsavedStackChanges NOTIFY StackSaveStateChanged)
+  Q_PROPERTY(QString stackSaveError READ StackSaveError NOTIFY StackSaveStateChanged)
   Q_PROPERTY(bool serviceReady READ ServiceReady NOTIFY ServiceStateChanged)
   Q_PROPERTY(QString serviceMessage READ ServiceMessage NOTIFY ServiceStateChanged)
   Q_PROPERTY(QVariantList recentProjects READ RecentProjects NOTIFY RecentProjectsChanged)
@@ -138,6 +142,17 @@ class ProjectModule final : public QObject, public IUiStatusSink {
   Q_INVOKABLE bool   CreateProjectInFolderNamed(const QString& folderUrlOrPath,
                                                 const QString& projectName);
   Q_INVOKABLE bool   SaveProject();
+  /// GUI-thread retry of persistence only. Refuses during a stack command; failure keeps pending.
+  Q_INVOKABLE bool      RetryStackSave();
+  [[nodiscard]] bool    HasUnsavedStackChanges() const { return unsaved_stack_changes_; }
+  [[nodiscard]] QString StackSaveError() const { return stack_save_error_; }
+  [[nodiscard]] bool    StackCommandBusy() const;
+  /// Consume a committed command outcome, or a successful project save. GUI thread only.
+  void                  SetStackSaveState(bool pending, const QString& diagnostic = {});
+  /// Explicit application discard closes the working project without writing its package.
+  bool                  DiscardUnsavedProject();
+  /// GUI completion of a successful package save. A live stack command publishes its own result.
+  void                  NoteProjectSaved();
   /// Loads the project at @p projectUrlOrPath in preview mode for the welcome surface.
   /// Returns false and changes nothing when a load runs or a project switch is blocked. When
   /// the project is already loaded and not entered, only sets the welcome project path.
@@ -178,6 +193,8 @@ class ProjectModule final : public QObject, public IUiStatusSink {
   [[nodiscard]] bool ShouldKeepSemanticModelData(const QString& profileId) const;
 
  signals:
+  void StackSaveStateChanged();
+  void stackSaveStateChanged();
   void ServiceStateChanged();
   void RecentProjectsChanged();
   void AcceleratorStateChanged();
@@ -205,6 +222,8 @@ class ProjectModule final : public QObject, public IUiStatusSink {
                                         bool* fileRejected);
 
   ProjectHandler handler_;
+  bool           unsaved_stack_changes_ = false;
+  QString        stack_save_error_;
 
   ProjectLifecycleHooks        lifecycle_hooks_{};
 

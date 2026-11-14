@@ -384,7 +384,7 @@ bool ProjectHandler::PurgeUninstalledSemanticModels() {
   return changed;
 }
 
-bool ProjectHandler::PersistCurrentProjectState() {
+bool ProjectHandler::PersistCurrentProjectState(QString* error) {
   try {
     if (pipeline_service_) {
       pipeline_service_->Sync();
@@ -403,7 +403,11 @@ bool ProjectHandler::PersistCurrentProjectState() {
       }
     }
     return true;
+  } catch (const std::exception& failure) {
+    if (error) *error = QString::fromUtf8(failure.what());
+    return false;
   } catch (...) {
+    if (error) *error = QStringLiteral("Unknown project save failure.");
     return false;
   }
 }
@@ -446,10 +450,7 @@ bool ProjectHandler::PersistProjectForClose(QString* error) {
     }
     return false;
   }
-  if (!PersistCurrentProjectState()) {
-    if (error != nullptr) {
-      *error = PL_TEXT("Project save failed.").Render();
-    }
+  if (!PersistCurrentProjectState(error)) {
     return false;
   }
   return PackageCurrentProjectFiles(error);
@@ -519,13 +520,19 @@ auto PackageProjectFiles(const std::shared_ptr<ProjectService>& project,
 }  // namespace
 
 bool ProjectHandler::PackageCurrentProjectFiles(QString* errorOut) const {
-  std::lock_guard lock(*package_mutex_);
-  return PackageProjectFiles(project_, db_path_, meta_path_, project_package_path_, errorOut);
+  bool saved = false;
+  {
+    std::lock_guard lock(*package_mutex_);
+    saved = PackageProjectFiles(project_, db_path_, meta_path_, project_package_path_, errorOut);
+  }
+  if (saved) project_module_.NoteProjectSaved();
+  return saved;
 }
 
 auto ProjectHandler::MakeSaveAndPackageJob() const -> std::function<bool(QString*)> {
   return [project = project_, db_path = db_path_, meta_path = meta_path_,
-          package_path = project_package_path_, mutex = package_mutex_](QString* errorOut) {
+          package_path = project_package_path_, mutex = package_mutex_,
+          owner = QPointer<ProjectModule>(&project_module_)](QString* errorOut) {
     std::lock_guard lock(*mutex);
     if (!project) {
       return false;
@@ -534,10 +541,22 @@ auto ProjectHandler::MakeSaveAndPackageJob() const -> std::function<bool(QString
       if (!meta_path.empty()) {
         project->SaveProject(meta_path);
       }
+    } catch (const std::exception& error) {
+      if (errorOut) *errorOut = QString::fromUtf8(error.what());
+      return false;
     } catch (...) {
+      if (errorOut) *errorOut = QStringLiteral("Unknown metadata save failure.");
       return false;
     }
-    return PackageProjectFiles(project, db_path, meta_path, package_path, errorOut);
+    const bool saved = PackageProjectFiles(project, db_path, meta_path, package_path, errorOut);
+    if (saved && owner)
+      QMetaObject::invokeMethod(
+          owner,
+          [owner] {
+            if (owner) owner->NoteProjectSaved();
+          },
+          Qt::QueuedConnection);
+    return saved;
   };
 }
 

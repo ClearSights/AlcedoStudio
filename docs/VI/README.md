@@ -549,6 +549,37 @@ labels.
   of a new rating appear 30 ms apart with a short scale settle (a cut with
   `reduceMotion`). As display, only the filled stars show.
 
+### `PhotoStackDisclosure.qml` and `PhotoStackActions.qml`
+
+- Shared by classic, grouped, and justified Library cards. The display owner supplies the
+  occurrence identity, matching counts, saved total, expansion, and temporary-cover state.
+  QML retains no member list and never derives stack membership.
+- User review (2026-11-13) requests the white `photo-stack.svg` icon and a bold number on
+  a rounded dark translucent control. Use 24 px `inspectorHeaderActionSize` height,
+  `spaceXs` padding, `photoStackBadgeFillColor` (black, alpha 180), and
+  `photoStackBadgeTextColor` (white). Both themes use the same photo-overlay colors.
+  Numbers use Manrope, strong title/body sizes, and tabular figures. Collapsed: `3`;
+  expanded: `2/3`; filtered: `3 matched` or `2/3 matched`. Positions count only matching
+  members in this group. If the full label cannot fit, keep the ratio and move matched
+  status to the tooltip, as explicitly approved. Tooltip/accessibility text retain exact
+  fragment, query, and saved counts and identify a temporary cover.
+- The pointer overlay reserves disclosure presses before rating, drag selection, or photo
+  activation. A keyboard-focused disclosure handles Space and Enter itself. Group-header
+  collapse remains a separate action.
+- All stack actions live in one `Stack` submenu. Group into Stack, Ungroup Stack,
+  Add Selected to Stack, Remove from Stack, Set as Stack Cover, Move Up/Down in Stack,
+  Split Stack, and the two Expand/Collapse actions. The two stack-selection entries were
+  removed by the user review of 2026-11-14.
+  The all-stacks action says All Matched Stacks with a filter. Split uses the right-clicked
+  member in cover-first order; singleton sides become ordinary photos. Both surviving stacks
+  expand after a split. Set as Stack Cover moves the photo first, and moving across the first
+  position updates the cover.
+- Menu validity comes from the C++ command owner. Confirm full saved totals before ungrouping
+  hidden members. Cover tooltips explain project-wide scope.
+- Review classic and justified flat layouts and grouped classic, both themes, English and
+  Chinese, all eight zoom levels, a narrow window, pointer and keyboard, `reduceMotion`,
+  temporary covers, hidden selection, command refusal, and failed save with Retry Save.
+
 ### `ThumbnailGridView.qml`
 
 - Selected card: the normal card fill and a 2 px `textColor` outline, the same

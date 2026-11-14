@@ -193,6 +193,12 @@ Item {
         }]
     }
 
+    PhotoStackActions {
+        id: stackActions
+        active: root.imageActionsController.menuOrigin === "library"
+        occurrenceKey: root.imageActionsController.stackOccurrenceKey
+    }
+
     ImageContextMenu {
         id: imageContextMenuObj
         ratingEnabled: Number(host.pendingRatingTarget.imageId) > 0
@@ -200,6 +206,7 @@ Item {
         collectionRows: appModules.folders.folders ? appModules.folders.folders : []
         currentCollectionId: Number(appModules.folders.currentFolderId)
         addToEnabled: host.pendingDeleteTargets.length > 0
+        stackMenuActions: stackActions.actions
         actions: root.filmstripDiscardActions().concat([
             {
                 id: "copy-adjustments",
@@ -228,6 +235,10 @@ Item {
         }
         onActionRequested: function(actionId) {
             imageContextMenuObj.close()
+            if (actionId.indexOf("stack-") === 0) {
+                stackActions.request(actionId)
+                return
+            }
             if (actionId === "discard-edit") {
                 if (appModules.editorSession
                         && appModules.editorSession.canDiscardCurrentCommit === true) {
@@ -326,6 +337,8 @@ Item {
 
     EditorCloseConfirmDialog {
         id: editorCloseConfirmDialogObj
+        pendingStackSave: appModules.project.hasUnsavedStackChanges
+        stackSaveError: appModules.project.stackSaveError
         parent: Overlay.overlay
         theme: root.host
         host: root.host
