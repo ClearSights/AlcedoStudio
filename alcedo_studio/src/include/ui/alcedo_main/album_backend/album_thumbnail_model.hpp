@@ -66,6 +66,9 @@ class AlbumThumbnailModel : public QAbstractListModel {
   QHash<int, QByteArray> roleNames() const override;
   /// The role names of this model (roleNames), also for models that forward its roles.
   static auto RoleNameTable() -> QHash<int, QByteArray>;
+  /// Value of @p role for @p item, as data() returns it for a row of the item. A model that
+  /// forwards these roles reads the values of an empty row from a default AlbumItem.
+  QVariant                roleValue(const AlbumItem& item, int role) const;
 
   int count() const { return static_cast<int>(rows_.size()); }
   int totalCountInt() const { return static_cast<int>(total_count_); }
@@ -166,7 +169,6 @@ class AlbumThumbnailModel : public QAbstractListModel {
  private:
   bool                   replace_total_changed_ = false;
   bool                   replace_more_changed_  = false;
-  QVariant roleValue(const AlbumItem& item, int role) const;
   void rebuildElementIdIndex();
   /// Move existing thumbnail scalars into fresh producer values before replacing photo rows.
   void                   preserveThumbnailState(std::vector<AlbumItem>& items);
