@@ -3336,6 +3336,32 @@ The full test suite, Debug and macOS builds, sanitizers, and native GUI review w
 Temporary logs and the local helper under `build/tmp/stacking_pr5_upstream_verify/` were
 removed after this record was written. Earlier completion records remain historical evidence.
 
+#### PR5 startup correction (2026-11-14)
+
+The user reported that the built executable exited before it showed a window. The startup
+logs recorded `LibraryWorkspace.qml:587:25: IconImage is not a type`. The merge retained
+upstream's file-drop overlay but removed `import QtQuick.Controls.impl`, which defines its
+`IconImage`. Restore that import. Keep the Basic style and the current photo input behavior.
+Track the failure in [#916](https://github.com/zidage/AlcedoStudio/issues/916).
+
+The preceding build and targeted test results are valid for their stated checks. They did not
+prove that production `Main.qml` loaded. The executable's `--verify-qml-imports` command also
+returned zero despite the normal startup failure; that command checks QuickQanava imports only.
+
+Added `MainQmlWorkflowTests.BasicStyleProductionWindowLoadsLibraryAndFileDropArea` in the
+existing `MainQmlWorkflowTest` target. It loads production `Main.qml` with Basic style and real
+application modules. It requires a window, the Library workspace, and the file-drop area.
+It sends no synthetic pointer or focus input. Before the import fix, it failed with the same
+`IconImage` diagnostic. After the fix, it passed in 2.28 seconds, including CTest overhead.
+
+Both the test-target build and `win_release` application build returned zero. All six icon
+comparisons passed again. A direct launch of the exact executable at
+`build/release/alcedo_studio/src/alcedo_main.exe` then showed the native welcome window and
+remained responsive. The process path was checked to exclude the separately installed copy.
+The native launch retained the configured CUDA backend on the NVIDIA GeForce RTX 3080.
+No complete editing workflow or full test suite was run for this correction.
+Temporary diagnostics under `build/tmp/pr5_startup_diagnostics/` were removed after this record.
+
 ## 9. Cross-phase acceptance matrix
 
 | Behavior | Primary evidence | Required observable result |

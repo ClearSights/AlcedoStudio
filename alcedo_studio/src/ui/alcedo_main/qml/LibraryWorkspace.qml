@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Controls.impl
 import QtQuick.Layouts
 import QtQuick.Effects
 import "FileDrop.js" as FileDrop
