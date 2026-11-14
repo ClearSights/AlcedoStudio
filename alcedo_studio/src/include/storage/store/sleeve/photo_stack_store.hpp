@@ -41,10 +41,15 @@ class PhotoStackStore {
   auto SetCover(const std::string& stack_id, sl_element_id_t file_id) -> PhotoStackChange;
   /// Swap a member with its saved neighbor. An endpoint or unstacked File is a no-op.
   auto MoveMember(sl_element_id_t file_id, PhotoStackMove direction) -> PhotoStackChange;
-  /// Order validated explicit targets by stack UUID, saved position, then unstacked File ID.
+  /// Split saved order before file_id. The left retains its ID/cover when possible; the right
+  /// uses new_stack_id and file_id as cover. Singleton sides become ordinary photos. The first
+  /// member is a no-op; invalid/nonmember input or SQL failure leaves both sides unchanged.
+  auto        SplitStack(const std::string& stack_id, const std::string& new_stack_id,
+                         sl_element_id_t file_id) -> PhotoStackChange;
   /// Validate explicit targets and compute menu availability without exposing stored rows.
   auto ReadActionOptions(std::span<const sl_element_id_t> ids, const std::string& stack,
                          sl_element_id_t clicked) -> PhotoStackActionOptions;
+  /// Order validated explicit targets by stack UUID, saved position, then unstacked File ID.
   auto OrderCommandFiles(std::span<const sl_element_id_t> ids) -> std::vector<sl_element_id_t>;
   /// Read validated, saved member order; unknown stacks are errors, never empty successes.
   auto ReadMemberIds(const std::string& stack_id) -> std::vector<sl_element_id_t>;

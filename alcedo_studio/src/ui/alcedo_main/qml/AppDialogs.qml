@@ -189,7 +189,8 @@ Item {
         collectionRows: appModules.folders.folders ? appModules.folders.folders : []
         currentCollectionId: Number(appModules.folders.currentFolderId)
         addToEnabled: host.pendingDeleteTargets.length > 0
-        actions: root.filmstripDiscardActions().concat(stackActions.actions).concat([
+        stackMenuActions: stackActions.actions
+        actions: root.filmstripDiscardActions().concat([
             {
                 id: "copy-adjustments",
                 label: qsTr("Copy Adjustments"),

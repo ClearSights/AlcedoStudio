@@ -143,6 +143,7 @@ struct AlbumDisplayItem {
   int64_t              fragment_match_count                              = 1;
   bool                 temporary_cover                                   = false;
   bool                 expanded                                          = false;
+  int64_t fragment_position = 1;  ///< One-based displayed cover first, then saved order.
   auto                 operator==(const AlbumDisplayItem&) const -> bool = default;
 };
 

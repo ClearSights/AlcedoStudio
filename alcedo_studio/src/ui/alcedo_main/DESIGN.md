@@ -518,12 +518,18 @@ edit state and the rating. The shared parts are `ThumbnailEditMark.qml` and
 The control is independent of photo selection, rating, group-header collapse, and editor input.
 The displayed File opens in the editor, including a temporary cover.
 
-- The disclosure uses `inspectorHeaderActionSize` (24 px), a standard text triangle,
-  `cardSurfaceColor`, `textColor`, and `textMutedColor`. Focus has a 1 px muted outline;
-  hover uses `hoverColor`. There is no new icon asset or rounded count container.
-- Counts use `headlineFontFamily`, `fontSizeCaption`, and tabular figures. Normal cards
-  show separate labels for matching photos in this fragment and total saved stack members.
-  If the labels cannot fit, or at compact zoom, only the fragment count follows the triangle.
+- User review (2026-11-13) explicitly requests the rounded stack control. It uses
+  `inspectorHeaderActionSize` (24 px) height, half-height radius, `spaceXs` side padding,
+  and `panel_icons/photo-stack.svg` in `iconOpticalSizeCompact` (body size on compact tiles).
+  The whole control is the pointer/keyboard target; focus has a 1 px white outline.
+- `photoStackBadgeFillColor` is black with alpha 180; `photoStackBadgeTextColor` is white.
+  Both are constant across themes so the control reads on bright and dark photographs.
+- Numbers use `headlineFontFamily`, `fontSizeTitle` (`fontSizeBody` at compact zoom),
+  `fontWeightStrong`, and tabular figures. A collapsed badge shows `3`; expanded badges
+  show `1/3`, `2/3`, `3/3` in actual displayed member order. With an accepted Inspector or
+  search filter, the text is `3 matched` or `2/3 matched`. Grouping alone adds no suffix.
+  The user approved omitting `matched` only when the full label cannot fit; its tooltip
+  still gives that status. The fraction is one ordinal value, not independent labels.
   Compact counts of 1,000 or more use whole thousands (`12K`, `12千`); the accessible
   description and tooltip always state the exact fragment, query, and saved totals.
 - The control stays on the top-left of the photo at caption-free zoom. Its target stays
@@ -532,7 +538,13 @@ The displayed File opens in the editor, including a temporary cover.
 - A temporary cover's accessible description explicitly identifies it. No error causes a
   different cover to be selected. Selection summaries separately report hidden and
   outside-result selections.
-- Context commands use the existing Basic menu family. Whole-stack selection always
+- Context commands use one `Stack` submenu in the existing Basic menu family: Group into
+  Stack, Ungroup Stack, Add Selected to Stack, Remove from Stack, Set as Stack Cover,
+  Move Up/Down in Stack, Split Stack, Expand/Collapse Stack, Expand/Collapse All Stacks
+  (All Matched Stacks with a filter), then the two explicit stack selection actions.
+  Stack captions stay on one line; submenu width follows actual row font and padding.
+  Split uses the right-clicked member in saved order; singleton sides become unstacked.
+  Whole-stack selection always
   confirms its saved total; ungrouping confirms when the clicked fragment hides members.
   Cover changes explain their project-wide scope in the tooltip.
 - Query, command, and save errors use `AlertBadge`; Retry Save calls the project owner.

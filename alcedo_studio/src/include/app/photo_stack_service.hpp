@@ -40,6 +40,9 @@ class PhotoStackService {
   auto SetCover(const std::string& stack_id, sl_element_id_t file_id) -> PhotoStackChange;
   /// Move relative to saved order; an endpoint or unstacked File returns a no-op.
   auto MoveMember(sl_element_id_t file_id, PhotoStackMove direction) -> PhotoStackChange;
+  /// Atomically split saved order before file_id; a one-photo side becomes unstacked.
+  /// Generate the right stack's UUID here. Invalid input and storage errors propagate.
+  auto SplitStack(const std::string& stack_id, sl_element_id_t file_id) -> PhotoStackChange;
   /// Validate explicit targets and compute menu availability without exposing stored rows.
   auto ReadActionOptions(std::span<const sl_element_id_t> ids, const std::string& stack,
                          sl_element_id_t clicked) -> PhotoStackActionOptions;

@@ -10,6 +10,7 @@ AppContextMenu {
     id: root
     objectName: "imageContextMenu"
     property var actions: []
+    property var stackMenuActions: []
     property int currentRating: 0
     property bool ratingEnabled: false
     // FolderController.folders rows; the "Add to" list shows them as a tree.
@@ -21,8 +22,8 @@ AppContextMenu {
     signal exportQueueRequested()
     signal collectionRequested(int folderId)
 
-    // Rating, "Add to", separator; the dynamic actions follow.
-    readonly property int dynamicActionOffset: 3
+    // Rating, "Add to", Stack, separator; the other dynamic actions follow.
+    readonly property int dynamicActionOffset: stackMenuActions.length > 0 ? 4 : 3
 
     function starText(value) {
         let text = ""
@@ -223,6 +224,47 @@ AppContextMenu {
                 }
             }
         }
+    }
+
+    Instantiator {
+        // Construct the submenu only for Library stack actions. Menu.visible controls popup
+        // opening, so it must not be used to show or hide the top-level entry.
+        model: root.stackMenuActions.length > 0 ? 1 : 0
+        delegate: AppContextMenu {
+            id: stackMenu
+            objectName: "imageContextStackMenu"
+            title: qsTr("Stack")
+            // Use actual row geometry, including its resolved font, state gutter, and padding.
+            readonly property real commandWidth: {
+                let widest = 0
+                for (let i = 0; i < stackMenu.count; ++i) {
+                    const row = stackMenu.itemAt(i)
+                    if (row) widest = Math.max(widest, row.implicitWidth)
+                }
+                return widest
+            }
+            width: Math.ceil(Math.max(implicitWidth, commandWidth + padding * 2))
+            Instantiator {
+                model: root.stackMenuActions
+                delegate: AppMenuItem {
+                    singleLine: true
+                    readonly property var actionData: modelData
+                    objectName: "imageContextAction_" + String(actionData.id)
+                    text: actionData.label
+                    enabled: actionData.enabled !== false
+                    ToolTip.visible: hovered && ToolTip.text.length > 0
+                    ToolTip.text: actionData.tooltip || ""
+                    onTriggered: {
+                        stackMenu.dismiss()
+                        root.actionRequested(actionData.id)
+                    }
+                }
+                onObjectAdded: function(index, object) { stackMenu.insertItem(index, object) }
+                onObjectRemoved: function(index, object) { stackMenu.removeItem(object) }
+            }
+        }
+        onObjectAdded: function(index, object) { root.insertMenu(2, object) }
+        onObjectRemoved: function(index, object) { root.removeMenu(object) }
     }
 
     AppMenuSeparator {}

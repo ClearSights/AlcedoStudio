@@ -121,6 +121,8 @@ TEST_F(AlbumStackPagingTest, LargeCollapsedStackLoadsOnlyItsRepresentativeMetada
   ASSERT_EQ(deep.display_rows.size(), 1000);
   EXPECT_EQ(deep.display_rows.front().photo.photo_.file_id_, added[8996]);
   EXPECT_EQ(deep.display_rows.back().photo.photo_.file_id_, added.back());
+  EXPECT_EQ(deep.display_rows.front().fragment_position, 9001);
+  EXPECT_EQ(deep.display_rows.back().fragment_position, 10000);
   EXPECT_TRUE(deep.rows_.empty());
   EXPECT_TRUE(deep.occurrence_file_ids_.empty());
   read.display_offset = 10000;

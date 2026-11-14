@@ -1124,6 +1124,8 @@ Item {
             z: 4
             occurrenceKey: cell.occurrenceKey
             matchingCount: Number(cell.stackItem.fragmentMatchCount || 0)
+            matchingPosition: Number(cell.stackItem.fragmentPosition || 1)
+            filtered: library.hasActiveFilter
             queryCount: Number(cell.stackItem.queryMatchCount || 0)
             totalCount: Number(cell.stackItem.stackTotal || 0)
             expanded: cell.stackItem.stackExpanded === true

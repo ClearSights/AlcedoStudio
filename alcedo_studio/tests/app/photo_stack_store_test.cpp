@@ -473,21 +473,96 @@ TEST_F(PhotoStackStoreTest, ActionAvailabilityUsesSavedNeighborsAndExactExplicit
   const auto before = StackRows();
   const auto first  = Stacks().ReadActionOptions(Files({0}), stack, files[0]);
   EXPECT_FALSE(first.earlier);
+  EXPECT_FALSE(first.split);
   EXPECT_TRUE(first.later);
   EXPECT_TRUE(first.remove);
   EXPECT_FALSE(first.add);
   const auto last = Stacks().ReadActionOptions(Files({2}), stack, files[2]);
   EXPECT_TRUE(last.earlier);
+  EXPECT_TRUE(last.split);
   EXPECT_FALSE(last.later);
   const auto all = Stacks().ReadActionOptions(Files({0, 1, 2}), stack, files[0]);
   EXPECT_FALSE(all.group);
   EXPECT_FALSE(all.earlier);
+  EXPECT_FALSE(all.split);
   const auto outside = Stacks().ReadActionOptions(Files({3, 4}), stack, files[0]);
   EXPECT_TRUE(outside.group);
   EXPECT_TRUE(outside.add);
   EXPECT_FALSE(outside.remove);
   EXPECT_EQ(Stacks().OrderCommandFiles(Files({4, 2, 0, 3})), Files({0, 2, 3, 4}));
   EXPECT_EQ(StackRows(), before);
+}
+
+TEST_F(PhotoStackStoreTest, SplitPreservesBothSavedPartitionsAndPersistsTheirCovers) {
+  const auto source = Create({0, 1, 2, 3, 4, 5}, 1);
+  const auto change = Stacks().SplitStack(source, files[3]);
+  ASSERT_EQ(change.changed_stack_ids.size(), 2);
+  const auto right = change.changed_stack_ids[1];
+  EXPECT_EQ(change.stack_id, source);
+  EXPECT_EQ(change.changed_file_ids, Files({0, 1, 2, 3, 4, 5}));
+  EXPECT_EQ(Stacks().ReadMemberIds(source), Files({0, 1, 2}));
+  EXPECT_EQ(Stacks().ReadMemberIds(right), Files({3, 4, 5}));
+  EXPECT_EQ(Cover(source), files[1]);
+  EXPECT_EQ(Cover(right), files[3]);
+  Reopen();
+  EXPECT_EQ(Stacks().ReadMemberIds(source), Files({0, 1, 2}));
+  EXPECT_EQ(Stacks().ReadMemberIds(right), Files({3, 4, 5}));
+  EXPECT_EQ(Cover(source), files[1]);
+  EXPECT_EQ(Cover(right), files[3]);
+}
+
+TEST_F(PhotoStackStoreTest, SplitPromotesLeftCoverAndLeavesSingletonSidesUnstacked) {
+  const auto source = Create({0, 1, 2, 3}, 3);
+  const auto split  = Stacks().SplitStack(source, files[2]);
+  ASSERT_EQ(split.changed_stack_ids.size(), 2);
+  EXPECT_EQ(Cover(source), files[0]);
+  EXPECT_EQ(Cover(split.changed_stack_ids[1]), files[2]);
+  const auto left_single = Stacks().SplitStack(source, files[1]);
+  EXPECT_EQ(left_single.changed_stack_ids, std::vector{source});
+  EXPECT_THROW(Stacks().ReadMemberIds(source), std::invalid_argument);
+  const auto right_single = Stacks().SplitStack(split.changed_stack_ids[1], files[3]);
+  EXPECT_EQ(right_single.changed_stack_ids, std::vector{split.changed_stack_ids[1]});
+  EXPECT_EQ(Number(duckorm::expr::raw("SELECT COUNT(*) FROM PhotoStack")), 0);
+  EXPECT_EQ(Number(duckorm::expr::raw("SELECT COUNT(*) FROM PhotoStackMember")), 0);
+  EXPECT_EQ(Number(duckorm::expr::raw("SELECT COUNT(*) FROM FileImage")), 8);
+}
+
+TEST_F(PhotoStackStoreTest, SplitFirstMemberIsUnchangedAndNonmemberIsRejected) {
+  const auto stack = Create({0, 1, 2}, 0);
+  const auto rows  = StackRows();
+  EXPECT_FALSE(Stacks().SplitStack(stack, files[0]).Changed());
+  EXPECT_THROW(Stacks().SplitStack(stack, files[7]), std::invalid_argument);
+  EXPECT_EQ(StackRows(), rows);
+  const auto options = Stacks().ReadActionOptions(Files({0, 1, 2}), stack, files[1]);
+  EXPECT_TRUE(options.split);  // Split point is the right-clicked photo, not the selection.
+}
+
+TEST_F(PhotoStackStoreTest, SplitSingletonDissolvesOnlyItsSideAndKeepsTheOtherStack) {
+  const auto first       = Create({0, 1, 2, 3}, 0);
+  const auto left_single = Stacks().SplitStack(first, files[1]);
+  ASSERT_EQ(left_single.changed_stack_ids.size(), 2);
+  EXPECT_THROW(Stacks().ReadMemberIds(first), std::invalid_argument);
+  EXPECT_EQ(Stacks().ReadMemberIds(left_single.changed_stack_ids[1]), Files({1, 2, 3}));
+  EXPECT_EQ(Cover(left_single.changed_stack_ids[1]), files[1]);
+  Stacks().UngroupStack(left_single.changed_stack_ids[1]);
+  const auto second       = Create({0, 1, 2, 3}, 3);
+  const auto right_single = Stacks().SplitStack(second, files[3]);
+  EXPECT_EQ(right_single.changed_stack_ids, std::vector{second});
+  EXPECT_EQ(Stacks().ReadMemberIds(second), Files({0, 1, 2}));
+  EXPECT_EQ(Cover(second), files[0]);
+  EXPECT_EQ(Number(duckorm::expr::raw("SELECT COUNT(*) FROM PhotoStackMember")), 3);
+  EXPECT_EQ(Number(duckorm::expr::raw("SELECT COUNT(*) FROM FileImage")), 8);
+}
+
+TEST_F(PhotoStackStoreTest, SplitSqlFailureRestoresMembershipAndCoverAfterDetach) {
+  const auto stack = Create({0, 1, 2, 3}, 3);
+  const auto rows  = StackRows();
+  // The right header insert fails after suffix removal and left cover repair.
+  Execute("CREATE UNIQUE INDEX one_stack_id_length ON PhotoStack(length(stack_id))");
+  EXPECT_THROW(Stacks().SplitStack(stack, files[2]), duckorm::StatementError);
+  EXPECT_EQ(StackRows(), rows);
+  EXPECT_EQ(Stacks().ReadMemberIds(stack), Files({0, 1, 2, 3}));
+  EXPECT_EQ(Cover(stack), files[3]);
 }
 
 }  // namespace

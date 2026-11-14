@@ -5873,6 +5873,7 @@ Refresh the library afterwards; they are listed under the User category. Import 
         <source>No matching collections</source>
         <translation>没有匹配的影集</translation>
     </message>
+    <message><source>Stack</source><translation>堆叠</translation></message>
 </context>
 <context>
     <name>ImageInspectorPanel</name>
@@ -9328,6 +9329,8 @@ CLIP / SigLIP 这类视觉语言模型会把图像和文字映射到同一语义
     <message><source>%1 matching here</source><translation>此处匹配 %1 张</translation></message>
     <message><source>%1 in stack</source><translation>堆叠共 %1 张</translation></message>
     <message><source>%1K</source><translation>%1千</translation></message>
+    <message><source>%1 matched</source><translation>%1 匹配</translation></message>
+    <message><source>%1 photos in this group. %2 in this view. %3 in stack.</source><translation>此组有 %1 张照片。当前视图有 %2 张。堆叠共 %3 张。</translation></message>
 </context>
 <context>
     <name>PhotoStackActions</name>
@@ -9351,6 +9354,18 @@ CLIP / SigLIP 这类视觉语言模型会把图像和文字映射到同一语义
     <message><source>Select all %1 photos in this stack? Photos outside the current filter or album are included.</source><translation>选择此堆叠的全部 %1 张照片？也包括当前筛选结果或相册之外的照片。</translation></message>
     <message><source>Cancel</source><translation>取消</translation></message>
     <message><source>Confirm</source><translation>确认</translation></message>
+    <message><source>Group into Stack</source><translation>编组为堆叠</translation></message>
+    <message><source>Ungroup Stack</source><translation>取消堆叠</translation></message>
+    <message><source>Add Selected to Stack</source><translation>将所选照片添加到堆叠</translation></message>
+    <message><source>Remove from Stack</source><translation>从堆叠中移除</translation></message>
+    <message><source>Set as Stack Cover</source><translation>设为堆叠封面</translation></message>
+    <message><source>Move Up in Stack</source><translation>在堆叠中上移</translation></message>
+    <message><source>Move Down in Stack</source><translation>在堆叠中下移</translation></message>
+    <message><source>Split Stack</source><translation>拆分堆叠</translation></message>
+    <message><source>Split saved order before this photo. One-photo sides become unstacked.</source><translation>在此照片之前拆分已保存的堆叠顺序。仅含一张照片的部分将取消堆叠。</translation></message>
+    <message><source>Expand/Collapse Stack</source><translation>展开/收起堆叠</translation></message>
+    <message><source>Expand/Collapse All Stacks</source><translation>展开/收起所有堆叠</translation></message>
+    <message><source>Expand/Collapse All Matched Stacks</source><translation>展开/收起所有匹配的堆叠</translation></message>
 </context>
 <context>
     <name>alcedo::ui::PhotoStackController</name>

@@ -21,6 +21,7 @@ struct PhotoStackActionOptions {
   bool remove  = false;
   bool earlier = false;
   bool later   = false;
+  bool split   = false;
 };
 
 /// Committed change facts, owned by the caller. No membership cache or editable stack state.

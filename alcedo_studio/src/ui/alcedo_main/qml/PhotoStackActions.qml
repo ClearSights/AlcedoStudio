@@ -19,18 +19,18 @@ Item {
         && appModules.interactionPolicy.canEditPhotoStacks
     readonly property var options: controller.menuOptions
     readonly property var actions: !active ? [] : [
-        { id: "stack-group", label: qsTr("Group selected photos"), enabled: available && options.group === true },
-        { id: "stack-add", label: qsTr("Add selected photos to this stack"), enabled: available && stacked && options.add === true },
-        { id: "stack-remove", label: qsTr("Remove selected photos from stacks"), enabled: available && options.remove === true },
-        { id: "stack-ungroup", label: qsTr("Ungroup entire stack"), enabled: available && stacked },
-        { id: "stack-cover", label: qsTr("Set as stack cover"), tooltip: qsTr("Changes the saved cover throughout this project."), enabled: available && stacked && Number(clicked.savedCoverId) !== Number(clicked.fileId) },
-        { id: "stack-earlier", label: qsTr("Move earlier in stack"), tooltip: qsTr("Moves this photo in saved stack order throughout this project."), enabled: available && options.earlier === true },
-        { id: "stack-later", label: qsTr("Move later in stack"), tooltip: qsTr("Moves this photo in saved stack order throughout this project."), enabled: available && options.later === true },
+        { id: "stack-group", label: qsTr("Group into Stack"), enabled: available && options.group === true },
+        { id: "stack-ungroup", label: qsTr("Ungroup Stack"), enabled: available && stacked },
+        { id: "stack-add", label: qsTr("Add Selected to Stack"), enabled: available && stacked && options.add === true },
+        { id: "stack-remove", label: qsTr("Remove from Stack"), enabled: available && options.remove === true },
+        { id: "stack-cover", label: qsTr("Set as Stack Cover"), tooltip: qsTr("Changes the saved cover throughout this project."), enabled: available && stacked && Number(clicked.savedCoverId) !== Number(clicked.fileId) },
+        { id: "stack-earlier", label: qsTr("Move Up in Stack"), tooltip: qsTr("Moves this photo in saved stack order throughout this project."), enabled: available && options.earlier === true },
+        { id: "stack-later", label: qsTr("Move Down in Stack"), tooltip: qsTr("Moves this photo in saved stack order throughout this project."), enabled: available && options.later === true },
+        { id: "stack-split", label: qsTr("Split Stack"), tooltip: qsTr("Split saved order before this photo. One-photo sides become unstacked."), enabled: available && options.split === true },
+        { id: "stack-toggle", label: qsTr("Expand/Collapse Stack"), enabled: available && stacked },
+        { id: "stack-toggle-all", label: library.hasActiveFilter ? qsTr("Expand/Collapse All Matched Stacks") : qsTr("Expand/Collapse All Stacks"), enabled: available },
         { id: "stack-select-matching", label: qsTr("Select matching photos in this stack"), enabled: available && stacked },
-        { id: "stack-select-entire", label: qsTr("Select entire stack (%1 photos)").arg(Number(clicked.stackTotal || 0)), enabled: available && stacked },
-        { id: "stack-toggle", label: clicked.stackExpanded === true ? qsTr("Collapse this stack") : qsTr("Expand this stack"), enabled: available && stacked },
-        { id: "stack-expand-all", label: qsTr("Expand all matching stacks"), enabled: available },
-        { id: "stack-collapse-all", label: qsTr("Collapse all matching stacks"), enabled: available }
+        { id: "stack-select-entire", label: qsTr("Select entire stack (%1 photos)").arg(Number(clicked.stackTotal || 0)), enabled: available && stacked }
     ]
     Connections {
         target: root.library.displayModel
@@ -54,8 +54,7 @@ Item {
     }
     function apply(action, key) {
         if (action === "stack-toggle") library.ToggleStack(key)
-        else if (action === "stack-expand-all") library.SetAllStacksExpanded(true)
-        else if (action === "stack-collapse-all") library.SetAllStacksExpanded(false)
+        else if (action === "stack-toggle-all") library.ToggleAllStacksExpanded()
         else if (action === "stack-select-matching") library.SelectStack(key, false)
         else if (action === "stack-select-entire") library.SelectStack(key, true)
         else controller.RunAction(action, key)
@@ -68,7 +67,7 @@ Item {
         modal: true
         width: Math.min(parent ? parent.width - appTheme.spaceXl * 2 : 440, 440)
         padding: appTheme.spaceLg
-        title: root.pendingAction === "stack-ungroup" ? qsTr("Ungroup entire stack") : qsTr("Select entire stack")
+        title: root.pendingAction === "stack-ungroup" ? qsTr("Ungroup Stack") : qsTr("Select entire stack")
         background: Rectangle { color: appTheme.cardSurfaceColor; radius: appTheme.panelRadius }
         contentItem: ColumnLayout {
             spacing: appTheme.spaceMd

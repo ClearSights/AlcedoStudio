@@ -212,4 +212,87 @@ TEST_F(PhotoStackControllerTest, MenuActionNamesApplyEverySavedOrganizationComma
   for (const auto file : files) EXPECT_TRUE(item(file).value("stackId").toString().isEmpty());
 }
 
+TEST_F(PhotoStackControllerTest,
+       SplitMenuUsesClickedMemberAndSavesBothSidesWithSelectionUnchanged) {
+  auto* library    = host->library();
+  auto* controller = host->photo_stacks();
+  library->SetStackDisplayEnabled(true);
+  auto command     = Create();
+  command.file_ids = files;
+  ASSERT_TRUE(controller->Start(command).isEmpty());
+  Wait();
+  const auto original = result->change.stack_id;
+  ASSERT_TRUE(WaitForLibraryQuery(*host));
+  library->ToggleStack(host->library_display()->getItemAt(0).value("occurrenceKey").toString());
+  ASSERT_TRUE(WaitForLibraryQuery(*host));
+  library->selection()->Replace(host->library_display()->getItemsInRange(0, 3));
+  const auto selected = library->selection()->SelectedElementIds();
+  const auto key      = host->library_display()->getItemAt(2).value("occurrenceKey").toString();
+  controller->PrepareMenu(key);
+  for (int i = 0; i < 200 && !controller->MenuOptions().value("ready").toBool(); ++i)
+    ProcessEvents(10);
+  ASSERT_TRUE(controller->MenuOptions().value("split").toBool());
+  controller->RunAction("stack-split", key);
+  Wait();
+  ASSERT_EQ(result->outcome, PhotoStackCommandResult::Outcome::kSaved);
+  ASSERT_EQ(result->change.changed_stack_ids.size(), 2);
+  const auto service = host->project()->handler().project()->GetPhotoStackService();
+  EXPECT_EQ(service->ReadMemberIds(original), (std::vector{files[0], files[1]}));
+  EXPECT_EQ(service->ReadMemberIds(result->change.changed_stack_ids[1]),
+            (std::vector{files[2], files[3]}));
+  EXPECT_EQ(library->selection()->SelectedElementIds(), selected);
+  EXPECT_FALSE(host->project()->HasUnsavedStackChanges());
+}
+
+TEST_F(PhotoStackControllerTest, FilteredSplitIncludesUnmatchedMembersAndRetrySavesBothPartitions) {
+  auto* library    = host->library();
+  auto* controller = host->photo_stacks();
+  library->SetStackDisplayEnabled(true);
+  auto create     = Create();
+  create.file_ids = files;
+  ASSERT_TRUE(controller->Start(create).isEmpty());
+  Wait();
+  const auto original = result->change.stack_id;
+  host->stats()->ToggleStatsFilter("camera", "Nikon");
+  ASSERT_TRUE(WaitForLibraryQuery(*host));
+  library->ToggleStack(host->library_display()->getItemAt(0).value("occurrenceKey").toString());
+  ASSERT_TRUE(WaitForLibraryQuery(*host));
+  ASSERT_EQ(host->library_display()->DisplayCount(), 2);
+  const auto clicked = host->library_display()->getItemAt(1);
+  ASSERT_EQ(clicked.value("fileId").toUInt(), files[2]);
+  library->selection()->Replace(host->library_display()->getItemsInRange(0, 1));
+  const auto selected = library->selection()->SelectedElementIds();
+  const auto before   = Bytes();
+  auto       blocked  = host->project()->handler().package_path();
+  blocked += ".tmp";
+  std::filesystem::create_directory(blocked);
+  std::ofstream(blocked / "keep_directory").put('x');
+  result.reset();
+  controller->RunAction("stack-split", clicked.value("occurrenceKey").toString());
+  Wait();
+  ASSERT_EQ(result->outcome, PhotoStackCommandResult::Outcome::kUnsaved);
+  ASSERT_EQ(result->change.changed_stack_ids.size(), 2);
+  const auto right = result->change.changed_stack_ids[1];
+  EXPECT_EQ(Bytes(), before);
+  EXPECT_TRUE(host->project()->HasUnsavedStackChanges());
+  {
+    const auto service = host->project()->handler().project()->GetPhotoStackService();
+    EXPECT_EQ(service->ReadMemberIds(original), (std::vector{files[0], files[1]}));
+    EXPECT_EQ(service->ReadMemberIds(right), (std::vector{files[2], files[3]}));
+  }
+  ASSERT_TRUE(WaitForLibraryQuery(*host));
+  EXPECT_EQ(library->selection()->SelectedElementIds(), selected);
+  std::filesystem::remove(blocked / "keep_directory");
+  std::filesystem::remove(blocked);
+  ASSERT_TRUE(host->project()->RetryStackSave());
+  EXPECT_FALSE(host->project()->HasUnsavedStackChanges());
+  const auto package = host->project()->handler().package_path();
+  ASSERT_TRUE(host->project()->CloseProject(false));
+  ASSERT_TRUE(LoadPackedProject(*host, package));
+  EXPECT_EQ(host->project()->handler().project()->GetPhotoStackService()->ReadMemberIds(original),
+            (std::vector{files[0], files[1]}));
+  EXPECT_EQ(host->project()->handler().project()->GetPhotoStackService()->ReadMemberIds(right),
+            (std::vector{files[2], files[3]}));
+}
+
 }  // namespace alcedo::ui::test

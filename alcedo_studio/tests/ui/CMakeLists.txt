@@ -554,6 +554,9 @@ target_link_libraries(PhotoStackDisclosureTest PRIVATE AppTheme GTest::gtest
     Qt6::Test Qt6::Core Qt6::Qml Qt6::Quick Qt6::QuickControls2 Qt6::QuickEffects Qt6::Widgets)
 target_compile_definitions(PhotoStackDisclosureTest PRIVATE
     ALCEDO_STACK_ZH_CN_QM_FILE="${CMAKE_BINARY_DIR}/alcedo_studio/src/alcedo_main_zh_CN.qm")
+qt_add_resources(PhotoStackDisclosureTest "photo_stack_icons"
+    PREFIX "/" BASE "${CMAKE_SOURCE_DIR}/alcedo_studio/src/config"
+    FILES "${CMAKE_SOURCE_DIR}/alcedo_studio/src/config/panel_icons/photo-stack.svg")
 add_dependencies(PhotoStackDisclosureTest alcedo_main_lrelease)
 alcedo_ui_gtest_discover_tests(PhotoStackDisclosureTest TEST_PREFIX "PhotoStackDisclosureTest.")
 alcedo_register_test_target(PhotoStackDisclosureTest ui)

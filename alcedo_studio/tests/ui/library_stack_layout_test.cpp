@@ -158,6 +158,50 @@ TEST_F(LibraryStackLayoutTest, ExpandAllIncludesUnloadedFragmentsAndCollapseKeep
   EXPECT_EQ(host->library()->selection()->SelectedCount(), 4);
 }
 
+TEST_F(LibraryStackLayoutTest, FilteredPositionsStartAtOneAndFollowOnlyDisplayedMatchingMembers) {
+  auto* library = host->library();
+  EXPECT_FALSE(library->HasActiveFilter());
+  host->stats()->ToggleStatsFilter("camera", "Nikon");
+  ASSERT_TRUE(WaitForLibraryQuery(*host));
+  ASSERT_TRUE(library->HasActiveFilter());
+  library->ToggleStack(Key());
+  ASSERT_TRUE(WaitForLibraryQuery(*host));
+  ASSERT_EQ(host->library_display()->DisplayCount(), 2);
+  for (int i = 0; i < 2; ++i) {
+    const auto item = host->library_display()->getStackAt(i);
+    EXPECT_EQ(item.value("fileId").toUInt(), files[i + 1]);
+    EXPECT_EQ(item.value("fragmentPosition").toInt(), i + 1);
+    EXPECT_EQ(item.value("fragmentMatchCount").toInt(), 2);
+    EXPECT_EQ(item.value("stackTotal").toInt(), 3);
+  }
+  host->stats()->ToggleStatsFilter("camera", "Nikon");
+  ASSERT_TRUE(WaitForLibraryQuery(*host));
+  EXPECT_FALSE(library->HasActiveFilter());
+  library->SetInspectorGrouping("camera", true);
+  ASSERT_TRUE(WaitForLibraryQuery(*host));
+  EXPECT_FALSE(library->HasActiveFilter());  // Grouping alone is not an active filter.
+}
+
+TEST_F(LibraryStackLayoutTest, ToggleAllExpandsMixedFragmentsThenCollapsesEveryMatchingFragment) {
+  auto* library = host->library();
+  library->SetInspectorGrouping("camera", true);
+  ASSERT_TRUE(WaitForLibraryQuery(*host));
+  library->ToggleStack(Key("Nikon"));
+  ASSERT_TRUE(WaitForLibraryQuery(*host));
+  library->ToggleAllStacksExpanded();
+  ProcessEvents(100);
+  ASSERT_TRUE(WaitForLibraryQuery(*host));
+  for (const auto& [first, page] : host->library_display()->pages())
+    for (const auto& item : page)
+      if (!item.identity.fragment.stack_id.empty()) EXPECT_TRUE(item.expanded);
+  library->ToggleAllStacksExpanded();
+  ProcessEvents(100);
+  ASSERT_TRUE(WaitForLibraryQuery(*host));
+  for (const auto& [first, page] : host->library_display()->pages())
+    for (const auto& item : page)
+      if (!item.identity.fragment.stack_id.empty()) EXPECT_FALSE(item.expanded);
+}
+
 TEST(LibraryStackGeometryTest,
      JustifiedTemporaryCoverChangeUsesItsAspectRatioAndKeepsFragmentIdentity) {
   AlbumThumbnailModel    photos;

@@ -4543,6 +4543,7 @@ Original source files on disk will be kept.</source>
         <source>Unrated</source>
         <translation type="unfinished">Unrated</translation>
     </message>
+    <message><source>Stack</source><translation>Stack</translation></message>
 </context>
 <context>
     <name>ImageInspectorPanel</name>
@@ -6844,6 +6845,8 @@ CLIP / SigLIP 这类视觉语言模型会把图像和文字映射到同一语义
     <message><source>%1 matching here</source><translation>%1 matching here</translation></message>
     <message><source>%1 in stack</source><translation>%1 in stack</translation></message>
     <message><source>%1K</source><translation>%1K</translation></message>
+    <message><source>%1 matched</source><translation>%1 matched</translation></message>
+    <message><source>%1 photos in this group. %2 in this view. %3 in stack.</source><translation>%1 photos in this group. %2 in this view. %3 in stack.</translation></message>
 </context>
 <context>
     <name>PhotoStackActions</name>
@@ -6867,6 +6870,18 @@ CLIP / SigLIP 这类视觉语言模型会把图像和文字映射到同一语义
     <message><source>Select all %1 photos in this stack? Photos outside the current filter or album are included.</source><translation>Select all %1 photos in this stack? Photos outside the current filter or album are included.</translation></message>
     <message><source>Cancel</source><translation>Cancel</translation></message>
     <message><source>Confirm</source><translation>Confirm</translation></message>
+    <message><source>Group into Stack</source><translation>Group into Stack</translation></message>
+    <message><source>Ungroup Stack</source><translation>Ungroup Stack</translation></message>
+    <message><source>Add Selected to Stack</source><translation>Add Selected to Stack</translation></message>
+    <message><source>Remove from Stack</source><translation>Remove from Stack</translation></message>
+    <message><source>Set as Stack Cover</source><translation>Set as Stack Cover</translation></message>
+    <message><source>Move Up in Stack</source><translation>Move Up in Stack</translation></message>
+    <message><source>Move Down in Stack</source><translation>Move Down in Stack</translation></message>
+    <message><source>Split Stack</source><translation>Split Stack</translation></message>
+    <message><source>Split saved order before this photo. One-photo sides become unstacked.</source><translation>Split saved order before this photo. One-photo sides become unstacked.</translation></message>
+    <message><source>Expand/Collapse Stack</source><translation>Expand/Collapse Stack</translation></message>
+    <message><source>Expand/Collapse All Stacks</source><translation>Expand/Collapse All Stacks</translation></message>
+    <message><source>Expand/Collapse All Matched Stacks</source><translation>Expand/Collapse All Matched Stacks</translation></message>
 </context>
 <context>
     <name>alcedo::ui::PhotoStackController</name>

@@ -1365,6 +1365,8 @@ Item {
                 z: 4
                 occurrenceKey: cardDelegate.stackItem.occurrenceKey || ""
                 matchingCount: Number(cardDelegate.stackItem.fragmentMatchCount || 0)
+                matchingPosition: Number(cardDelegate.stackItem.fragmentPosition || 1)
+                filtered: appModules.library.hasActiveFilter
                 queryCount: Number(cardDelegate.stackItem.queryMatchCount || 0)
                 totalCount: Number(cardDelegate.stackItem.stackTotal || 0)
                 expanded: cardDelegate.stackItem.stackExpanded === true

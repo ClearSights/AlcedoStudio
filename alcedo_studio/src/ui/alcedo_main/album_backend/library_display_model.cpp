@@ -57,6 +57,7 @@ auto LoadingValue(int role) -> QVariant {
     case LibraryDisplayModel::QueryMatchCount:
     case LibraryDisplayModel::FragmentMatchCount:
     case LibraryDisplayModel::DisplayKind:
+    case LibraryDisplayModel::FragmentPosition:
       return 0;
     case AlbumThumbnailModel::ThumbLoading:
       return true;
@@ -109,6 +110,7 @@ QHash<int, QByteArray> LibraryDisplayModel::roleNames() const {
   roles.insert(TemporaryCover, "temporaryCover");
   roles.insert(StackExpanded, "stackExpanded");
   roles.insert(DisplayKind, "displayKind");
+  roles.insert(FragmentPosition, "fragmentPosition");
   roles.insert(OccurrenceKey, "occurrenceKey");
   return roles;
 }
@@ -135,6 +137,8 @@ QVariant LibraryDisplayModel::data(const QModelIndex& index, int role) const {
       return item->expanded;
     case DisplayKind:
       return static_cast<int>(item->identity.kind);
+    case FragmentPosition:
+      return static_cast<qint64>(item->fragment_position);
     case AlbumThumbnailModel::FileId:
       return item->file_id;
     default:

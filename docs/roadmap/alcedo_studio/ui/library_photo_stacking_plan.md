@@ -2,19 +2,20 @@
 
 Date: 2026-11-11
 
-Status: PS1 through PS9, including all PS2 and PS5 sub-phases, complete (2026-11-12).
+Status: PS1 through PS9, including all PS2 and PS5 sub-phases, complete; UI review revision
+complete (2026-11-13).
 PS7 through PS9 are implemented on `feature/library-photo-stacking-PR5`, based on PR4.
-Windows Release targeted verification has 344 passes, 15 skips, and one existing private-fixture
-failure linked to #826. The final six-suite recheck passed 90/90. Native UI review is complete.
-The final EXE linked and runs; antivirus blocked its post-build PowerShell icon check.
-See the PS9 completion record for this local build limitation and the complete evidence.
+The UI revision passed 154/154 targeted Windows Release tests and the final four component
+checks. Native review confirmed the badge, submenu, multi-photo addition, and Split Stack.
+The final Release build and all six post-build icon comparisons passed.
+See the dated PS9 completion records for commands, evidence, and prior fixture limitations.
 Prior-phase verification records remain under their respective phase headings.
 
 Feature request: [#486](https://github.com/zidage/AlcedoStudio/issues/486), stacking section only.
 
 Parent plan: none. This file is the master plan and the detailed phase plan.
 
-Last source review: 2026-11-12.
+Last source review: 2026-11-13.
 
 Source audit: upstream `main` at `e59529c66d2d0bfdc53c5c5cf2d88e6e68d9138d`.
 A fresh upstream fetch confirmed this revision. Local `main` and the planning branch
@@ -198,12 +199,15 @@ Keep these meanings separate:
 Collapse must not change Inspector statistics, collection counts, export totals, or photo totals.
 Do not replace a photo count with a card count.
 
-The disclosure control shows the fragment match count.
-Its tooltip states the full stack total and the query match count when they differ.
-At normal thumbnail sizes, use separate caption roles for `2 matching here` and `8 in stack`.
-Do not join independent counts with a slash or a centered dot.
-At compact sizes, keep the disclosure count and expose the other values through its tooltip and
-accessible description.
+The stack icon and number control shows the fragment count when collapsed (`3`) and the
+one-based displayed matching position/count when expanded (`2/3`). Its order is the displayed
+cover first, then saved member order. Group fragments keep their own positions and counts.
+With an accepted Inspector or search filter, append `matched` (`3 matched`, `2/3 matched`).
+Grouping or sorting alone is not a filter. The saved total and exact fragment/query counts stay
+in the tooltip and accessible description. At tight zoom sizes, keep the ratio readable and
+move the matched status to the tooltip; the user explicitly approved this compact behavior.
+The ordinal fraction is one related value, not two independent count labels.
+These rules replace the earlier separate-count caption design after the UI review of 2026-11-13.
 
 ### 2.5 Selection, actions, and editor navigation
 
@@ -232,19 +236,23 @@ Selection remains owned by `LibrarySelection`.
 
 ### 2.6 Stack commands
 
-Put these text actions in the existing Library image context menu:
+Put these text actions inside one `Stack` submenu in the Library image context menu, in this
+order. This order and the familiar command names follow the user's UI review of 2026-11-13.
 
 | Command | Preconditions | Effect |
 | --- | --- | --- |
-| Group selected photos | At least two unique selected Files; a valid selected cover | Create one stack from exactly those Files, in their current displayed order. |
-| Add selected photos to this stack | Valid clicked target stack; at least one selected File outside it | Append the selected Files in displayed order. Keep the target stack's saved cover. |
-| Remove selected photos from stacks | At least one selected stack member | Remove only the selected memberships. Keep the photos in the project and albums. |
-| Ungroup entire stack | Valid clicked stack | Remove that complete stack's organization. Keep every photo and album link. |
-| Set as stack cover | Clicked File belongs to the saved stack | Persist that File as the saved cover. |
-| Move earlier in stack / Move later in stack | Selected single member has an adjacent saved member | Swap their member positions. Filtering does not limit the saved neighbor search. |
+| Group into Stack | At least two unique selected Files; a valid selected cover | Create one stack from exactly those Files, in their current displayed order. |
+| Ungroup Stack | Valid clicked stack | Remove that complete stack's organization. Keep every photo and album link. |
+| Add Selected to Stack | Valid clicked target stack; at least one selected File outside it | Append the selected Files in displayed order. Keep the target stack's saved cover. |
+| Remove from Stack | At least one selected stack member | Remove only the selected memberships. Keep the photos in the project and albums. |
+| Set as Stack Cover | Clicked File belongs to the saved stack | Persist that File as the saved cover. |
+| Move Up in Stack / Move Down in Stack | Selected single member has an adjacent saved member | Swap their member positions. Filtering does not limit the saved neighbor search. |
+| Split Stack | Clicked File is after the first saved member | Split saved order immediately before the clicked File; selection does not change the split point. |
+| Expand/Collapse Stack | Valid clicked fragment | Change only that fragment's session expansion. |
+| Expand/Collapse All Stacks | No accepted filter | Expand all fragments in the accepted scope if any is collapsed; otherwise collapse all. |
+| Expand/Collapse All Matched Stacks | Accepted Inspector or search filter | The same operation, limited to matching fragments, including unloaded keys. |
 | Select matching photos in this stack | Clicked fragment has matches | Read and select its matching unique Files. |
 | Select entire stack | Valid clicked stack | Read and explicitly select every live member. |
-| Expand / Collapse stack | Valid clicked fragment | Change only that fragment's session expansion. |
 
 Choose the clicked selected File as the cover of a new stack.
 If no clicked selected File exists, use the first selected File in displayed order.
@@ -253,7 +261,7 @@ Place explicitly selected Files outside the result after those displayed Files.
 Order those additional Files by their saved stack ID and member position, then by File ID.
 Place unstacked additional Files last, in File ID order.
 If the selection has no displayed File, use the first File in this defined order as its cover.
-If all targets already form exactly one stack, Group selected photos changes nothing.
+If all targets already form exactly one stack, Group into Stack changes nothing.
 Otherwise, moving selected members into a new or existing stack repairs each source stack in the
 same transaction. It does not move unselected members.
 Treat duplicate target IDs as one target. Reject a missing File or invalid cover before any write.
@@ -262,9 +270,16 @@ After removal, dissolve a saved stack with fewer than two members.
 If its cover was removed, choose the earliest remaining saved member as the new saved cover.
 That promotion is a persistent membership repair, not a temporary display cover.
 
-Ungroup entire stack requires confirmation when the current result hides some members.
+Split Stack is one transaction. The left side retains the original stack ID and its cover if
+that cover remains; otherwise it promotes its earliest saved member. The right side receives
+a new stack ID and uses the clicked File as cover. Saved order within each side stays unchanged.
+The user approved leaving a one-photo side unstacked, so no singleton stack is persisted.
+Splitting before the first saved member is a no-op and is disabled in the menu. The operation
+uses saved order across the whole stack, including members outside a filter or group.
+
+Ungroup Stack requires confirmation when the current result hides some members.
 The confirmation states the full member count and that it changes every fragment of that stack.
-Set as stack cover and member-order actions have project-wide meaning in their tooltips.
+Set as Stack Cover, Split Stack, and member-order actions have project-wide meaning in their tooltips.
 Do not imply that they affect only the current group.
 
 These commands do not use image-edit Undo or Redo. Do not insert Library state into Mini-Git.
@@ -273,26 +288,26 @@ The inverse organization commands remain available. The UI must not advertise an
 ### 2.7 Visual and input design
 
 Use the existing Basic style and Library monochrome design.
-Reuse the existing disclosure text glyphs and standard text actions. No new SVG is required.
-Use a compact standard disclosure control, not a new rounded count badge.
+Use a white overlapping-photo stack icon and a clear white number on a dark translucent
+rounded control at the top-left of the photo, as requested in the UI review of 2026-11-13.
+The shared `panel_icons/photo-stack.svg` follows the 24-by-24, 1.5-pixel stroke rule.
 It stays reachable at every zoom level, including the caption-free level.
 
 ```text
 Tuesday                                      2 photos
 
 +----------------------+       expanded:
-| [>] 2                |       +----------------------+ +----------------------+
-|                      |       | [v] 2                | |                      |
+| [stack] 2 matched    |       +----------------------+ +----------------------+
+|                      |       | [stack] 1/2 matched  | | [stack] 2/2 matched  |
 |  thumbnail B         |       |  thumbnail B         | |  thumbnail C         |
 |                      |       |                      | |                      |
 +----------------------+       +----------------------+ +----------------------+
 B                              B                        C
-2 matching here                2 matching here
-4 in stack                     4 in stack
+No filter: omit matched. Exact fragment/query/saved totals remain accessible.
 ```
 
 Map dimensions to existing card spacing, `inspectorHeaderActionSize`, and typography tokens.
-Use `uiFontFamily` for labels and the current numeric typography rule for counts.
+Use `headlineFontFamily`, strong title text (body text at compact zoom), and tabular figures.
 Map all fills, outlines, focus, and animation durations to `appTheme`.
 If a new token is necessary, add it to AppTheme and DESIGN.md together.
 Register a shared proposed `PhotoStackDisclosure.qml` in `ALCEDO_MAIN_QML_FILES`.
@@ -2834,7 +2849,7 @@ Existing files over 1,000 lines are assessed by responsibility above.
 | `alcedo_studio/tests/ui/project_stack_save_dialog_test.cpp` | 46 | 3 | 1 |
 | `docs/VI/README.md` | 688 | 18 | 0 |
 
-**Artifacts and local build limitation.** Final GUI executable is
+**Original delivery artifacts and local build limitation (2026-11-12).** Final GUI executable is
 `build/release/alcedo_studio/src/alcedo_main.exe` (55,129,088 bytes, linked 2026-11-12 at
 02:29:27 local time). Native UI verification exercised the same final production sources.
 The existing `scripts/verify_windows_exe_icon.ps1` compares the EXE and ICO; the user allowed
@@ -2854,6 +2869,211 @@ open it from this Release EXE because the machine's file association can select 
 Transient test packages, logs, and debugger output under
 `build/tmp/library_photo_stacking_ui/` are removed after evidence is recorded.
 
+
+#### UI review revision (2026-11-13)
+
+**Status:** complete. The requested badge, Stack submenu, and Split Stack are implemented.
+All 154 affected tests and the final four component checks pass. Native review and the final
+Release build, including all six icon comparisons, passed.
+
+**User decisions.** Expanded filtered counters show position among matching photos and the
+matching count (`2/3 matched`), not saved position/full membership. A collapsed badge shows
+its matching count (`3`, or `3 matched` with a filter). When the complete label cannot fit,
+the compact badge keeps the ratio and its tooltip states matched status. Group fragments keep
+their own positions. The tooltip and accessible description retain exact group, view, and saved
+totals. Grouping and sort alone do not add matched text. A one-photo split side becomes an
+ordinary unstacked photo, as explicitly approved by the user.
+
+**Implementation.** The display projection supplies one-based positions with the displayed
+cover first, then saved order; this scalar also passes through deep pages and relocation reads.
+QML reads that role and the Library owner's accepted filter state. The shared badge uses the
+new registered 24-by-24 `photo-stack.svg`, white strong text, a black translucent fill, and the
+same input/focus owner in every layout. Both new color tokens are documented in DESIGN.md and VI.
+No source decode, metadata cache, per-card SQL, or render-quality policy was added.
+
+`ImageContextMenu` contains one Stack submenu. It uses the requested names and order, with
+Add Selected to Stack above Remove from Stack, and a single all-stacks toggle directly after
+the fragment toggle. The caption says All Matched Stacks with an accepted filter. The two
+explicit stack selection actions remain last. All twelve actions stay out of the top level.
+The submenu is constructed only for Library actions and starts closed. Its width follows the
+actual menu rows' intrinsic widths, including the resolved popup font and row padding; Stack
+captions use a single line. This corrects wrapping observed during native review. Other menu
+rows retain their existing wrapping behavior.
+
+Split Stack uses the right-clicked File, independently of a multi-photo selection, and splits
+saved order before that File. The left retains its ID and its cover when present, or promotes
+its earliest saved member. The right gets a new UUID and the clicked File as cover. Singletons
+become unstacked; a first-member split is disabled/no-op. Both partitions commit together.
+The operation includes saved members outside a filter or group. It changes no photo, album
+link, image-edit history, persisted schema, or project-format version. Add/remove still use
+all explicit selected File IDs.
+
+**Primary success call chains:**
+
+```text
+Accepted filter/query -> display SQL matching position -> bounded LibraryDisplayModel roles
+  -> shared PhotoStackDisclosure -> fragment toggle -> accepted publication and restored focus
+Context click -> PrepareMenu -> storage action availability -> Stack submenu -> RunAction
+  -> PhotoStackService::SplitStack -> PhotoStackStore transaction -> package save -> GUI refresh
+All-stacks toggle -> worker reads matching fragment keys (including unloaded fragments)
+  -> GUI owner chooses expand-if-any-collapsed or collapse-all -> one content refresh
+```
+
+**Primary failure call chains:**
+
+```text
+Invalid split or right-header SQL failure -> transaction rollback -> original membership/cover
+Committed split + package failure -> both partitions remain pending -> AlertBadge / Retry Save
+  -> package saved once -> reopen with both exact partitions, including unmatched members
+```
+
+**Executed tests.** The 12-suite targeted run passed **154/154**, with no skips or failures,
+in 344.45 seconds. The initial focused selection passed 13/13. After tooltip and native menu
+corrections, all four declarative component cases passed again; repeats are not added to the
+154 distinct cases.
+
+| Target | Passed |
+| --- | ---: |
+| `AlbumBackendLibraryQueryTest` | 31 |
+| `AlbumStackPagingTest` | 13 |
+| `AlbumStackQueryTest` | 10 |
+| `LibraryDisplayModelTest` | 18 |
+| `LibraryPhotoStackIntegrationTest` | 8 |
+| `LibraryStackActionsTest` | 14 |
+| `LibraryStackLayoutTest` | 12 |
+| `PhotoStackControllerTest` | 11 |
+| `PhotoStackDisclosureTest` | 4 |
+| `PhotoStackStoreTest` | 21 |
+| `ProjectCompatibilityTest` | 6 |
+| `ProjectStackSaveTest` | 6 |
+
+Named assertions include `SplitPreservesBothSavedPartitionsAndPersistsTheirCovers`,
+`SplitPromotesLeftCoverAndLeavesSingletonSidesUnstacked`,
+`SplitSingletonDissolvesOnlyItsSideAndKeepsTheOtherStack`,
+`SplitFirstMemberIsUnchangedAndNonmemberIsRejected`, and
+`SplitSqlFailureRestoresMembershipAndCoverAfterDetach`.
+`SplitMenuUsesClickedMemberAndSavesBothSidesWithSelectionUnchanged` exercises the public menu
+command. `FilteredSplitIncludesUnmatchedMembersAndRetrySavesBothPartitions` verifies a real
+package failure, selection preservation, explicit retry, and reopen of both saved partitions.
+`FilteredPositionsStartAtOneAndFollowOnlyDisplayedMatchingMembers` checks accepted-filter state
+and actual File IDs. The existing 10,000-member deep-page case now asserts positions 9,001 and
+10,000. The 50,000-photo resource case still passes with bounded metadata pages.
+
+`BadgeShowsCountOrMatchingPositionWithCompactStatusInTooltip` checks collapsed/expanded and
+filtered/unfiltered text, the white icon color, and a successfully loaded registered SVG.
+`StackSubmenuHasReviewOrderAndNoTopLevelStackCommands` checks actual production components:
+12 ordered submenu rows, only one top-level Stack entry, closed initial popups, no Stack entry
+outside the Library, current filter caption, intrinsic widths, nonwrapping captions, and the
+Split action ID. Existing declarative checks cover all eight zoom levels, both reduceMotion
+values, and compiled Chinese accessible strings. No synthetic pointer/focus suite was used.
+
+**Commands (PowerShell from the repository root):**
+
+```powershell
+$env:VCVARS_USER_VERSION = '14.44'
+$env:TEMP = Join-Path $PWD 'build/tmp/library_stack_ui_review/runtime'
+$env:TMP = $env:TEMP
+$env:PATH = "C:/Qt/6.12.0/msvc2022_64/bin;$PWD/build/dependencies/duckdb-v1.5.6;$PWD/vcpkg/installed/x64-windows/bin;$PWD/vcpkg/installed/x64-windows/debug/bin;$env:PATH"
+$targets = @('PhotoStackStoreTest', 'AlbumStackQueryTest', 'AlbumStackPagingTest',
+  'LibraryDisplayModelTest', 'PhotoStackControllerTest', 'LibraryStackLayoutTest',
+  'PhotoStackDisclosureTest', 'LibraryPhotoStackIntegrationTest', 'LibraryStackActionsTest',
+  'ProjectStackSaveTest', 'ProjectCompatibilityTest', 'AlbumBackendLibraryQueryTest')
+cmd /c scripts\msvc_env.cmd --build --preset win_release --target $targets --parallel 4
+$pattern = '^(' + ($targets -join '|') + ')\.'
+ctest --test-dir build/release -R $pattern -j 1 --output-on-failure
+cmd /c scripts\msvc_env.cmd --build --preset win_release --target PhotoStackDisclosureTest --parallel 4
+ctest --test-dir build/release -R '^PhotoStackDisclosureTest\.' -j 1 --output-on-failure
+cmd /c scripts\msvc_env.cmd --build --preset win_release --target alcedo_main --parallel 4
+```
+
+The full suite, WorkspaceShellTest, macOS, and sanitizer builds were not run. The prior private
+fixture limitation (#826) remains documented in the original acceptance record; this revision
+does not claim that those absent fixture cases were rerun.
+
+**Native review:** passed in the compiled Release application, using only the isolated
+four-photo package `build/review/library_photo_stacks_ui_review_2026-11-13.alcd`.
+No personal project was opened for native stack mutations. Observed results:
+
+- The collapsed control showed a white stack icon and `3`; expansion showed `1/3`, `2/3`,
+  and `3/3`, with no matching suffix. Adding the four selected photos through the submenu
+  produced one four-member stack, retained all four selections, and showed `1/4` through `4/4`.
+- The camera filter showed `1/2 matched` and `2/2 matched`, using only the two matching
+  photos. Its submenu said Expand/Collapse All Matched Stacks. Clearing the filter restored
+  the four-member display. Camera grouping alone showed two-member fragment counts without
+  the matched suffix; expanding one group showed `1/2` and `2/2` in that group.
+- The top-level menu contained one Stack entry. Its twelve commands had the requested order
+  and fit on single lines in English and Chinese, including the two longer selection actions.
+- Classic cards, grouped classic cells, and justified rows displayed the shared control.
+  The Alcedo and Classic themes retained white-on-dark contrast. Chinese commands and
+  the new Split Stack action were readable. Native review covered window widths of 1,214
+  and 2,194 pixels; the component suite covers all eight zoom levels and the tight label.
+- Splitting at saved member 3 through the Chinese submenu produced `[1,2]` and `[3,4]`,
+  with the first side expanded and the second collapsed. The two selected photos stayed
+  selected. Clicking the second side's badge expanded it; Space collapsed it with focus
+  retained. The all-stacks command expanded the mixed expanded/collapsed result.
+- Follow System language, Alcedo theme, classic layout, no filter, and no grouping were
+  restored. The reviewed application was then closed. The review package retains the
+  two saved two-photo stacks for manual review.
+
+**Release artifact:** `build/release/alcedo_studio/src/alcedo_main.exe`, 55,148,032 bytes,
+linked on 2026-11-13 at 23:39:13 local time. The final application build exited 0; the existing
+`scripts/verify_windows_exe_icon.ps1` compared all six embedded icons successfully.
+The user was notified before each application build. No antivirus setting was changed.
+The prior 2026-11-12 antivirus block remains historical evidence below its original heading.
+Temporary logs and intermediate tooling under `build/tmp/library_stack_ui_review/` are removed
+after this record is complete; the Release EXE and intentional review package remain.
+
+**Acceptance review:** no observed failure remains in the requested revision. Split rollback,
+package failure/retry, reopen, unmatched membership, ordinals, and selection are covered by
+executed owner tests. Native review verifies the actual menu entry points and rendered controls.
+The full test suite, private fixture cases, macOS, and sanitizers remain unrun as stated above.
+
+**Ownership and size review.** Split remains in the existing stack transaction owner, with no
+parallel membership representation. The new ordinal is a scalar read result, not saved state.
+Menu presentation and confirmation stay in QML; policy, explicit targets, order, and mutations
+stay in C++ owners. Existing oversized Library view/module files receive focused role/API
+bindings; they keep their existing geometry/query responsibilities. AppTheme, translations,
+resources, and CMake remain centralized registries. New test cases stay in the focused store,
+controller, paging, layout, and component suites. No method-only file split, new forward
+declaration, consistency counter, or mutable state copy was added.
+
+| File | Total lines | Added | Deleted |
+| --- | ---: | ---: | ---: |
+| `alcedo_studio/src/app/photo_stack_service.cpp` | 71 | 6 | 0 |
+| `alcedo_studio/src/config/resource.qrc` | 134 | 1 | 0 |
+| `alcedo_studio/src/include/app/photo_stack_service.hpp` | 58 | 3 | 0 |
+| `alcedo_studio/src/include/sleeve/photo_stack.hpp` | 37 | 1 | 0 |
+| `alcedo_studio/src/include/storage/store/sleeve/element_store.hpp` | 488 | 1 | 0 |
+| `alcedo_studio/src/include/storage/store/sleeve/photo_stack_store.hpp` | 75 | 6 | 1 |
+| `alcedo_studio/src/include/ui/alcedo_main/album_backend/library_display_model.hpp` | 117 | 1 | 0 |
+| `alcedo_studio/src/include/ui/alcedo_main/album_backend/library_module.hpp` | 536 | 12 | 0 |
+| `alcedo_studio/src/include/ui/alcedo_main/album_backend/photo_stack_controller.hpp` | 83 | 2 | 2 |
+| `alcedo_studio/src/include/ui/alcedo_main/app_theme.hpp` | 533 | 5 | 0 |
+| `alcedo_studio/src/storage/store/sleeve/album_stack_query.cpp` | 444 | 12 | 9 |
+| `alcedo_studio/src/storage/store/sleeve/photo_stack_store.cpp` | 550 | 31 | 0 |
+| `alcedo_studio/src/ui/alcedo_main/DESIGN.md` | 1535 | 19 | 7 |
+| `alcedo_studio/src/ui/alcedo_main/album_backend/library_display_model.cpp` | 437 | 4 | 0 |
+| `alcedo_studio/src/ui/alcedo_main/album_backend/library_module.cpp` | 1930 | 9 | 3 |
+| `alcedo_studio/src/ui/alcedo_main/album_backend/photo_stack_controller.cpp` | 227 | 13 | 3 |
+| `alcedo_studio/src/ui/alcedo_main/app_theme.cpp` | 1392 | 3 | 0 |
+| `alcedo_studio/src/ui/alcedo_main/i18n/alcedo_main_en.ts` | 6899 | 15 | 0 |
+| `alcedo_studio/src/ui/alcedo_main/i18n/alcedo_main_zh_CN.ts` | 9383 | 15 | 0 |
+| `alcedo_studio/src/ui/alcedo_main/qml/AlbumSectionView.qml` | 1486 | 2 | 0 |
+| `alcedo_studio/src/ui/alcedo_main/qml/AppDialogs.qml` | 424 | 2 | 1 |
+| `alcedo_studio/src/ui/alcedo_main/qml/AppMenuItem.qml` | 54 | 2 | 1 |
+| `alcedo_studio/src/ui/alcedo_main/qml/ImageContextMenu.qml` | 292 | 44 | 2 |
+| `alcedo_studio/src/ui/alcedo_main/qml/JustifiedThumbnailTile.qml` | 401 | 2 | 0 |
+| `alcedo_studio/src/ui/alcedo_main/qml/PhotoStackActions.qml` | 95 | 13 | 14 |
+| `alcedo_studio/src/ui/alcedo_main/qml/PhotoStackDisclosure.qml` | 124 | 71 | 62 |
+| `alcedo_studio/src/ui/alcedo_main/qml/ThumbnailGridView.qml` | 2183 | 2 | 0 |
+| `alcedo_studio/tests/app/album_stack_paging_test.cpp` | 501 | 2 | 0 |
+| `alcedo_studio/tests/app/photo_stack_store_test.cpp` | 569 | 75 | 0 |
+| `alcedo_studio/tests/ui/CMakeLists.txt` | 3177 | 3 | 0 |
+| `alcedo_studio/tests/ui/library_stack_layout_test.cpp` | 356 | 44 | 0 |
+| `alcedo_studio/tests/ui/photo_stack_controller_test.cpp` | 298 | 83 | 0 |
+| `alcedo_studio/tests/ui/photo_stack_disclosure_test.cpp` | 250 | 156 | 0 |
+| `docs/VI/README.md` | 698 | 14 | 4 |
+| `alcedo_studio/src/config/panel_icons/photo-stack.svg` | 5 | 5 | 0 |
 
 ## 9. Cross-phase acceptance matrix
 

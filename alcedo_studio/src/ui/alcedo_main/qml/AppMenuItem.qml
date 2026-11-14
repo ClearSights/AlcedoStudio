@@ -7,6 +7,7 @@ import QtQuick.Layouts
 // wash, controlRadiusSmall highlight, textColor/textMutedColor ink.
 MenuItem {
     id: control
+    property bool singleLine: false
 
     leftPadding: appTheme.spaceSm
     rightPadding: appTheme.spaceSm
@@ -33,7 +34,7 @@ MenuItem {
             color: control.enabled ? appTheme.textColor : appTheme.textMutedColor
             font.pixelSize: appTheme.fontSizeBody
             font.weight: appTheme.fontWeightRegular
-            wrapMode: Text.Wrap
+            wrapMode: control.singleLine ? Text.NoWrap : Text.Wrap
             verticalAlignment: Text.AlignVCenter
         }
 

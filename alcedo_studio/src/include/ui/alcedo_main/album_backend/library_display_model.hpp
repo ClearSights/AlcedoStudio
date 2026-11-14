@@ -34,6 +34,7 @@ class LibraryDisplayModel final : public QAbstractListModel {
     TemporaryCover,
     StackExpanded,
     DisplayKind,
+    FragmentPosition,
     OccurrenceKey
   };
   explicit LibraryDisplayModel(const AlbumThumbnailModel* photos = nullptr,

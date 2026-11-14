@@ -270,9 +270,11 @@ void LibraryModule::SelectStack(const QString& key, bool entire) {
   else
     SelectMatchingStackPhotos(item->identity.fragment);
 }
-void LibraryModule::SetAllStacksExpanded(bool expanded) {
+void LibraryModule::SetAllStacksExpanded(bool expanded) { ChangeAllStackExpansion(expanded); }
+void LibraryModule::ToggleAllStacksExpanded() { ChangeAllStackExpansion(std::nullopt); }
+void LibraryModule::ChangeAllStackExpansion(std::optional<bool> expanded) {
   if (refresh_in_flight_) {
-    RunAfterRefresh([this, expanded] { SetAllStacksExpanded(expanded); });
+    RunAfterRefresh([this, expanded] { ChangeAllStackExpansion(expanded); });
     return;
   }
   auto input = AcceptedReadInput({});
@@ -297,7 +299,11 @@ void LibraryModule::SetAllStacksExpanded(bool expanded) {
           }
           // One content refresh after every choice is visible.
           const QSignalBlocker block(&display_model_);
-          for (const auto& key : keys) display_model_.SetStackExpanded(key, expanded);
+          const bool           next =
+              expanded.value_or(std::any_of(keys.begin(), keys.end(), [this](const auto& key) {
+                return !display_model_.IsStackExpanded(key);
+              }));
+          for (const auto& key : keys) display_model_.SetStackExpanded(key, next);
           RequestLibraryContentRefresh();
         },
         Qt::QueuedConnection);

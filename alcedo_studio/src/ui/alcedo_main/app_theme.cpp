@@ -997,6 +997,9 @@ auto AppTheme::thumbnailDetailsScrimColor() const -> QColor {
   return WithAlpha(bgDeepColor(), 180);
 }
 
+auto AppTheme::photoStackBadgeFillColor() const -> QColor { return QColor(0, 0, 0, 180); }
+auto AppTheme::photoStackBadgeTextColor() const -> QColor { return QColor(255, 255, 255); }
+
 auto AppTheme::scopeGridColor() const -> QColor {
   return Blend(bgDeepColor(), textMutedColor(), 0.32);
 }

@@ -25,6 +25,8 @@ auto Execute(PhotoStackService& service, const PhotoStackCommand& command) -> Ph
       return service.SetCover(command.stack_id, command.file_id);
     case PhotoStackCommand::Operation::kMove:
       return service.MoveMember(command.file_id, command.direction);
+    case PhotoStackCommand::Operation::kSplit:
+      return service.SplitStack(command.stack_id, command.file_id);
   }
   throw std::invalid_argument("Unknown photo stack command.");
 }
@@ -65,6 +67,7 @@ auto PhotoStackController::Start(PhotoStackCommand command) -> QString {
       break;
     case PhotoStackCommand::Operation::kSetCover:
     case PhotoStackCommand::Operation::kMove:
+    case PhotoStackCommand::Operation::kSplit:
       if (command.file_id == 0) return tr("A photo File ID is invalid.");
       break;
     case PhotoStackCommand::Operation::kUngroup:
@@ -72,6 +75,7 @@ auto PhotoStackController::Start(PhotoStackCommand command) -> QString {
   }
   if ((command.operation == PhotoStackCommand::Operation::kAdd ||
        command.operation == PhotoStackCommand::Operation::kSetCover ||
+       command.operation == PhotoStackCommand::Operation::kSplit ||
        command.operation == PhotoStackCommand::Operation::kUngroup) &&
       command.stack_id.empty())
     return tr("A photo stack ID is required.");
@@ -174,9 +178,13 @@ void PhotoStackController::PrepareMenu(const QString& key) {
             SetError(error);
             return;
           }
-          menu_options_ = {{"group", options.group},   {"add", options.add},
-                           {"remove", options.remove}, {"earlier", options.earlier},
-                           {"later", options.later},   {"ready", true}};
+          menu_options_ = {{"group", options.group},
+                           {"add", options.add},
+                           {"remove", options.remove},
+                           {"earlier", options.earlier},
+                           {"later", options.later},
+                           {"split", options.split},
+                           {"ready", true}};
           emit MenuOptionsChanged();
         },
         Qt::QueuedConnection);
@@ -204,6 +212,8 @@ void PhotoStackController::RunAction(const QString& action, const QString& key) 
     command.operation = PhotoStackCommand::Operation::kUngroup;
   else if (action == "stack-cover")
     command.operation = PhotoStackCommand::Operation::kSetCover;
+  else if (action == "stack-split")
+    command.operation = PhotoStackCommand::Operation::kSplit;
   else if (action == "stack-earlier" || action == "stack-later") {
     command.operation = PhotoStackCommand::Operation::kMove;
     command.direction =

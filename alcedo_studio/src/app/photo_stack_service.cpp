@@ -51,6 +51,12 @@ auto PhotoStackService::ReadMemberIds(const std::string& stack_id) -> std::vecto
   return storage_->GetPhotoStackStore().ReadMemberIds(stack_id);
 }
 
+auto PhotoStackService::SplitStack(const std::string& stack_id, sl_element_id_t file_id)
+    -> PhotoStackChange {
+  return storage_->GetPhotoStackStore().SplitStack(
+      stack_id, QUuid::createUuid().toString(QUuid::WithoutBraces).toStdString(), file_id);
+}
+
 auto PhotoStackService::ReadActionOptions(std::span<const sl_element_id_t> ids,
                                           const std::string& stack, sl_element_id_t clicked)
     -> PhotoStackActionOptions {

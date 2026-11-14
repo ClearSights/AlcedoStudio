@@ -401,6 +401,36 @@ auto PhotoStackStore::MoveMember(sl_element_id_t file_id, PhotoStackMove directi
   });
 }
 
+auto PhotoStackStore::SplitStack(const std::string& stack_id, const std::string& new_stack_id,
+                                 sl_element_id_t file_id) -> PhotoStackChange {
+  return InTransaction(database_, [&](duckdb_connection& conn) {
+    ValidateStack(conn, stack_id);
+    ValidateStackId(new_stack_id);
+    const auto members = MemberIds(conn, stack_id);
+    const auto first   = std::find(members.begin(), members.end(), file_id);
+    if (first == members.end())
+      throw std::invalid_argument("Photo stack split point must belong to the stack");
+    PhotoStackChangeBuilder change(stack_id);
+    if (first == members.begin()) return change.Finish();
+    if (duckorm::select_int64(
+            conn, {"SELECT COUNT(*) FROM PhotoStack WHERE stack_id = ?", {new_stack_id}})
+            .value() != 0)
+      throw std::invalid_argument("Photo stack ID already exists: " + new_stack_id);
+    const auto right = std::span<const sl_element_id_t>(members).subspan(first - members.begin());
+    change.RecordStack(conn, stack_id);
+    PhotoStackMemberMapper mapper(conn);
+    mapper.RemoveFiles(right);
+    RepairStack(conn, stack_id);
+    if (right.size() >= 2) {
+      PhotoStackMapper(conn).Insert(new_stack_id, file_id);
+      for (size_t i = 0; i < right.size(); ++i)
+        mapper.Insert(right[i], new_stack_id, static_cast<int64_t>(i));
+      change.RecordStack(conn, new_stack_id);
+    }
+    return change.Finish();
+  });
+}
+
 auto PhotoStackStore::ReadActionOptions(std::span<const sl_element_id_t> ids,
                                         const std::string& stack, sl_element_id_t clicked)
     -> PhotoStackActionOptions {
@@ -429,6 +459,7 @@ auto PhotoStackStore::ReadActionOptions(std::span<const sl_element_id_t> ids,
         return std::find(members.begin(), members.end(), file) == members.end();
       });
       const auto member  = std::find(members.begin(), members.end(), clicked);
+      options.split      = member != members.end() && member != members.begin();
       if (files.size() == 1 && files.front() == clicked && member != members.end()) {
         options.earlier = member != members.begin();
         options.later   = std::next(member) != members.end();

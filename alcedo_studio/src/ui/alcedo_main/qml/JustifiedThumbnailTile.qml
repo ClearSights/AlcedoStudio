@@ -54,6 +54,8 @@ Item {
         z: 4
         occurrenceKey: tile.occurrenceKey
         matchingCount: Number(tile.stackItem.fragmentMatchCount || 0)
+        matchingPosition: Number(tile.stackItem.fragmentPosition || 1)
+        filtered: appModules.library.hasActiveFilter
         queryCount: Number(tile.stackItem.queryMatchCount || 0)
         totalCount: Number(tile.stackItem.stackTotal || 0)
         expanded: tile.stackItem.stackExpanded === true

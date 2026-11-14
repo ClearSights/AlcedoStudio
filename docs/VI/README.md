@@ -506,13 +506,23 @@ labels.
 - Shared by classic, grouped, and justified Library cards. The display owner supplies the
   occurrence identity, matching counts, saved total, expansion, and temporary-cover state.
   QML retains no member list and never derives stack membership.
-- Use the 24 px `inspectorHeaderActionSize` disclosure and existing monochrome surface,
-  hover, focus, and caption tokens. Counts use Manrope with tabular figures. Normal labels
-  have separate matching and saved-total roles; compact cards keep the fragment count.
-  Tooltip and accessibility text give all exact counts and identify a temporary cover.
+- User review (2026-11-13) requests the white `photo-stack.svg` icon and a bold number on
+  a rounded dark translucent control. Use 24 px `inspectorHeaderActionSize` height,
+  `spaceXs` padding, `photoStackBadgeFillColor` (black, alpha 180), and
+  `photoStackBadgeTextColor` (white). Both themes use the same photo-overlay colors.
+  Numbers use Manrope, strong title/body sizes, and tabular figures. Collapsed: `3`;
+  expanded: `2/3`; filtered: `3 matched` or `2/3 matched`. Positions count only matching
+  members in this group. If the full label cannot fit, keep the ratio and move matched
+  status to the tooltip, as explicitly approved. Tooltip/accessibility text retain exact
+  fragment, query, and saved counts and identify a temporary cover.
 - The pointer overlay reserves disclosure presses before rating, drag selection, or photo
   activation. A keyboard-focused disclosure handles Space and Enter itself. Group-header
   collapse remains a separate action.
+- All stack actions live in one `Stack` submenu. Group into Stack, Ungroup Stack,
+  Add Selected to Stack, Remove from Stack, Set as Stack Cover, Move Up/Down in Stack,
+  Split Stack, and the two Expand/Collapse actions precede explicit selection actions.
+  The all-stacks action says All Matched Stacks with a filter. Split uses the right-clicked
+  member in saved order; singleton sides become ordinary photos.
 - Menu validity comes from the C++ command owner. Confirm full saved totals before selecting
   an entire stack or ungrouping hidden members. Cover tooltips explain project-wide scope.
 - Review classic and justified flat layouts and grouped classic, both themes, English and

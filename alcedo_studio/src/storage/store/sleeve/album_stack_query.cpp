@@ -118,6 +118,7 @@ auto Projection(const AlbumQueryOptions& options, const std::string& model, bool
       "unit_members AS (SELECT b.*, m.stack_id, m.member_order, h.cover_file_id, "
       "COALESCE(t.total_count, 1) AS total_count, COALESCE(q.query_count, 1) AS query_count, "
       "COUNT(*) OVER fragment AS fragment_count, "
+      "ROW_NUMBER() OVER fragment AS fragment_position, "
       "FIRST_VALUE(b.file_id) OVER fragment AS displayed_cover, "
       "FIRST_VALUE(b.photo_position) OVER fragment AS unit_position "
       "FROM base_occurrences b LEFT JOIN PhotoStackMember m ON m.file_id = b.file_id "
@@ -166,7 +167,7 @@ auto UnstackedProjection(const AlbumQueryOptions& options, const std::string& mo
       ") - 1 AS display_position, CAST(NULL AS VARCHAR) AS stack_id, "
       "CAST(NULL AS BIGINT) AS cover_file_id, 1::BIGINT AS total_count, "
       "1::BIGINT AS query_count, 1::BIGINT AS fragment_count, "
-      "s.file_id AS displayed_cover, FALSE AS expanded ");
+      "s.file_id AS displayed_cover, FALSE AS expanded, 1::BIGINT AS fragment_position ");
   query.append(sql::OccurrenceSource(options, sql::EditStateProjection::kNotRead));
   query.sql_.append(") ");
   return query;
@@ -180,25 +181,26 @@ struct ItemRow {
   int64_t                    total_count = 0, query_count = 0, fragment_count = 0;
   int64_t                    displayed_file = 0, displayed_cover = 0;
   bool                       expanded = false;
+  int64_t                    fragment_position = 1;
   using Columns =
       duckorm::RowColumns<&ItemRow::key, &ItemRow::stack, &ItemRow::saved_cover,
                           &ItemRow::total_count, &ItemRow::query_count, &ItemRow::fragment_count,
-                          &ItemRow::displayed_file, &ItemRow::displayed_cover, &ItemRow::expanded>;
+                          &ItemRow::displayed_file, &ItemRow::displayed_cover, &ItemRow::expanded,
+                          &ItemRow::fragment_position>;
 };
 inline constexpr const char* kItemColumns =
     "d.group_key, d.stack_id, d.cover_file_id, d.total_count, d.query_count, "
-    "d.fragment_count, d.file_id, d.displayed_cover, d.expanded";
+    "d.fragment_count, d.file_id, d.displayed_cover, d.expanded, d.fragment_position";
 /// One bounded metadata row plus the display item's scalar fields. Metadata does not leave
 /// this result for full-stream reads; GUI owners receive the two components separately.
 struct PageRow : ItemRow, album_query_rows::SearchResultDbRow {
   std::optional<uint64_t>    edited_at;
   std::optional<std::string> version;
-  using PhotoColumns =
-      duckorm::AppendRowColumns<album_query_rows::SearchResultDbRow::Columns, &PageRow::edited_at,
-                                &PageRow::version, &PageRow::key, &PageRow::stack,
-                                &PageRow::saved_cover, &PageRow::total_count, &PageRow::query_count,
-                                &PageRow::fragment_count, &PageRow::displayed_file,
-                                &PageRow::displayed_cover, &PageRow::expanded>;
+  using PhotoColumns = duckorm::AppendRowColumns<
+      album_query_rows::SearchResultDbRow::Columns, &PageRow::edited_at, &PageRow::version,
+      &PageRow::key, &PageRow::stack, &PageRow::saved_cover, &PageRow::total_count,
+      &PageRow::query_count, &PageRow::fragment_count, &PageRow::displayed_file,
+      &PageRow::displayed_cover, &PageRow::expanded, &PageRow::fragment_position>;
   using Columns = PhotoColumns;
 };
 /// Convert only required scalar values, preserving the stable representative identity.
@@ -214,6 +216,7 @@ auto DisplayItem(const ItemRow& row, sl_element_id_t folder, AlbumGroupField gro
   item.fragment_match_count = row.fragment_count;
   item.temporary_cover      = row.stack && row.displayed_cover != *row.saved_cover;
   item.expanded             = row.expanded;
+  item.fragment_position    = row.fragment_position;
   return item;
 }
 struct PositionRow {

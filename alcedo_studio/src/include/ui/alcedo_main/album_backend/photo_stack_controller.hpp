@@ -20,11 +20,11 @@ namespace alcedo::ui {
 
 /// Focused command input. Owned by its worker until completion; contains no UI or stack state.
 struct PhotoStackCommand {
-  enum class Operation { kCreate, kAdd, kRemove, kUngroup, kSetCover, kMove };
+  enum class Operation { kCreate, kAdd, kRemove, kUngroup, kSetCover, kMove, kSplit };
   Operation                    operation = Operation::kCreate;
   std::vector<sl_element_id_t> file_ids;
   std::string                  stack_id;
-  sl_element_id_t              file_id   = 0;  ///< Cover for create/set-cover; member for move.
+  sl_element_id_t              file_id = 0;  ///< Cover for create/set-cover; member for move/split.
   PhotoStackMove               direction = PhotoStackMove::kEarlier;
   bool order_by_display = false;  ///< UI commands resolve explicit targets on the worker.
 };

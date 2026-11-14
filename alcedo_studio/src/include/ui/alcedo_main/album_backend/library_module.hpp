@@ -127,6 +127,7 @@ class LibraryModule final : public QObject, public IAlbumCatalog {
   Q_PROPERTY(QString groupField READ GroupFieldName NOTIFY PresentationChanged)
   Q_PROPERTY(bool grouped READ Grouped NOTIFY PresentationChanged)
   Q_PROPERTY(bool queryUpdating READ QueryUpdating NOTIFY QueryStateChanged)
+  Q_PROPERTY(bool hasActiveFilter READ HasActiveFilter NOTIFY QueryStateChanged)
   Q_PROPERTY(QString queryError READ QueryError NOTIFY QueryStateChanged)
   Q_PROPERTY(uint pendingRevealFileId READ PendingRevealFileId NOTIFY PendingRevealChanged)
   /// The library image selection.
@@ -188,6 +189,12 @@ class LibraryModule final : public QObject, public IAlbumCatalog {
   QString GroupFieldName() const { return InspectorFieldName(accepted_options_.group_field_); }
   bool    Grouped() const { return accepted_options_.group_field_ != AlbumGroupField::kNone; }
   bool    QueryUpdating() const { return refresh_in_flight_; }
+  /// Accepted search/Inspector predicates only; grouping and sort do not mark a query filtered.
+  bool    HasActiveFilter() const {
+    return accepted_input_ && (accepted_input_->stats_filter_.has_value() ||
+                               accepted_input_->search_.filter_.has_value() ||
+                               accepted_input_->search_.semantic_query_.has_value());
+  }
   QString QueryError() const { return query_error_; }
   uint             PendingRevealFileId() const { return pending_reveal_file_id_; }
 
@@ -245,6 +252,9 @@ class LibraryModule final : public QObject, public IAlbumCatalog {
   Q_INVOKABLE void       ToggleStack(const QString& occurrence_key);
   /// Read all matching fragment keys on the worker and change only their session choices.
   Q_INVOKABLE void       SetAllStacksExpanded(bool expanded);
+  /// Expand all accepted matching fragments if any is collapsed, otherwise collapse them all.
+  /// Read unloaded keys on the existing query worker; selection and saved rows are unchanged.
+  Q_INVOKABLE void       ToggleAllStacksExpanded();
   /// Select exact fragment or entire saved stack from a loaded occurrence; no implicit selection.
   Q_INVOKABLE void       SelectStack(const QString& occurrence_key, bool entire);
   /// Capture minimal query input and explicit IDs for command ordering on a worker. No GUI SQL.
@@ -391,6 +401,8 @@ class LibraryModule final : public QObject, public IAlbumCatalog {
   void libraryChangeApplied();
 
  private:
+  /// Queue one complete expansion update. nullopt toggles from the live choices after key read.
+  void ChangeAllStackExpansion(std::optional<bool> expanded);
   /// How a submitted refresh changes the shown result.
   enum class RefreshKind : std::uint8_t {
     kReplace,  ///< A new result replaces the shown one (model reset).
