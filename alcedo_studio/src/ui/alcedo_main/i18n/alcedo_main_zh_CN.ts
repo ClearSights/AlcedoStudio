@@ -1878,6 +1878,26 @@ Alcedo 将改用 %1。</translation>
         <source>Activate an AI model in Settings before generating labels.</source>
         <translation>请先在设置中激活 AI 模型，再生成标签。</translation>
     </message>
+    <message>
+        <source>Importing: %1 imported, %2 duplicates skipped, %3 failed</source>
+        <translation>正在导入：已导入 %1 个，跳过重复 %2 个，失败 %3 个</translation>
+    </message>
+    <message>
+        <source>Import complete: %1 imported, %2 duplicates skipped, %3 not selected, %4 unsupported, %5 failed</source>
+        <translation>导入完成：已导入 %1 个，跳过重复 %2 个，未选择 %3 个，不支持 %4 个，失败 %5 个</translation>
+    </message>
+    <message>
+        <source>Import canceled: %1 imported, %2 duplicates skipped, %3 not read, %4 not selected, %5 unsupported, %6 failed</source>
+        <translation>导入已取消：已导入 %1 个，跳过重复 %2 个，未读取 %3 个，未选择 %4 个，不支持 %5 个，失败 %6 个</translation>
+    </message>
+    <message>
+        <source>Converted Nikon HE files were reimported: %1 imported, %2 duplicates skipped, %3 failed.</source>
+        <translation>已重新导入转换后的尼康 HE 文件：已导入 %1 个，跳过重复 %2 个，失败 %3 个。</translation>
+    </message>
+    <message>
+        <source>%1 source file(s) changed size. Existing edits and ratings now apply to the current files.</source>
+        <translation>%1 个源文件的大小已更改。现有编辑和评分将应用于当前文件。</translation>
+    </message>
 </context>
 <context>
     <name>AgentSessionCard</name>
@@ -2195,6 +2215,14 @@ Alcedo 将改用 %1。</translation>
         <source>Other Tasks</source>
         <translation>其他任务</translation>
     </message>
+    <message>
+        <source>Project Maintenance</source>
+        <translation>项目维护</translation>
+    </message>
+    <message>
+        <source>%1 working</source>
+        <translation>%1 个任务正在进行</translation>
+    </message>
 </context>
 <context>
     <name>CameraProfileFolderTile</name>
@@ -2462,6 +2490,18 @@ Alcedo 将改用 %1。</translation>
     <message>
         <source>Rename</source>
         <translation>重命名</translation>
+    </message>
+    <message>
+        <source>Project Maintenance</source>
+        <translation>项目维护</translation>
+    </message>
+    <message>
+        <source>Review duplicate and invalid project entries</source>
+        <translation>检查重复和无效的项目条目</translation>
+    </message>
+    <message>
+        <source>Open a project to use Project Maintenance</source>
+        <translation>请打开项目以使用项目维护</translation>
     </message>
 </context>
 <context>
@@ -6294,6 +6334,10 @@ Refresh the library afterwards; they are listed under the User category. Import 
         <source>Other photos: %1 of %2 imported</source>
         <translation>其他照片：已导入 %1 / %2</translation>
     </message>
+    <message>
+        <source>%1 duplicates skipped</source>
+        <translation>已跳过 %1 个重复文件</translation>
+    </message>
 </context>
 <context>
     <name>InspectorPanel</name>
@@ -7072,6 +7116,10 @@ Create a new layer above it and draw the Mask there?</source>
         <source>Adobe DNG Converter is not installed at /Applications/Adobe DNG Converter.app.</source>
         <translation>未在 /Applications/Adobe DNG Converter.app 安装 Adobe DNG Converter。</translation>
     </message>
+    <message>
+        <source>%1 / %2 converted files reimported, %3 duplicates skipped, %4 failed</source>
+        <translation>已重新导入 %1 / %2 个转换文件，跳过重复 %3 个，失败 %4 个</translation>
+    </message>
 </context>
 <context>
     <name>ProjectLoadingOverlay</name>
@@ -7847,6 +7895,18 @@ CLIP / SigLIP 这类视觉语言模型会把图像和文字映射到同一语义
         <translation>已保存的 AI 密钥</translation>
     </message>
     <message>
+        <source>Import</source>
+        <translation>导入</translation>
+    </message>
+    <message>
+        <source>Skip duplicate imports</source>
+        <translation>跳过重复导入</translation>
+    </message>
+    <message>
+        <source>Skips repeated imports from the same source path. Files in different folders remain separate.</source>
+        <translation>跳过同一源路径的重复导入。不同文件夹中的文件将保持独立。</translation>
+    </message>
+    <message>
         <source>The AI model runs on this computer, and no photo is uploaded. The labeling speed depends on the CPU, the GPU, and the disk.</source>
         <translation>AI 模型在本机运行，照片不会上传。标注速度取决于 CPU、GPU 和磁盘。</translation>
     </message>
@@ -8337,6 +8397,10 @@ CLIP / SigLIP 这类视觉语言模型会把图像和文字映射到同一语义
         <location filename="../qml/WelcomeDialog.qml" line="669"/>
         <source>Quit</source>
         <translation>退出</translation>
+    </message>
+    <message>
+        <source>Settings</source>
+        <translation>设置</translation>
     </message>
 </context>
 <context>
@@ -9498,6 +9562,261 @@ CLIP / SigLIP 这类视觉语言模型会把图像和文字映射到同一语义
     <message>
         <source>All</source>
         <translation>全部</translation>
+    </message>
+</context>
+<context>
+    <name>ProjectMaintenanceDialog</name>
+    <message>
+        <source>Choose maintenance backup folder</source>
+        <translation>选择项目维护备份文件夹</translation>
+    </message>
+    <message>
+        <source>Project Maintenance</source>
+        <translation>项目维护</translation>
+    </message>
+    <message>
+        <source>Close</source>
+        <translation>关闭</translation>
+    </message>
+    <message>
+        <source>Scan project</source>
+        <translation>扫描项目</translation>
+    </message>
+    <message>
+        <source>Cancel scan</source>
+        <translation>取消扫描</translation>
+    </message>
+    <message>
+        <source>All findings</source>
+        <translation>全部结果</translation>
+    </message>
+    <message>
+        <source>Duplicates</source>
+        <translation>重复条目</translation>
+    </message>
+    <message>
+        <source>Missing sources</source>
+        <translation>源文件丢失</translation>
+    </message>
+    <message>
+        <source>Source problems</source>
+        <translation>源文件问题</translation>
+    </message>
+    <message>
+        <source>Project problems</source>
+        <translation>项目问题</translation>
+    </message>
+    <message>
+        <source>Finding filter</source>
+        <translation>结果筛选</translation>
+    </message>
+    <message>
+        <source>Search full path or entry ID</source>
+        <translation>搜索完整路径或条目 ID</translation>
+    </message>
+    <message>
+        <source>Select entry %1</source>
+        <translation>选择条目 %1</translation>
+    </message>
+    <message>
+        <source>Entry ID: %1</source>
+        <translation>条目 ID：%1</translation>
+    </message>
+    <message>
+        <source>Rating: %1</source>
+        <translation>评分：%1</translation>
+    </message>
+    <message>
+        <source>Retained entry: %1</source>
+        <translation>保留条目：%1</translation>
+    </message>
+    <message>
+        <source>Previous</source>
+        <translation>上一页</translation>
+    </message>
+    <message>
+        <source>Page %1</source>
+        <translation>第 %1 页</translation>
+    </message>
+    <message>
+        <source>Next</source>
+        <translation>下一页</translation>
+    </message>
+    <message>
+        <source>Select removable duplicates</source>
+        <translation>选择可移除的重复条目</translation>
+    </message>
+    <message>
+        <source>Select removable missing entries</source>
+        <translation>选择可移除的丢失条目</translation>
+    </message>
+    <message>
+        <source>Clear selection</source>
+        <translation>清除选择</translation>
+    </message>
+    <message>
+        <source>Selected: %1 entries (including hidden rows)</source>
+        <translation>已选择 %1 个条目（包含隐藏的行）</translation>
+    </message>
+    <message>
+        <source>Verified backup: %1</source>
+        <translation>已验证的备份：%1</translation>
+    </message>
+    <message>
+        <source>Backup path: %1</source>
+        <translation>备份路径：%1</translation>
+    </message>
+    <message>
+        <source>Remove %1 duplicate entries and %2 missing entries? Original image files stay untouched. Rated and edited entries are protected. A verified backup is required.</source>
+        <translation>移除 %1 个重复条目和 %2 个丢失条目？原始图像文件保持不变。已评分和已编辑的条目受到保护。必须先创建并验证备份。</translation>
+    </message>
+    <message>
+        <source>Choose backup folder</source>
+        <translation>选择备份文件夹</translation>
+    </message>
+    <message>
+        <source>Cancel</source>
+        <translation>取消</translation>
+    </message>
+    <message>
+        <source>Confirm removal</source>
+        <translation>确认移除</translation>
+    </message>
+    <message>
+        <source>Remove selected</source>
+        <translation>移除所选条目</translation>
+    </message>
+    <message>
+        <source>Close Project Maintenance</source>
+        <translation>关闭项目维护</translation>
+    </message>
+    <message>
+        <source>%1 findings</source>
+        <translation>%1 个发现项</translation>
+    </message>
+    <message>
+        <source>Backup folder: %1</source>
+        <translation>备份文件夹：%1</translation>
+    </message>
+    <message>
+        <source>Backup folder: project folder</source>
+        <translation>备份文件夹：项目所在文件夹</translation>
+    </message>
+    <message>
+        <source>Project Maintenance progress</source>
+        <translation>项目维护进度</translation>
+    </message>
+    <message>
+        <source>%1 / %2</source>
+        <translation>%1 / %2</translation>
+    </message>
+    <message>
+        <source>Entries processed</source>
+        <translation>已处理条目</translation>
+    </message>
+</context>
+<context>
+    <name>alcedo::ui::ProjectMaintenanceController</name>
+    <message>
+        <source>Scanning the complete project</source>
+        <translation>正在扫描整个项目</translation>
+    </message>
+    <message>
+        <source>Project Maintenance</source>
+        <translation>项目维护</translation>
+    </message>
+    <message>
+        <source>Inspected %1 entries</source>
+        <translation>已检查 %1 个条目</translation>
+    </message>
+    <message>
+        <source>No duplicate or invalid entries found</source>
+        <translation>未发现重复或无效条目</translation>
+    </message>
+    <message>
+        <source>%1 findings. Select entries to remove.</source>
+        <translation>发现 %1 个条目。请选择要移除的条目。</translation>
+    </message>
+    <message>
+        <source>Scan canceled</source>
+        <translation>扫描已取消</translation>
+    </message>
+    <message>
+        <source>Waiting for existing project work</source>
+        <translation>正在等待现有项目任务完成</translation>
+    </message>
+    <message>
+        <source>Project Maintenance is applying reviewed removals.</source>
+        <translation>项目维护正在移除已审核的条目。</translation>
+    </message>
+    <message>
+        <source>Saving and verifying the maintenance backup</source>
+        <translation>正在保存并验证项目维护备份</translation>
+    </message>
+    <message>
+        <source>Creating the maintenance backup</source>
+        <translation>正在创建项目维护备份</translation>
+    </message>
+    <message>
+        <source>Removing reviewed entries in the working package</source>
+        <translation>正在工作副本中移除已审核的条目</translation>
+    </message>
+    <message>
+        <source>Writing and reopening the result package</source>
+        <translation>正在写入并重新打开结果包</translation>
+    </message>
+    <message>
+        <source>Publishing the verified result</source>
+        <translation>正在保存已验证的结果</translation>
+    </message>
+    <message>
+        <source>Restoring the verified backup</source>
+        <translation>正在恢复已验证的备份</translation>
+    </message>
+    <message>
+        <source>Reopening the verified project</source>
+        <translation>正在重新打开已验证的项目</translation>
+    </message>
+    <message>
+        <source>Backup restored, but project reopening could not start.</source>
+        <translation>已恢复备份，但无法开始重新打开项目。</translation>
+    </message>
+    <message>
+        <source>Cleaned project reopening could not start.</source>
+        <translation>无法开始重新打开清理后的项目。</translation>
+    </message>
+    <message>
+        <source>
+The verified backup was restored and reopened.</source>
+        <translation>
+已恢复并重新打开经过验证的备份。</translation>
+    </message>
+    <message>
+        <source>Removed %1 project entries. Retained %2 entries.</source>
+        <translation>已移除 %1 个项目条目，保留 %2 个条目。</translation>
+    </message>
+    <message>
+        <source>Project Maintenance failed</source>
+        <translation>项目维护失败</translation>
+    </message>
+    <message>
+        <source>Project recovery required</source>
+        <translation>项目需要恢复</translation>
+    </message>
+    <message>
+        <source>Wait for Project Maintenance to finish.</source>
+        <translation>请等待项目维护完成。</translation>
+    </message>
+    <message>
+        <source>Entry IDs must be nonzero 32-bit integers.</source>
+        <translation>条目 ID 必须是非零的 32 位整数。</translation>
+    </message>
+</context>
+<context>
+    <name>alcedo::ui::ProjectMaintenanceModel</name>
+    <message>
+        <source>%1 commits; %2 Versions</source>
+        <translation>%1 个提交；%2 个版本</translation>
     </message>
 </context>
 <context>

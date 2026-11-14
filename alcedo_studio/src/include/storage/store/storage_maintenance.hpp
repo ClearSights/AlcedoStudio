@@ -50,6 +50,9 @@ class StorageMaintenance {
    */
   [[nodiscard]] auto ReadDataSummary() -> std::vector<StorageTableSummary>;
 
+  /// Flush committed database changes to its file under the database lock before packaging.
+  void               Checkpoint();
+
   /**
    * @brief Drop the HNSW indexes that older projects created on the semantic embedding tables.
    *

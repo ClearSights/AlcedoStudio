@@ -219,6 +219,9 @@ ApplicationModuleHost::ApplicationModuleHost(QObject* parent, LifecycleObserver 
       std::make_unique<ImportExportHandler>(project_.get(), library_.get(), folders_.get(),
                                             project_.get(), this);
   RecordConstruction("ImportExportHandler", import_export_.get());
+  import_behavior_ = std::make_unique<ImportBehaviorPreferences>(this);
+  RecordConstruction("ImportBehaviorPreferences", import_behavior_.get());
+  import_export_->SetImportPreferences(import_behavior_.get());
   import_export_->SetInteractionPolicy(interaction_policy_.get());
   export_queue_ = std::make_unique<ExportQueue>(project_.get(), import_export_.get(), this);
   RecordConstruction("ExportQueue", export_queue_.get());
@@ -364,6 +367,8 @@ ApplicationModuleHost::ApplicationModuleHost(QObject* parent, LifecycleObserver 
                    editor_session_.get(),
                    [session = editor_session_.get()] { session->NotifyLutResourcesChanged(); });
   editor_session_->SetInteractionPolicy(interaction_policy_.get());
+  QObject::connect(import_export_.get(), &ImportExportHandler::SourceFileChanged,
+                   editor_session_.get(), &EditorSessionController::NotifySourceChanged);
   editor_session_->SetAlbumCatalog(library_.get());
   // control.acquire waits while the user drags a slider: the pending input of the editor has a
   // sequence that no Release or Cancel boundary sealed. Every session result and state change
@@ -497,6 +502,18 @@ ApplicationModuleHost::ApplicationModuleHost(QObject* parent, LifecycleObserver 
   application_close_ = std::make_unique<ApplicationCloseCoordinator>(
       editor_session_.get(), workspace_router_.get(), project_.get(), this);
   RecordConstruction("ApplicationCloseCoordinator", application_close_.get());
+  maintenance_service_ = std::make_unique<ProjectMaintenanceService>();
+  RecordConstruction("ProjectMaintenanceService", maintenance_service_.get());
+  maintenance_ = std::make_unique<ProjectMaintenanceController>(
+      *maintenance_service_, *project_, *project_launch_, *editor_session_, *background_tasks_,
+      *interaction_policy_, this);
+  RecordConstruction("ProjectMaintenanceController", maintenance_.get());
+  application_close_->SetProjectWorkCallbacks([this] { maintenance_->RequestProjectClose(); },
+                                              [this] { return maintenance_->Busy(); });
+  connect(application_close_.get(), &ApplicationCloseCoordinator::WaitingChanged,
+          maintenance_.get(), [this] {
+            if (!application_close_->waiting()) maintenance_->CancelProjectCloseRequest();
+          });
   library_mutations_ = std::make_unique<LibraryMutationOperations>(
       images_.get(), library_->selection(), folders_.get(), editor_session_.get(),
       workspace_router_.get(), this);
@@ -520,7 +537,10 @@ ApplicationModuleHost::ApplicationModuleHost(QObject* parent, LifecycleObserver 
   nikon_he_recovery_->BindCollaborators(import_export_.get(), semantic_generation_.get());
 
   ProjectLifecycleHooks lifecycle_hooks;
-  lifecycle_hooks.project_switch_block_reason = [import_export = import_export_.get()] {
+  lifecycle_hooks.project_switch_block_reason = [import_export = import_export_.get(),
+                                                 maintenance   = maintenance_.get()] {
+    if (const auto reason = maintenance->ProjectSwitchBlockReason(); !reason.isEmpty())
+      return reason;
     // ImportRunning() stays true while the finished import is written to the project.
     if (import_export && (import_export->ImportRunning() ||
                           (import_export->current_import_job() &&
@@ -744,6 +764,8 @@ ApplicationModuleHost::~ApplicationModuleHost() {
     RecordDestruction(type_name, object);
   };
   destroy(library_mutations_, "LibraryMutationOperations");
+  destroy(maintenance_, "ProjectMaintenanceController");
+  destroy(maintenance_service_, "ProjectMaintenanceService");
   destroy(application_close_, "ApplicationCloseCoordinator");
   destroy(project_launch_, "ProjectLaunchCoordinator");
   destroy(log_folder_, "LogFolderController");
@@ -771,6 +793,7 @@ ApplicationModuleHost::~ApplicationModuleHost() {
   destroy(export_recipe_, "ExportRecipeBuilder");
   destroy(export_queue_, "ExportQueue");
   destroy(import_export_, "ImportExportHandler");
+  destroy(import_behavior_, "ImportBehaviorPreferences");
   destroy(semantic_generation_, "SemanticGenerationController");
   destroy(ai_provider_profiles_, "AiProviderProfileController");
   destroy(ai_model_download_tasks_, "AiModelDownloadTaskPublisher");

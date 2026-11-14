@@ -6,6 +6,52 @@ complements the global token, spacing, typography, icon, and motion rules in
 remains the runtime source of truth for values. This file records how each QML
 surface must use those values.
 
+## Project Maintenance
+
+### `CollectionsPanel.qml`
+
+- Put Project Maintenance directly below Background Tasks in the same utility-row delegate as Search and Background Tasks. All three share the icon slot, label edge, row height, and vertical centering.
+- Keep one Project Maintenance launcher in the project/library sidebar. It opens the application-owned `ProjectMaintenanceDialog.qml` and controller.
+- Disable the launcher without a loaded project. Explain the disabled sidebar action in its tooltip.
+- Use the existing body/caption fonts, neutral text, compact control height, and focus outline.
+  Project Maintenance uses the user-approved Tabler `database-cog` SVG, normalized to a 24 x 24 viewBox, white source stroke, and 1.5 px stroke width. Source and MIT license remain in the SVG.
+
+### `ProjectMaintenanceDialog.qml`
+
+- Use `cardSurfaceColor` for the dialog and `bgBaseColor` for review rows.
+- Place Scan project at the body's left edge, above the full `.alcd` project path.
+- Wrap full paths above a wrapping metadata row of entry ID, rating, history counts, and retained ID. Put reasons below that row. Each value keeps its own label; no separator characters join independent values.
+- Use `ThemeCheckBox` for row selection. A selected row has a neutral `textColor` outline.
+- Use `DialogActionButton` for scan, selection, paging, confirmation, and backup-folder actions. Put the three selection actions in equal-width columns; paging stays left and the matching count stays right. The backup-folder action stays left of the right-aligned confirmation actions.
+- Use the Search palette X (`IconActionButton`, compact and transparent) at the right of the title row. The same margins align the header, fields, results, and footer. Filter and search fields share a height.
+- During removal, show the compact import-style progress view: shared ImportProgressRing, RotatingTaskBorder, current owner stage, and processed/selected counts. Actual transaction work drives the ring; saving, verification, publication, activation, and restoration remain indeterminate. The count is work progress, not a durable removal result. Closing hides the view and leaves the task running.
+- Use `AlertBadge` only for actual source/project errors. Neutral duplicate findings use plain text.
+- A page has at most 100 rows. The complete selected count remains visible across filters and pages.
+- Hiding the dialog preserves the task and selection. Removal requires a separate confirmation.
+- Review both themes, keyboard access, long paths, narrow windows, cancellation, hidden selection,
+  backup failure, successful reopening, and recovery errors before recording manual acceptance.
+
+### Review evidence (2026-11-09)
+
+The native Windows test host showed the real dialog in Alcedo and Classic at 1200 x 760.
+Long Unicode paths wrap; the rated survivor stays unselected; a missing source uses AlertBadge.
+Space toggles a row. A search hiding all rows preserves the 105-entry count and the confirmation's
+104-duplicate / one-missing split. Cancel applies no removal. The editor launcher reopens the same
+review. Scanning from an empty selected album still finds all 106 project entries.
+
+The filter reuses AdjustmentCombo; search text, placeholder, selection, and selected text use theme
+tokens. The initial editor text action used zero button padding; the subsequent icon revision uses the standard editor RailButton.
+The native host did not resize during this review, so 960 x 640 appearance is not yet verified.
+Backup/restore error states and scan cancellation were verified through C++ owner/controller tests.
+
+
+The revised dialog was reviewed natively in Alcedo and Classic after the UI revision. Sidebar icons,
+labels, and vertical centers align; the X closes and reopening retains the scan. The compact progress
+card showed the real backup stage and `0 / 105`; successful reopening reported 105 removed and one
+retained, with a verified backup. The four-star survivor remained, and a repeat scan had no findings.
+The editor caption `Maintenance` was too wide for its fixed rail, so the compact caption is `Maintain`;
+accessibility and the tooltip retain the full feature name. All testing used a disposable copy. The final rebuilt rail caption was checked natively on one line, with the full accessible action name unchanged.
+
 Update the relevant file entry whenever an approved visual decision changes.
 Do not add automated tests whose purpose is to freeze colors, fills, borders,
 icon tint, shadows, or screenshots. Functional tests can verify interaction,
@@ -307,12 +353,14 @@ move with Cancel, the removal confirmation, and a removal error badge.
   `WelcomeProjectPreviewAdapter` and `recentProjects` and reports every action
   through a signal.
 - The items are declared in Tab order: Open Project…, New Project…, the right
-  column, the language selector, Quit. Do not reorder them for layout reasons;
+  column, the language selector, Settings, Quit. Do not reorder them for layout reasons;
   the footer is positioned with anchors.
 - `serviceMessage` shows only after the user starts an open or create action
   on the surface. The startup preview messages never show.
 - The language selector is a dark sunken `ComboBox` (`bgBaseColor`, 1 px
   `cardBorderColor`) with the monochrome selected well in its popup.
+- Settings uses the same compact quiet WelcomeActionButton as Quit. It opens the existing
+  Settings dialog above Welcome without entering a project. Closing Settings returns to Welcome.
 
 ### `WelcomeProjectOverview.qml`
 
@@ -606,7 +654,7 @@ image root, star overlay, editing tile ink).
 ### `ImportProgressOverlay.qml`
 
 - Ring and large count measure photos imported out of photos expected
-  (`importTotal - importFailed`); rejected files leave the expected total, so
+  (`importTotal - importFailed - importDuplicates`); rejected and duplicate files leave the expected total, so
   the total shrinks as the import runs.
 - The phase caption and the `ThemedProgressBar` below it measure files checked
   out of all files. Phases: `Preparing files... a of b`, `Reading photos... a of
@@ -615,6 +663,23 @@ image root, star overlay, editing tile ink).
   preparing and while saving; the progress track is indeterminate while saving.
 - Files that are not RAW are reported in a muted caption as skipped; only real
   failures use `dangerColor`. Cancel is hidden while saving.
+- Show confirmed duplicate skips in a separate muted body-text line. The RAW ring removes its
+  duplicate subset from the expected count. A duplicate never increases the failure count.
+- Match duplicate imports by normalized full source path and recorded file size. Import does
+  not hash source contents. Same-size content changes can remain undetected.
+- Count sources whose size changed as updates. Keep the existing entry, edits, ratings, and album
+  memberships. Show a completion notice and refresh affected thumbnails and the open editor source.
+- Nikon HE converted-file reimport uses the same duplicate count. Include skips in its progress
+  value and show the count in its wrapped completion caption.
+
+### `SettingDialog.qml` import defaults
+
+- Default Behavior contains an Import section with the shared ThemeCheckBox and wrapped help
+  text. Use the current SettingsSection text/divider colors and AppTheme spacing and body type.
+  Its horizontal section margins match Masks and the other Settings sections.
+- The checkbox edits a pending value. Apply persists it; Cancel and dismissal discard it.
+- Manual states: default on, saved off, changed pending value, Apply, Cancel, keyboard Tab and
+  Space, narrow width, no open project, Alcedo theme, and Classic theme.
 
 ### Manual review
 

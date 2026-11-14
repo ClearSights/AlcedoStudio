@@ -494,6 +494,11 @@ alcedo_ui_gtest_discover_tests(EditorComparisonLargeRawPairTest
 alcedo_register_test_target(EditorComparisonLargeRawPairTest ui)
 
 def_ui_test(AlbumBackendImportTest   album_backend_import_test.cpp)
+def_ui_test(ProjectMaintenanceModelTest project_maintenance_model_test.cpp)
+alcedo_register_test_target(ProjectMaintenanceModelTest ui)
+def_ui_test(ProjectMaintenanceControllerTest project_maintenance_controller_test.cpp)
+target_link_libraries(ProjectMaintenanceControllerTest PRIVATE AutomationHostLib)
+alcedo_register_test_target(ProjectMaintenanceControllerTest ui)
 alcedo_register_test_target(AlbumBackendImportTest ui)
 
 def_ui_test(AlbumBackendProjectTest  album_backend_project_test.cpp)
@@ -607,17 +612,17 @@ def_ui_test(AdjustmentTransferControllerTest adjustment_transfer_controller_test
 alcedo_register_test_target(AdjustmentTransferControllerTest ui)
 
 # Phase 0: deterministic editor RHI checks (backend parse, fixtures, lease schema).
-add_executable(EditorRhiContractsTest
-    ${ALCEDO_TEST_ROOT}/ui/editor_rhi_contracts_test.cpp
+add_executable(EditorPresentationTest
+    ${ALCEDO_TEST_ROOT}/ui/editor_presentation_test.cpp
 )
-target_include_directories(EditorRhiContractsTest PUBLIC ${ALCEDO_INCLUDE_DIR})
-target_link_libraries(EditorRhiContractsTest PRIVATE
-    EditorRhiContracts
+target_include_directories(EditorPresentationTest PUBLIC ${ALCEDO_INCLUDE_DIR})
+target_link_libraries(EditorPresentationTest PRIVATE
+    EditorPresentation
     GTest::gtest_main
     Qt6::Core
 )
-alcedo_ui_gtest_discover_tests(EditorRhiContractsTest TEST_PREFIX "EditorRhiContractsTest.")
-alcedo_register_test_target(EditorRhiContractsTest ui)
+alcedo_ui_gtest_discover_tests(EditorPresentationTest TEST_PREFIX "EditorPresentationTest.")
+alcedo_register_test_target(EditorPresentationTest ui)
 
 # Phase 0: maintained GPU presentation harness (manual / CI GPU workers).
 if(TARGET EditorRhiHarness)

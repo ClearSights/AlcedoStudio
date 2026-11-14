@@ -36,6 +36,7 @@ class QQmlEngine;
 #include "ui/alcedo_main/album_backend/export_recipe_builder.hpp"
 #include "ui/alcedo_main/album_backend/folder_controller.hpp"
 #include "ui/alcedo_main/album_backend/image_controller.hpp"
+#include "ui/alcedo_main/album_backend/import_behavior_preferences.hpp"
 #include "ui/alcedo_main/album_backend/import_export.hpp"
 #include "ui/alcedo_main/album_backend/interaction_policy_controller.hpp"
 #include "ui/alcedo_main/album_backend/library_module.hpp"
@@ -48,6 +49,7 @@ class QQmlEngine;
 #include "ui/alcedo_main/album_backend/model_download_controller.hpp"
 #include "ui/alcedo_main/album_backend/nikon_he_recovery_controller.hpp"
 #include "ui/alcedo_main/album_backend/project_launch_coordinator.hpp"
+#include "ui/alcedo_main/album_backend/project_maintenance_controller.hpp"
 #include "ui/alcedo_main/album_backend/project_module.hpp"
 #include "ui/alcedo_main/album_backend/search_controller.hpp"
 #include "ui/alcedo_main/album_backend/semantic_generation_controller.hpp"
@@ -70,6 +72,7 @@ class ApplicationModuleHost final : public QObject {
   Q_PROPERTY(ImportExportHandler* importExport READ import_export CONSTANT)
   Q_PROPERTY(NikonHeRecoveryController* nikonHeRecovery READ nikon_he_recovery CONSTANT)
   Q_PROPERTY(BackgroundTaskController* backgroundTasks READ background_tasks CONSTANT)
+  Q_PROPERTY(ProjectMaintenanceController* maintenance READ maintenance CONSTANT)
   Q_PROPERTY(InteractionPolicyController* interactionPolicy READ interaction_policy CONSTANT)
   /// Turn-taking control between the user and an automation agent in the GUI session.
   Q_PROPERTY(AgentControlOwner* agentControl READ agent_control CONSTANT)
@@ -99,6 +102,7 @@ class ApplicationModuleHost final : public QObject {
   Q_PROPERTY(EditorAiMaskTool* aiMaskTool READ ai_mask_tool CONSTANT)
   Q_PROPERTY(WorkspaceRouter* workspaceRouter READ workspace_router CONSTANT)
   Q_PROPERTY(EditorBehaviorPreferences* editorBehavior READ editor_behavior CONSTANT)
+  Q_PROPERTY(ImportBehaviorPreferences* importBehavior READ import_behavior CONSTANT)
   /// Library view settings (the layout of the ungrouped Library grid).
   Q_PROPERTY(LibraryViewPreferences* libraryView READ library_view CONSTANT)
   /// The Open Log Folder action of Settings > About.
@@ -149,12 +153,16 @@ class ApplicationModuleHost final : public QObject {
   [[nodiscard]] auto stats() -> StatsEngine* { return stats_.get(); }
   [[nodiscard]] auto search() -> SearchController* { return search_.get(); }
   [[nodiscard]] auto import_export() -> ImportExportHandler* { return import_export_.get(); }
+  [[nodiscard]] auto import_behavior() -> ImportBehaviorPreferences* {
+    return import_behavior_.get();
+  }
   [[nodiscard]] auto nikon_he_recovery() -> NikonHeRecoveryController* {
     return nikon_he_recovery_.get();
   }
   [[nodiscard]] auto background_tasks() -> BackgroundTaskController* {
     return background_tasks_.get();
   }
+  [[nodiscard]] auto maintenance() -> ProjectMaintenanceController* { return maintenance_.get(); }
   [[nodiscard]] auto interaction_policy() -> InteractionPolicyController* {
     return interaction_policy_.get();
   }
@@ -265,6 +273,7 @@ class ApplicationModuleHost final : public QObject {
   std::unique_ptr<alcedo::AiProviderProfileController> ai_provider_profiles_;
   std::unique_ptr<SemanticGenerationController>        semantic_generation_;
   std::unique_ptr<ImportExportHandler>                 import_export_;
+  std::unique_ptr<ImportBehaviorPreferences>           import_behavior_;
   std::unique_ptr<ExportQueue>                         export_queue_;
   std::unique_ptr<ExportRecipeBuilder>                 export_recipe_;
   std::unique_ptr<NikonHeRecoveryController>           nikon_he_recovery_;
@@ -283,6 +292,8 @@ class ApplicationModuleHost final : public QObject {
   std::unique_ptr<LogFolderController>                 log_folder_;
   std::unique_ptr<ProjectLaunchCoordinator>            project_launch_;
   std::unique_ptr<ApplicationCloseCoordinator>         application_close_;
+  std::unique_ptr<ProjectMaintenanceService>           maintenance_service_;
+  std::unique_ptr<ProjectMaintenanceController>        maintenance_;
   std::unique_ptr<LibraryMutationOperations>           library_mutations_;
 
   LifecycleObserver                                    lifecycle_observer_{};
