@@ -31,6 +31,7 @@ Item {
     property alias welcomePreviewAdapter: welcomePreviewAdapterObj
     property alias globalSearchDialog: globalSearchDialogObj
     property alias backgroundTasksDialog: backgroundTasksDialogObj
+    property alias projectMaintenanceDialog: projectMaintenanceDialogObj
 
     // Every extension of the import categories, read from C++
     // (ImportExportHandler::SupportedImportPatterns). The dialog filter ignores case on
@@ -261,6 +262,11 @@ Item {
         onExitRequested: appModules.nikonHeRecovery.ExitNikonHeRecovery()
     }
 
+    ProjectMaintenanceDialog {
+        id: projectMaintenanceDialogObj
+        controller: appModules.maintenance
+    }
+
     BackgroundTasksDialog {
         id: backgroundTasksDialogObj
         controller: appModules.backgroundTasks
@@ -369,6 +375,7 @@ Item {
                || nikonHeRecoveryDialogObj.opened
                || semanticGenerationDialogObj.opened
                || backgroundTasksDialogObj.opened
+                 || projectMaintenanceDialogObj.opened
                || deleteConfirmDialogObj.opened
                || folderImportConfirmDialogObj.opened
                || editorCloseConfirmDialogObj.opened
@@ -404,6 +411,9 @@ Item {
 
     function openBackgroundTasksDialog() {
         backgroundTasksDialogObj.open()
+    }
+    function openProjectMaintenanceDialog() {
+        projectMaintenanceDialogObj.open()
     }
 
     function openLutImportDialog() {

@@ -3,7 +3,7 @@
 Updated: 2026-11-10
 
 Status: Path-and-size imports and replacement rendering qualification are complete on Windows/CUDA.
-Section 12 preserves combined-reference evidence and platform limits before this branch split.
+Section 12 records the current evidence and platform limits.
 
 Coordination parent: [Duplicate Import and Project Maintenance Plans](duplicate_image_cleanup_and_import_plan.md).
 
@@ -562,11 +562,9 @@ methods into additional files without moving their state was not used as a size 
 | `docs/roadmap/alcedo_studio/storage/duplicate_image_cleanup_and_import_plan.md` | 311 | 67 | 20 |
 | `docs/roadmap/alcedo_studio/storage/import_duplicate_skipping_plan.md` | 994 | 407 | 56 |
 
-## 12. Combined-reference qualification (2026-11-10)
+## 12. Current qualification (2026-11-10)
 
-This record describes the combined reference branch before the split. Maintenance targets below
-are absent from this import-only branch. Isolated import verification is recorded in its commit
-and the branch split report. No PR or push was created.
+Status: complete on Windows/CUDA. Changes remain uncommitted. No PR or push was created.
 
 The Release app and focused test targets built successfully in the existing `build/release` tree.
 Commands ran through PowerShell and `scripts/msvc_env.cmd`. The cached toolchain uses MSVC 14.44.
