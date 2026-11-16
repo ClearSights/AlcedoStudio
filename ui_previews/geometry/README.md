@@ -44,6 +44,10 @@ All changes are local sample UI values. The image area and Thirds overlay are
 static layout context. Guide selection does not draw other guides. Orientation
 actions only identify the selected action. No crop math, image transforms,
 shortcuts, history, settings, document access, GPU code, or export are connected.
+The static crop corners use L brackets to reflect PR #943's target appearance.
+That PR owns corner rotation input, cursors, and the automatic fine rotation
+grid. This preview does not recreate those operations or add a fine-grid control.
+The Grid menu entry remains the separate selectable composition guide.
 The five new action symbols are temporary text glyphs inside `IconActionButton`.
 `PreviewActionGlyph` fits their painted bounds to `iconOpticalSizeCompact`,
 so the row uses one visual size and the shared compact hit targets.

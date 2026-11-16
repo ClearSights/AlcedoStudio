@@ -446,13 +446,29 @@ ApplicationWindow {
                                 }
                                 Repeater {
                                     model: 4
-                                    Rectangle {
+                                    Item {
                                         required property int index
-                                        x: index % 2 ? cropFrame.width - width / 2 : -width / 2
-                                        y: index >= 2 ? cropFrame.height - height / 2 : -height / 2
-                                        width: appTheme.spaceSm
-                                        height: appTheme.spaceSm
-                                        color: appTheme.textColor
+                                        readonly property bool rightCorner: index % 2 !== 0
+                                        readonly property bool bottomCorner: index >= 2
+                                        readonly property real thickness: cropFrame.border.width * 2
+                                        x: rightCorner ? cropFrame.width - width : 0
+                                        y: bottomCorner ? cropFrame.height - height : 0
+                                        width: appTheme.iconOpticalSizeCompact
+                                        height: appTheme.iconOpticalSizeCompact
+
+                                        // Static brackets only; PR #943 owns the interactive overlay.
+                                        Rectangle {
+                                            y: parent.bottomCorner ? parent.height - height : 0
+                                            width: parent.width
+                                            height: parent.thickness
+                                            color: appTheme.textColor
+                                        }
+                                        Rectangle {
+                                            x: parent.rightCorner ? parent.width - width : 0
+                                            width: parent.thickness
+                                            height: parent.height
+                                            color: appTheme.textColor
+                                        }
                                     }
                                 }
                             }

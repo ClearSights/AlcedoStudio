@@ -12,6 +12,8 @@ Parent: Standalone extension to the editor workspace roadmap.
 Original audit: upstream `main`, `e86edddba6f1559a1444222cb09de679d15592a9`.
 Revision audit: upstream `main`, `95f0306a`, integrated by merge `03d44361`.
 Source inspection is not execution evidence. The earlier local audit used `37c30924`.
+PR dependency audit: #943 remains open at `33156bf2e45057c6a1dd3e78ee83568c6c4466fd`.
+That PR is not part of this branch. Its reported tests are not local verification.
 
 Branch: `docs/geometry-crop-transform-improvements`.
 
@@ -44,6 +46,8 @@ Automatic Upright, Guided Upright, and new lens distortion controls are comparis
 They are outside this requested manual-transform and orientation change.
 The existing lens owner keeps optical distortion correction.
 Whole-image orientation is included in the user's revised scope.
+Reuse PR #943 for crop pointer interaction, handles, cursors, and the automatic rotation grid.
+Keep this plan's manual transforms, selectable composition guides, aspect order, and orientation actions.
 
 ## 2. Upstream research and related work
 
@@ -61,8 +65,9 @@ Search results describe the state on the date above. They are not a permanent ba
 | [Comparison plan](editor_adjustment_comparison_plan.md) | Image placement uses resolved render geometry. The current implementation rejects projective placement. | Include comparison placement in the projective mapping audit. |
 | [Shared slider PR #923](https://github.com/zidage/AlcedoStudio/pull/923) | `AdjustmentSlider` now wraps `AlcedoSlider`. Models expose hard limits and soft rail limits. `CollapsibleSection` adds its body insets. | Use the current wrappers and model properties. Do not copy the former slider or add section padding twice. |
 | [GPU release PR #937](https://github.com/zidage/AlcedoStudio/pull/937) | Export and semantic generation can hold editor GPU resources. Rendering resumes after the last holder releases them. | Retain suspension routing for Geometry editing. Resource suspension is distinct from a transform validation or execution failure. |
+| [Crop interaction PR #943](https://github.com/zidage/AlcedoStudio/pull/943), addressing [#942](https://github.com/zidage/AlcedoStudio/issues/942) | Corner rotation zones, edge bands, rotation-drag limits, L brackets, outside-image hover, and an automatic fine rotation grid. | Required upstream input for G0b and later overlay work. Reuse its implementation and tests under Section 2.1. |
 | [Open feature #459](https://github.com/zidage/AlcedoStudio/issues/459) | Rotate the entire image and canvas together, without cropping. The issue refers to closed #221. | Include its complete behavior in G0a–G0b and the cross-phase acceptance criteria. The document alone does not resolve the issue. |
-| [Open issue #712](https://github.com/zidage/AlcedoStudio/issues/712) | Two older viewer test groups lack targets after the CMake split. | Do not rely on those old target names as executable evidence. |
+| [Open issue #712](https://github.com/zidage/AlcedoStudio/issues/712) | Reports older viewer test registration gaps. The audited source now registers `EditorOverlayInteractionTest` and `OverlayCursorTest`. | Confirm current CMake registration and discovered case names. Do not infer unavailable targets or passing tests from the historical issue. |
 | [Open issue #869](https://github.com/zidage/AlcedoStudio/issues/869) | Metal geometry resample and camera-color failures on main. | Record the existing issue when collecting Metal evidence. Do not assume every failure is new. |
 
 No dedicated plan or open feature request for the complete requested guide set and manual
@@ -80,6 +85,35 @@ The 2026-11-16 review recorded four document defects:
 This revision corrects the plan. It does not claim product fixes or close these reports.
 The upstream synchronization also recorded the preview's shared-slider dependency in
 [issue #950](https://github.com/zidage/AlcedoStudio/issues/950).
+
+### 2.1 PR #943 dependency and scope boundary
+
+PR #943 is open against `95f0306a` at this review. Do not describe its changes as landed.
+G0a can proceed independently. Start G0b and later overlay changes only after #943 is merged
+and its merged revision is integrated into the implementation branch.
+Recheck its final APIs, tests, and viewport-margin behavior before estimating those phases.
+If its final design differs, update this dependency description before implementation.
+
+PR #943 owns these behaviors. Do not implement parallel versions in this plan:
+
+- Crop corner, edge, and rotation-zone hit testing and outside-image hover cursors.
+- Press-to-edge offsets, rotation start thresholds, near-center holds, re-anchoring, and zero snapping.
+- The per-drag straightening limit, L brackets, edge grips, and angle-badge placement.
+- Rotation-active state, the automatic fine grid, its reference lines, and repaint on release.
+
+Reuse `CropGeometry::HitTestWidgetGeometry`, `CropHitTestResult::rotate_hit`,
+`CropInteractionController::RotationActive()`, and the existing `crop_rotation_active` projection.
+Reuse `CropGeometry::CropAngleBadgeWidgetPoint`, QML `angleBadgeItemPos`, and the
+`fine_grid_triangles` drawing output in the existing overlay item.
+Use the PR's constants and shared helpers. Do not restore the removed top rotation handle or stem.
+Its 45-degree limit applies to one pointer straightening drag. It does not limit the stored angle,
+numeric angle entry, discrete quarter turns, or manual perspective fields.
+
+This plan adds composition-guide paths, preference controls, and projective coordinate integration.
+Section 5.3 defines their interaction with the existing automatic rotation aid.
+Keep PR #943's focused interaction tests. Add only assertions for the new guide and transform inputs.
+The PR reports interaction, cursor, and overlay test results; rerun the affected registered cases
+after integration before claiming that this branch preserves them.
 
 ## 3. External behavior references
 
@@ -107,8 +141,8 @@ Paths in this section start at `alcedo_studio/`.
 | Panel | `src/ui/alcedo_main/qml/EditorGeometryPanel.qml` | Reads crop ranges and aspect options from the catalog. Loads saved crop fields without submitting an edit. Add Crop actions and a distinct Transform section. |
 | Aspect order | `src/ui/alcedo_main/editor_support/modules/geometry.cpp`, `CropAspectPresetOptions()` | Twelve options. The 1.5:1 option is eleventh. Move the option record without changing its identifier or ratio. |
 | Aspect orientation | `src/app/editor_parameter_catalog.cpp`, `CropLockedAspectRatio()` and `ConstrainCrop()` | Fixed presets currently select landscape or portrait from source dimensions. Custom uses its stored width and height. Fixed-preset restore must honor the effective ratio introduced by G0a. |
-| Guides | `src/ui/editor_rhi/editor_overlay_item.cpp`, `BuildOverlaySceneGeometry()` | Generates dashed thirds at fixed fractions. No guide selector enters this function. Add guide paths and a selected guide input. |
-| Interaction | `src/ui/edit_viewer/crop_interaction_controller.cpp`; `src/ui/editor_rhi/editor_interaction_controller.cpp` | Own crop interaction and viewport mapping. Keep guides independent of handle hit testing. Extend coordinate mapping for transformed content. |
+| Guides | `src/ui/editor_rhi/editor_overlay_item.cpp`, `BuildOverlaySceneGeometry()` | The checkout generates dashed thirds without a guide selector. PR #943 adds the automatic fine rotation grid. Add selectable composition paths after that PR; retain its fine-grid output. |
+| Interaction | `src/ui/edit_viewer/crop_interaction_controller.cpp`; `src/ui/editor_rhi/editor_interaction_controller.cpp` | The checkout retains the top rotation handle. PR #943 replaces it with corner rotation zones and guarded drag behavior. Reuse that merged owner and extend only the mappings needed for orientation and perspective. |
 | Parameters | `src/app/editor_parameter_catalog.cpp` | Owns the `crop_rotate` object, UI defaults, validation, conversion, and crop constraints. Add transform metadata and focused writes. |
 | Numeric controls | `src/ui/alcedo_main/qml/AdjustmentSlider.qml`, `AlcedoSlider.qml`; `src/include/ui/alcedo_main/album_backend/editor_adjustment_models.hpp` | The wrapper uses `minimum`/`maximum` and `railMinimum`/`railMaximum`. Rail and value drags use the same owner drag sequence. Add transform metadata without replacing these controls. |
 | Document | `src/include/edit/graph/image_geometry_model.hpp` | Owns crop rectangle, rotation, aspect preset, and aspect ratio. `ImageGeometryUpdate` updates selected fields. Extend this owner. |
@@ -124,7 +158,8 @@ Paths in this section start at `alcedo_studio/`.
 
 Current registered targets include `EditorGeometryMathTest`, `EditorGeometryPanelQmlTest`,
 `EditorCropInteractionTest`, `EditorGeometryOverlayPipelineTest`, and `GpuDagGeometryTest`.
-The last target includes crop-frame, resolver, and document-geometry-use tests.
+`GpuDagGeometryTest` includes crop-frame, resolver, and document-geometry-use tests.
+The current CMake list also registers `EditorOverlayInteractionTest` and `OverlayCursorTest`.
 `EditorGeometryOverlayPipelineTest` currently checks CUDA resize behavior.
 Its target name alone is not crop-overlay integration evidence. Add the named integration cases below.
 This audit reads source. It does not claim that these tests passed during document creation.
@@ -268,7 +303,7 @@ During input draws while crop, straightening, or manual-transform input is activ
 This includes pointer drags, active numeric editing, and keyboard edits until their settled commit.
 Hover and menu opening do not count as image-editing input.
 Never draws no composition guide. None also draws no composition guide in every visibility mode.
-The crop boundary and handles remain visible independently of composition-guide visibility.
+The crop boundary, handles, and PR #943's automatic rotation aid remain independent of this preference.
 Store Triangle orientation as 0 or 1 and Spiral orientation as 0 through 3.
 Preserve each asymmetric guide's orientation when the user selects another guide.
 The orientation action is disabled for symmetric guides. Triangle has two distinct states.
@@ -278,6 +313,24 @@ Register these actions with crop-editing scope. Mask mode and editable fields re
 Missing settings use the documented defaults. Invalid saved values produce a visible preference error.
 Offer Reset Guide beside that error. It restores Thirds, Always, and both orientation defaults.
 Do not draw a substitute guide while an invalid preference awaits correction.
+
+#### 5.3.1 Composition guides and the automatic rotation grid
+
+The selectable Grid is a composition guide with seven internal lines on each axis.
+PR #943's fine grid is an automatic straightening aid with approximately 28 px cells.
+It is not another selector entry. Reuse its existing geometry generator and scene node.
+Drive it from `CropInteractionController::RotationActive()` through `crop_rotation_active`.
+Do not add a second rotation-active flag, drag controller, or QML grid renderer.
+Numeric angle editing and manual-transform input do not activate that pointer-only rotation aid.
+
+Composition-guide visibility applies only to the selected composition guide.
+During an active rotation drag, keep the PR's fine grid and stronger thirds reference lines visible
+even when the selected guide is None, visibility is Never, or a guide preference is invalid.
+When a composition guide is also visible, draw it through the same crop placement and clipping.
+If the selected guide is Thirds, draw the coincident thirds lines once with the inherited reference style.
+When the rotation drag ends, remove only the automatic aid through the PR's existing repaint path.
+The selected composition guide then follows its own visibility preference.
+Guide selection, orientation, visibility, and Reset Guide must not change crop input or rotation-active state.
 
 ### 5.4 Manual transforms
 
@@ -372,6 +425,9 @@ Map the final crop boundary and guide paths into the editing image with `E * inv
 Use the viewport placement after this map. Map pointer positions back through the corresponding inverse.
 Do not assume that an angle and an axis-aligned rectangle can represent the resulting overlay.
 Use the same paths for drawing and crop hit testing. Guides themselves do not receive input.
+Pass the mapped crop quad to PR #943's hit testing, brackets, grips, and rotation-grid drawing.
+Retain its corner-before-edge-before-rotation priority, outside-image cursors, and angle-badge helper.
+Extend coordinate conversion for the new transform; do not replace the inherited pointer state machine.
 Fit the editing view to the transformed source bounds, with finite extents from the resolver.
 This explicitly extends the earlier uncropped-source rule to support the new image operations.
 Closing Geometry returns to the normal complete document render without changing the document.
@@ -544,6 +600,7 @@ Do not pass a projective matrix into an affine-only helper.
 Affine view fitting can retain its existing math where the last matrix row remains `[0, 0, 1]`.
 New proposed files are `edit/geometry/projective_transform.{hpp,cpp}`,
 `ui/edit_viewer/crop_guide_paths.{hpp,cpp}`, and focused tests for these operations.
+The guide helper generates only selectable composition paths. PR #943 retains automatic grid generation.
 Place headers under the matching `src/include/` directories.
 Keep new modules small. Include defining headers under the repository's header rules.
 
@@ -553,12 +610,13 @@ Before implementation, reread `AGENTS.md`, `CONTRIBUTING.md`, and all applicable
 Use `alcedo-qml-ui`, `alcedo-msvc-cmake`, and `opencl-program-registry` where their scopes apply.
 All product phases below remain unimplemented. The preview completes none of them.
 Estimates include code, tests, build wiring, resources, migration, and documentation.
+They exclude PR #943's upstream diff. Reestimate integration against its merged source.
 
 | Phase | Result | Dependency | Expected changed lines | Split reason |
 | --- | --- | --- | ---: | --- |
 | G0a | Orientation schema, effective aspect semantics, and compatible readers | Audited source | 900-1500 | Separate format and history compatibility from rendering and UI integration. |
-| G0b | Complete whole-image rotation, flips, and Swap Aspect actions | G0a | 1300-1900 | Deliver the complete visible orientation path after its data representation exists. |
-| G1 | Aspect order and complete composition-guide selection | G0b | 1000-1600 | Keep preference-only changes separate from persisted transforms. |
+| G0b | Complete whole-image rotation, flips, and Swap Aspect actions | G0a and merged PR #943 | 1300-1900 | Deliver orientation actions through the inherited crop interaction and overlay. |
+| G1 | Aspect order and complete composition-guide selection | G0b and merged PR #943 | 1000-1600 | Add preference-only composition guides beside the inherited automatic rotation aid. |
 | G2 | Projective equations and geometry resolution | G0b | 1200-1800 | Isolate numerical behavior from GPU implementation. |
 | G3 | Projective sampling on CUDA, Metal, and OpenCL | G2 | 1000-1800 | Keep backend sampling reviewable without UI changes. |
 | G4 | Projective coordinate consumers and editing-view mapping | G0b, G2, G3 | 1200-1900 | Keep masks, ROI, comparison, and export consistent before exposure. |
@@ -601,17 +659,19 @@ The actual prior reader rejects the new revision. No new orientation action is e
 
 ### G0b. Whole-image orientation and Crop actions
 
-**Objective and inputs:** Deliver issue #459 and all five actions in Section 5.6 after G0a.
+**Objective and inputs:** Deliver issue #459 and all five actions after G0a and integrated PR #943.
 **Modules:** Image geometry model and update, catalog, field parser, command service, resolver,
 history, Crop QML, shortcut registry, interaction mapping, comparison, export, and focused tests.
 **Rules:** Exact eight-state orientation; complete source preservation without a crop operation;
 one owner update per action; identity defaults for older documents.
+Retain PR #943's crop interaction, constants, handles, cursors, and automatic rotation grid.
 
 1. Use G0a's orientation field, effective aspect ratio, and validated owner update.
 2. Add displayed-coordinate rotation and flip commands. Compose exact orientation states.
 3. Resolve oriented extents and pixel-center mapping after existing crop and straightening.
    Include orientation in pixel-changing geometry content keys.
 4. Extend image placement, mask mapping, viewer interaction, comparison, and export together.
+   Feed oriented crop coordinates to the inherited hit test and drawing helpers.
 5. Implement Swap Aspect and Lock through the crop owner. Connect the button and scoped `X`.
 6. Add the compact action row, translated names, reset scopes, and load-only restore.
    Obtain approval for final action SVGs as required in Section 5.6.
@@ -635,23 +695,27 @@ and the affected registered history, comparison, and export targets. Run only th
 **Exit criteria:** All issue #459 requirements have evidence, including 180-degree rotation,
 save/reopen, and export. Confirm all five actions manually without requiring crop-handle input.
 Use exact pixel equality for pure orientation and the existing tolerance for preexisting interpolation.
+The existing crop interaction and cursor cases from PR #943 still pass after orientation integration.
 **Expected diff:** 1300-1900 lines. Reestimate and split before work if the complete path exceeds 2000.
 **Completion record:** Pending. Use Section 9. Do not close #459 from this documentation change.
 
 ### G1. Aspect order and composition guides
 
-**Objective and inputs:** Deliver aspect order and Section 5.3 after G0b's aspect and input changes.
+**Objective and inputs:** Deliver aspect order and composition guides on G0b's PR #943-based overlay.
 **Modules:** Aspect options, guide-path helper, overlay item, interaction properties, settings,
 shortcut registry, Geometry QML, translations, and UI test registration.
-**Rules:** Stable preset identifiers; preference-only guides; unchanged crop hit priority.
+**Rules:** Stable preset identifiers; preference-only composition guides; Section 5.3.1's two drawing inputs.
+Reuse PR #943's rotation aid and hit priority. Do not recreate its pointer or grid implementation.
 
 1. Reorder the shared option record. Verify catalog and QML consume the same sequence.
 2. Generate each guide's paths with dimension-aware geometry and orientation.
-3. Connect selection and visibility to the overlay through its existing owner.
+3. Connect composition selection and visibility to `BuildOverlaySceneGeometry` through its existing owner.
+   Retain `fine_grid_triangles` and the rotation-active projection. Reuse coincident Thirds paths once.
 4. Save preferences through `EditorBehaviorPreferences`. Register scoped shortcut commands.
 5. Add the invalid-preference error and Reset Guide action from Section 5.3.
 
 **Success chain:** Selector -> guide preference -> interaction presentation -> guide paths -> QSG lines.
+The independent rotation-active projection continues to drive the inherited automatic aid.
 **Failure chain:** Invalid stored guide preference -> visible preference error and a Reset Guide action;
 the user's reset restores Thirds without an image edit. Invalid crop dimensions -> no guide geometry
 until dimensions exist. Do not silently replace an invalid selected guide.
@@ -661,10 +725,15 @@ until dimensions exist. Do not silently replace an invalid selected guide.
 `GuidePreferenceChangesDoNotCreateHistoryEntries` checks the real settings and history owners.
 `GuideVisibilityFollowsInputWithoutHidingCropHandles` checks all visibility modes and None.
 `InvalidGuidePreferenceRequiresExplicitReset` checks the preference error and reset result.
+`CompositionPreferencesPreserveActiveRotationAid` checks None, Never, and invalid preferences during a rotate drag.
+`ThirdsAndRotationAidShareReferenceStrokes` checks that coincident thirds are drawn once.
+`RotationReleaseRestoresSelectedCompositionGuideVisibility` checks the inherited release and repaint path.
 **Commands:** Build `EditorGeometryMathTest`, `EditorGeometryPanelQmlTest`, and the proposed
-`CropGuidePathsTest`; run only those targets' discovered tests as described in Section 8.
+`CropGuidePathsTest`. Include affected `EditorOverlayInteractionTest`, `EditorCropInteractionTest`,
+and `OverlayCursorTest` cases. Run only their focused discovered cases as described in Section 8.
 **Exit criteria:** All guide equations, preferences, focus rules, and aspect-order assertions pass.
 Confirm guide visibility and orientation manually at DPR 1, 1.5, and 2.
+Selected Grid retains its fixed divisions. The automatic grid retains PR #943's screen-space density.
 **Expected diff:** 1000-1600 lines.
 **Completion record:** Pending. Use Section 9.
 
@@ -729,6 +798,7 @@ Compare failures with known upstream reports, including #869.
 ROI and sampling footprints, comparison image placement, and export geometry requests.
 **Rules:** Persisted masks retain their source coordinates. All consumers use the same resolved mapping.
 Compose projective geometry with G0b orientation. Test all eight orientation states.
+Use PR #943's merged crop controller and overlay as the integration input.
 
 1. Find affine assumptions in the actual callers of resolved geometry.
 2. Replace them with projective point mapping and spatial scale evaluation where required.
@@ -736,6 +806,9 @@ Compose projective geometry with G0b orientation. Test all eight orientation sta
 4. Compare viewport ROI, complete-image rendering, and export at the same source locations.
 5. Implement Section 5.5's editing-view request and `E * inverse(F)` overlay placement.
    Keep this request policy available to G6 without exposing unfinished transform controls.
+6. Feed the mapped crop quad and inverse pointer positions to the inherited crop helpers.
+   Keep hit distances, rotation-drag thresholds, and fine-grid spacing in widget logical pixels.
+   Preserve re-anchoring, release repaint, outside-image hover, and angle-badge placement.
 
 **Success chain:** Resolved mapping -> source-space masks and pointer inverse -> aligned visible result.
 **Failure chain:** Invalid mapping -> caller reports geometry error; no misleading mask or comparison image.
@@ -744,8 +817,11 @@ Compose projective geometry with G0b orientation. Test all eight orientation sta
 `PerspectiveRoiPixelsMatchCompleteImageWithinTolerance` compares interior float pixels within `2e-4`.
 `PerspectiveComparisonAndExportUseResolvedGeometry` checks corners and output dimensions.
 `EditingCropBoundaryMapsBackToFinalOutputCorners` checks combined perspective, aspect, and rotation.
+`TransformedCropPreservesInheritedHitZonesAndRotationAid` checks the shared controller and overlay
+with perspective, aspect changes, and all eight orientations. Reuse the PR's basic drag cases.
 **Commands:** Build the affected owner tests and direct caller tests selected from CMake registration.
 Include `EditorGeometryOverlayPipelineTest` and `GpuDagCudaDocumentGeometryRequestTest` when available.
+Include affected `EditorCropInteractionTest`, `EditorOverlayInteractionTest`, and `OverlayCursorTest` cases.
 Run their focused cases serially for GPU work.
 **Exit criteria:** Masks, crop input, ROI, comparison, and export align in combined transform cases.
 No projective matrix reaches an affine-only operation.
@@ -790,6 +866,7 @@ interaction presentation, translations, theme documentation if needed, and direc
 2. Select G4's transformed editing view without clearing persistent document fields.
 3. Connect render errors and accessibility names. Verify focus and narrow-window scrolling.
 4. Exercise the complete workflow with real landscape, portrait, and architectural photographs.
+   Check selectable guides during the inherited rotation aid; do not add another fine-grid control.
 
 **Success chain:** Transform input -> shared command path -> resolved render -> overlay and control projection.
 **Failure chain:** Rejected input -> field error and previous accepted value; failed render -> visible real error.
@@ -809,6 +886,7 @@ and `EditorGeometryOverlayPipelineTest`. Run these focused suites and affected d
 **Exit criteria:** Verify guide changes, combined transforms, crop constraints, Undo/Redo, save/reopen,
 version switching, comparison, and full-resolution export. Include rotate, flip, and Swap Aspect
 with nondefault transforms. Record manual checks separately.
+Verify full-frame corner-zone access, inherited L brackets and cursors, and the existing rotation grid.
 **Expected diff:** 1000-1800 lines.
 **Completion record:** Pending. Use Section 9.
 
@@ -819,6 +897,7 @@ The commands below are implementation instructions, not completed verification.
 The standalone preview's earlier startup and manual inspection predate upstream `95f0306a`.
 The upstream adaptation was checked by source inspection and diff checks only.
 No build, test suite, or new preview run was performed during the commit-and-sync request.
+This PR #943 dependency revision also uses source inspection only. It does not merge that PR or run tests.
 
 Use PowerShell from the repository root on Windows.
 The example uses the Qt installation verified by the standalone preview.
@@ -842,6 +921,12 @@ Only the user can request a full test suite. Focused suites do not count as a fu
 
 Use C++ owner and service tests for input behavior. Do not depend on unreliable offscreen
 `WorkspaceShellTest` synthetic input. Record skipped QML coverage honestly.
+After integrating #943, discover the current `EditorCropInteractionTest`, `EditorOverlayInteractionTest`,
+and `OverlayCursorTest` cases. Retain its edge-versus-rotation, center-hold, per-drag-limit,
+zero-snap, rotation-grid release, corner-bracket, and outside-image cursor assertions.
+Run those focused regressions alongside new composition-guide and transform cases.
+Confirm that the inherited crop-mode viewport margin permits full-frame corner-zone access.
+If that remains unresolved, track the existing #942 requirement before accepting the dependency.
 Put temporary evidence under `build/tmp/geometry_crop_transform/` and remove task output after completion.
 Read any CRLF file as bytes before editing. Convert it to LF in the required separate commit.
 Do not format untouched lines or rename unrelated roadmap files.
@@ -850,6 +935,7 @@ Do not format untouched lines or rename unrelated roadmap files.
 | --- | --- |
 | Defaults and compatibility | Existing documents render the same pixels and dimensions. Both format steps preserve old history identity. Prior readers reject unsupported documents. |
 | Composition | Every selected guide has correct paths, orientation, clipping, and preference persistence. Guides never enter exports. |
+| PR #943 integration | Inherited hit zones, rotation guards, brackets, cursors, angle badge, and automatic grid remain intact. Composition preferences do not suppress the active rotation aid. Coincident Thirds strokes appear once. |
 | Aspect selection | The complete sequence matches Section 5.2. Reopen restores both preset identity and effective ratio. Lock and Swap Aspect keep their specified states through further edits. |
 | Whole-image orientation / #459 | With default manual transforms and no crop, quarter turns preserve every source pixel and swap dimensions. With an existing crop or transform, they preserve the accepted framed result. Two right turns give 180 degrees. Reopen and export preserve orientation. |
 | Crop shorthand | All five actions are visible and accessible. Flips use displayed axes. Swap Aspect and scoped `X` change framing without image rotation. |
