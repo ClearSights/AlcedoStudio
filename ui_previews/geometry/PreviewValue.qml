@@ -5,6 +5,8 @@ QtObject {
     property string label: ""
     property real minimum: -100
     property real maximum: 100
+    readonly property real railMinimum: minimum
+    readonly property real railMaximum: maximum
     property real defaultValue: 0
     property real value: defaultValue
     property real step: 0.1

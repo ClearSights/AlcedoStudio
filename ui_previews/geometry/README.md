@@ -24,6 +24,12 @@ section folding, and scroll area. Drag the center divider to resize the panel
 between its existing 260 and 460 px limits. Use the Preview state selector to
 inspect disabled controls and example validation text.
 
+The preview uses upstream's `AdjustmentSlider` wrapper and its `AlcedoSlider`
+control. The local value models expose hard and soft ranges with the same
+bounds. Geometry has no extra range beyond the limits in the design.
+`CollapsibleSection` adds its own body insets; the preview passes only the
+content column height. The numeric font comes from the existing IBM font asset.
+
 All changes are local sample UI values. The image area and Thirds overlay are
 static layout context. Guide selection does not draw other guides. Orientation
 actions only identify the selected action. No crop math, image transforms,

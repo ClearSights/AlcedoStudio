@@ -10,7 +10,8 @@ The numerical and persistence design below remains an implementation proposal.
 Parent: Standalone extension to the editor workspace roadmap.
 
 Original audit: upstream `main`, `e86edddba6f1559a1444222cb09de679d15592a9`.
-Revision audit: local `HEAD`, `37c30924`. Source inspection is not execution evidence.
+Revision audit: upstream `main`, `95f0306a`, integrated by merge `03d44361`.
+Source inspection is not execution evidence. The earlier local audit used `37c30924`.
 
 Branch: `docs/geometry-crop-transform-improvements`.
 
@@ -58,6 +59,8 @@ Search results describe the state on the date above. They are not a permanent ba
 | [Automation plan, AU8a and AU8b](../automation/cli_mcp_automation_plan.md) | The parameter catalog owns crop ranges, options, conversions, and constraints. The QML panel consumes that catalog. | Extend the catalog and command path. Do not duplicate ranges or aspect lists in QML. |
 | [Shortcut registry plan](configurable_keyboard_shortcut_registry_plan.md) | Named commands, input scopes, conflict checks, and saved bindings. Text fields retain text input. | Register composition-guide and Swap Aspect commands through this owner. |
 | [Comparison plan](editor_adjustment_comparison_plan.md) | Image placement uses resolved render geometry. The current implementation rejects projective placement. | Include comparison placement in the projective mapping audit. |
+| [Shared slider PR #923](https://github.com/zidage/AlcedoStudio/pull/923) | `AdjustmentSlider` now wraps `AlcedoSlider`. Models expose hard limits and soft rail limits. `CollapsibleSection` adds its body insets. | Use the current wrappers and model properties. Do not copy the former slider or add section padding twice. |
+| [GPU release PR #937](https://github.com/zidage/AlcedoStudio/pull/937) | Export and semantic generation can hold editor GPU resources. Rendering resumes after the last holder releases them. | Retain suspension routing for Geometry editing. Resource suspension is distinct from a transform validation or execution failure. |
 | [Open feature #459](https://github.com/zidage/AlcedoStudio/issues/459) | Rotate the entire image and canvas together, without cropping. The issue refers to closed #221. | Include its complete behavior in G0a–G0b and the cross-phase acceptance criteria. The document alone does not resolve the issue. |
 | [Open issue #712](https://github.com/zidage/AlcedoStudio/issues/712) | Two older viewer test groups lack targets after the CMake split. | Do not rely on those old target names as executable evidence. |
 | [Open issue #869](https://github.com/zidage/AlcedoStudio/issues/869) | Metal geometry resample and camera-color failures on main. | Record the existing issue when collecting Metal evidence. Do not assume every failure is new. |
@@ -75,6 +78,8 @@ The 2026-11-16 review recorded four document defects:
 [mapping specification #948](https://github.com/zidage/AlcedoStudio/issues/948), and
 [format migration #949](https://github.com/zidage/AlcedoStudio/issues/949).
 This revision corrects the plan. It does not claim product fixes or close these reports.
+The upstream synchronization also recorded the preview's shared-slider dependency in
+[issue #950](https://github.com/zidage/AlcedoStudio/issues/950).
 
 ## 3. External behavior references
 
@@ -105,6 +110,7 @@ Paths in this section start at `alcedo_studio/`.
 | Guides | `src/ui/editor_rhi/editor_overlay_item.cpp`, `BuildOverlaySceneGeometry()` | Generates dashed thirds at fixed fractions. No guide selector enters this function. Add guide paths and a selected guide input. |
 | Interaction | `src/ui/edit_viewer/crop_interaction_controller.cpp`; `src/ui/editor_rhi/editor_interaction_controller.cpp` | Own crop interaction and viewport mapping. Keep guides independent of handle hit testing. Extend coordinate mapping for transformed content. |
 | Parameters | `src/app/editor_parameter_catalog.cpp` | Owns the `crop_rotate` object, UI defaults, validation, conversion, and crop constraints. Add transform metadata and focused writes. |
+| Numeric controls | `src/ui/alcedo_main/qml/AdjustmentSlider.qml`, `AlcedoSlider.qml`; `src/include/ui/alcedo_main/album_backend/editor_adjustment_models.hpp` | The wrapper uses `minimum`/`maximum` and `railMinimum`/`railMaximum`. Rail and value drags use the same owner drag sequence. Add transform metadata without replacing these controls. |
 | Document | `src/include/edit/graph/image_geometry_model.hpp` | Owns crop rectangle, rotation, aspect preset, and aspect ratio. `ImageGeometryUpdate` updates selected fields. Extend this owner. |
 | Saved format | `src/edit/graph/pipeline_document.cpp`, `ValidateDocumentShape()` and `PipelineDocument::FromJson()`; `src/edit/history/pipeline_document_checkpoint.cpp` | The reader requires the current document format. Root and checkpoint readers also check format fields and canonical JSON. Extend these owners together before writing new geometry. |
 | Preferences and keys | `src/ui/alcedo_main/album_backend/editor_behavior_preferences.cpp`; `src/ui/alcedo_main/shortcut_registration.cpp`; `src/include/ui/alcedo_main/shortcut_registry.hpp` | `EditorBehaviorPreferences` uses `QSettings`. Add guide preferences there. Add a Geometry input scope and named commands to the existing shortcut registry. |
@@ -113,6 +119,7 @@ Paths in this section start at `alcedo_studio/`.
 | Geometry | `src/edit/geometry/render_geometry_resolver.cpp`; `src/include/edit/geometry/types.hpp` | Builds crop and rotation mappings. `TransformPoint()` omits homogeneous division. `InvertAffine()` assumes an affine matrix. Add explicit projective operations. |
 | GPU sampling | `src/edit/runtime/cuda/geometry_resample.cu`; `src/edit/runtime/metal/shader/geometry_resample.metal`; `src/edit/runtime/opencl/shader/geometry_camera.cl` | Current geometry sampling needs a projective audit. CUDA passes six matrix coefficients. Metal declares six coefficients. Nine stored host coefficients alone do not provide perspective sampling. |
 | Comparison | `src/ui/alcedo_main/album_backend/comparison_presentation_image.cpp` | Rejects a projective map. Extend placement and its QML consumer together. |
+| Presentation scheduling | `src/ui/alcedo_main/album_backend/editor_session_render_scheduler_port.cpp`; `src/app/editor_session_render_controller.cpp` | The scheduler reroutes frame requests while editor GPU resources are released for export or semantic generation. Use the current `SetSuspendedForGpuRelease` path and holder lifecycle. |
 | Tests | `tests/ui/editor_geometry_panel_qml_test.cpp`, `editor_geometry_math_test.cpp`, `editor_crop_interaction_test.cpp`; `tests/app/editor_geometry_overlay_pipeline_test.cpp`; `tests/edit/geometry/` | Existing coverage is for crop and rotation. New perspective assertions must drive production owners and render paths. |
 
 Current registered targets include `EditorGeometryMathTest`, `EditorGeometryPanelQmlTest`,
@@ -121,6 +128,13 @@ The last target includes crop-frame, resolver, and document-geometry-use tests.
 `EditorGeometryOverlayPipelineTest` currently checks CUDA resize behavior.
 Its target name alone is not crop-overlay integration evidence. Add the named integration cases below.
 This audit reads source. It does not claim that these tests passed during document creation.
+
+The upstream merge did not change `ImageGeometryModel`, the geometry resolver, geometry GPU
+sampling files, the Geometry panel, or the published format constants.
+The orientation and projective work below is still required.
+Upstream also changed RAW import defaults, profile tone-curve import, and Color Grade visibility.
+These remain owned by their existing import, document, and graph compiler paths.
+Geometry edits and resets must preserve those fields and the active graph's visibility state.
 
 ## 5. Proposed product design
 
@@ -131,6 +145,9 @@ Use the existing adjustment section components and `AppTheme` values.
 Follow [DESIGN.md](../../../../alcedo_studio/src/ui/alcedo_main/DESIGN.md).
 Use Qt Quick Controls Basic, `CollapsibleSection`, `AdjustmentSlider`, `AdjustmentCombo`,
 `ThemeCheckBox`, and `IconActionButton`. Do not introduce a second control style.
+`AdjustmentSlider` must retain the shared `AlcedoSlider` implementation.
+Pass only the content column's height to `CollapsibleSection.bodyContentHeight`.
+The section adds its own `spaceSm` body insets.
 Both sections start expanded. Use the existing 320 px preferred panel width and 260–460 px limits.
 Reset actions use the existing reset icon, with the distinct accessible names shown below.
 
@@ -161,6 +178,13 @@ The first selects the output frame shape. The second stretches image content.
 Use a separate tooltip to distinguish crop X/Y from image X/Y Offset.
 
 Transform sliders support numeric entry, keyboard adjustment, and reset to their default.
+Use the shared rail drag, numeric value drag, Shift adjustment, and double-click reset behavior.
+Use `beginDrag`, `updateDrag`, and `finishDrag` for both drag inputs.
+Typed values use `editValue` and `commitImmediately`; rail arrow keys use the model's settled-edit path.
+The transform ranges in Section 5.4 are the hard and soft limits alike.
+Set `railMinimum = minimum` and `railMaximum = maximum` for these models.
+Do not inherit Tone's extra ranges or add Geometry-specific soft limits.
+The numeric readout follows the shared control's font, tabular figures, and signed display.
 Release of a drag submits one settled history edit through the existing adjustment path.
 Reset Transform restores the six manual fields and Constrain Crop to their defaults.
 It preserves straightening and discrete orientation. It preserves framing unless the enabled
@@ -175,6 +199,7 @@ All three resets preserve guide preferences and section expansion state.
 Restoring a document, switching images, and opening a panel must not submit an edit.
 
 Disable image-dependent controls until source dimensions and an editable document are available.
+Keep the current editor action policy as the authority for edit availability.
 Keep numeric values visible during a render. Show a real validation or render error near the section.
 Use accessible names for every slider, selector, and icon action.
 Keep the normal focus order from top to bottom. Scroll the panel in a narrow window.
@@ -361,6 +386,10 @@ Reject an impossible constrained crop before changing the document or history.
 Report backend execution failures through the existing render error surface.
 Do not present an old image as the successful result of a failed transform.
 Do not change backend, decode resolution, or image quality after failure.
+An existing `PresentationSuspended` result during export or semantic GPU release is not a failure.
+Retain its existing pending-render and resume behavior through the render controller.
+After the last GPU holder releases its resources, reroute the current Geometry request on the same backend.
+Do not report a suspended frame as a completed transform or replace it with another render path.
 
 ### 5.6 Crop shortcuts and whole-image orientation
 
@@ -757,6 +786,7 @@ interaction presentation, translations, theme documentation if needed, and direc
 **Rules:** Load-only restore; one angle owner; separate crop and content controls; explicit failures.
 
 1. Add catalog-driven controls, section resets, numeric editing, and tooltips.
+   Supply the current slider models' hard and soft bounds, and preserve shared section inset ownership.
 2. Select G4's transformed editing view without clearing persistent document fields.
 3. Connect render errors and accessibility names. Verify focus and narrow-window scrolling.
 4. Exercise the complete workflow with real landscape, portrait, and architectural photographs.
@@ -766,10 +796,13 @@ interaction presentation, translations, theme documentation if needed, and direc
 Undo restores the prior accepted transform through the normal history owner.
 **Tests:** `TransformPanelRestoreDoesNotSubmitEdits`, `TransformDragCreatesOneSettledHistoryEntry`,
 `ResetTransformPreservesCropAndRotation`, and `LeavingGeometryRendersCompleteDocument`.
+Run the settled-drag assertion for both rail drag and numeric value drag through `AlcedoSlider`.
 The reset-preservation case uses a frame valid under the reset defaults.
 `TransformControlsUseDisplayedAxesAfterOrientation` checks catalog reads and writes in all eight states.
 `SectionResetsPreserveGuidesAndCreateOneHistoryEdit` checks owner updates rather than field-reset loops.
 `ResetCropWithManualTransformsKeepsConstrainedCoverage` checks the full-frame request and its adjustment.
+`GeometryResetPreservesImportLookAndGradeVisibility` checks the existing document fields.
+`GeometryPresentationResumesAfterLastGpuReleaseHolder` checks the existing scheduler and render owners.
 Use owner/service assertions first. Use focused QML property checks for layout and restore.
 **Commands:** Build `alcedo_main`, `EditorGeometryPanelQmlTest`, `EditorCropInteractionTest`,
 and `EditorGeometryOverlayPipelineTest`. Run these focused suites and affected direct callers.
@@ -781,8 +814,11 @@ with nondefault transforms. Record manual checks separately.
 
 ## 8. Verification and engineering limits
 
-This document-only change does not require a product build or test run.
+This plan and its standalone UI study do not require a product build or test run.
 The commands below are implementation instructions, not completed verification.
+The standalone preview's earlier startup and manual inspection predate upstream `95f0306a`.
+The upstream adaptation was checked by source inspection and diff checks only.
+No build, test suite, or new preview run was performed during the commit-and-sync request.
 
 Use PowerShell from the repository root on Windows.
 The example uses the Qt installation verified by the standalone preview.

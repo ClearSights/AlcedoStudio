@@ -35,6 +35,9 @@ ApplicationWindow {
     FontLoader {
         source: "PREVIEW_CONFIG_URL/fonts/main_Manrope.ttf"
     }
+    FontLoader {
+        source: "PREVIEW_CONFIG_URL/fonts/main_IBM.ttf"
+    }
 
     function resetCrop() {
         for (const value of [cropX, cropY, cropWidth, cropHeight, rotation, customWidth, customHeight])
@@ -490,7 +493,7 @@ ApplicationWindow {
                             id: cropSection
                             objectName: "previewCropSection"
                             title: qsTr("Crop & Rotate")
-                            bodyContentHeight: cropControls.implicitHeight + 2 * appTheme.spaceSm
+                            bodyContentHeight: cropControls.implicitHeight
                             headerActions: UI.IconActionButton {
                                 compact: true
                                 enabled: window.hasImage
@@ -626,7 +629,7 @@ ApplicationWindow {
                             id: transformSection
                             objectName: "previewTransformSection"
                             title: qsTr("Transform")
-                            bodyContentHeight: transformControls.implicitHeight + 2 * appTheme.spaceSm
+                            bodyContentHeight: transformControls.implicitHeight
                             headerActions: UI.IconActionButton {
                                 compact: true
                                 enabled: window.hasImage
