@@ -4275,8 +4275,8 @@ Refresh the library afterwards; they are listed under the User category. Import 
     </message>
     <message>
         <location line="+3"/>
-        <source>disabled</source>
-        <translation>已禁用</translation>
+        <source>hidden</source>
+        <translation>已隐藏</translation>
     </message>
     <message>
         <location line="+3"/>
@@ -4317,6 +4317,22 @@ Refresh the library afterwards; they are listed under the User category. Import 
         <location line="+70"/>
         <source>No masks</source>
         <translation>暂无蒙版</translation>
+    </message>
+    <message>
+        <source>Hide %1</source>
+        <translation>隐藏%1</translation>
+    </message>
+    <message>
+        <source>Show %1</source>
+        <translation>显示%1</translation>
+    </message>
+    <message>
+        <source>detached</source>
+        <translation>已断开</translation>
+    </message>
+    <message>
+        <source>Detached</source>
+        <translation>已断开</translation>
     </message>
 </context>
 <context>
@@ -4374,14 +4390,12 @@ Refresh the library afterwards; they are listed under the User category. Import 
         <translation>已反相</translation>
     </message>
     <message>
-        <location line="+1"/>
-        <source>Turn off Invert for %1</source>
-        <translation>取消反相%1</translation>
+        <source>Combine mode: Add</source>
+        <translation>合并方式：添加</translation>
     </message>
     <message>
-        <location line="+1"/>
-        <source>Invert %1</source>
-        <translation>反相%1</translation>
+        <source>Add</source>
+        <translation>添加</translation>
     </message>
 </context>
 <context>
@@ -5067,8 +5081,8 @@ Refresh the library afterwards; they are listed under the User category. Import 
         <translation>强对比度</translation>
     </message>
     <message>
-        <source>Film-like</source>
-        <translation>胶片感</translation>
+        <source>Cl. Digit</source>
+        <translation>经典数码</translation>
     </message>
 </context>
 <context>
@@ -8760,6 +8774,18 @@ CLIP / SigLIP 这类视觉语言模型会把图像和文字映射到同一语义
         <translation>只有色彩分级具有可编辑的删除保护</translation>
     </message>
     <message>
+        <source>Finish the node graph before showing or hiding a Color Grade</source>
+        <translation>请先完成节点图，再显示或隐藏色彩分级</translation>
+    </message>
+    <message>
+        <source>Only a Color Grade can be shown or hidden</source>
+        <translation>只有色彩分级可以显示或隐藏</translation>
+    </message>
+    <message>
+        <source>Connect the Mask Group in Nodes before moving it</source>
+        <translation>请先在节点页连接该图层（蒙版组），再移动它</translation>
+    </message>
+    <message>
         <location line="+20"/>
         <location line="+44"/>
         <source>Only a Color Grade can be deleted</source>
@@ -9599,6 +9625,144 @@ CLIP / SigLIP 这类视觉语言模型会把图像和文字映射到同一语义
     <message>
         <source>About %1 h %2 min remaining</source>
         <translation>剩余约 %1 小时 %2 分钟</translation>
+    </message>
+</context>
+<context>
+    <name>RawImportLookSettingsSection</name>
+    <message>
+        <source>RAW Import</source>
+        <translation>RAW 导入</translation>
+    </message>
+    <message>
+        <source>Exposure</source>
+        <translation>曝光</translation>
+    </message>
+    <message>
+        <source>Saturation</source>
+        <translation>饱和度</translation>
+    </message>
+    <message>
+        <source>Tone Curve</source>
+        <translation>色调曲线</translation>
+    </message>
+    <message>
+        <source>Display Transform</source>
+        <translation>显示变换</translation>
+    </message>
+    <message>
+        <source>OpenDRT Look</source>
+        <translation>OpenDRT 外观</translation>
+    </message>
+    <message>
+        <source>Lens Correction</source>
+        <translation>镜头校正</translation>
+    </message>
+    <message>
+        <source>Restore Defaults</source>
+        <translation>恢复默认</translation>
+    </message>
+</context>
+<context>
+    <name>alcedo::ui::RawImportLookSettingsModel</name>
+    <message>
+        <source>Linear</source>
+        <translation>线性</translation>
+    </message>
+    <message>
+        <source>Soft Contrast</source>
+        <translation>柔和对比度</translation>
+    </message>
+    <message>
+        <source>Medium Contrast</source>
+        <translation>中等对比度</translation>
+    </message>
+    <message>
+        <source>Strong Contrast</source>
+        <translation>强对比度</translation>
+    </message>
+    <message>
+        <source>Cl. Digit</source>
+        <translation>经典数码</translation>
+    </message>
+    <message>
+        <source>Kodak 2383</source>
+        <translation>Kodak 2383</translation>
+    </message>
+    <message>
+        <source>Velvia 50</source>
+        <translation>Velvia 50</translation>
+    </message>
+    <message>
+        <source>Ektachrome E100</source>
+        <translation>Ektachrome E100</translation>
+    </message>
+    <message>
+        <source>Contrast</source>
+        <translation>对比度</translation>
+    </message>
+    <message>
+        <source>Rendering</source>
+        <translation>渲染</translation>
+    </message>
+    <message>
+        <source>Film</source>
+        <translation>胶片</translation>
+    </message>
+    <message>
+        <source>ACES 2.0</source>
+        <translation>ACES 2.0</translation>
+    </message>
+    <message>
+        <source>OpenDRT</source>
+        <translation>OpenDRT</translation>
+    </message>
+    <message>
+        <source>Standard</source>
+        <translation>标准</translation>
+    </message>
+    <message>
+        <source>Arriba</source>
+        <translation>Arriba</translation>
+    </message>
+    <message>
+        <source>Sylvan</source>
+        <translation>Sylvan</translation>
+    </message>
+    <message>
+        <source>Colorful</source>
+        <translation>多彩</translation>
+    </message>
+    <message>
+        <source>Aery</source>
+        <translation>Aery</translation>
+    </message>
+    <message>
+        <source>Dystopic</source>
+        <translation>Dystopic</translation>
+    </message>
+    <message>
+        <source>Umbra</source>
+        <translation>Umbra</translation>
+    </message>
+    <message>
+        <source>Exposure must be from -10 to +10 EV.</source>
+        <translation>曝光必须在 -10 到 +10 EV 之间。</translation>
+    </message>
+    <message>
+        <source>Saturation must be from -100 to +100.</source>
+        <translation>饱和度必须在 -100 到 +100 之间。</translation>
+    </message>
+    <message>
+        <source>No Tone Curve preset has the id %1.</source>
+        <translation>没有 ID 为 %1 的色调曲线预设。</translation>
+    </message>
+    <message>
+        <source>The display transform must be ACES 2.0 or OpenDRT.</source>
+        <translation>显示变换必须是 ACES 2.0 或 OpenDRT。</translation>
+    </message>
+    <message>
+        <source>No OpenDRT look preset has the id %1.</source>
+        <translation>没有 ID 为 %1 的 OpenDRT 外观预设。</translation>
     </message>
 </context>
 </TS>
