@@ -22,11 +22,13 @@ ApplicationWindow {
 
     // Window dimensions and schematic crop placement are preview composition,
     // not new product tokens. Shared chrome keeps its AppTheme dimensions.
-    readonly property bool hasImage: previewState.currentIndex !== 1
-    property bool aspectLocked: true
+    readonly property bool hasImage: previewState.currentValue !== "empty"
+    readonly property bool aspectLocked: aspect.currentValue !== "free"
     property bool constrainCrop: true
     property string lastAction: qsTr("Static crop overlay. Image transforms are not connected.")
-    property int guideOrientation: 0
+    property int triangleOrientation: 0
+    property int spiralOrientation: 0
+    property bool guidePreferenceInvalid: false
 
     FontLoader {
         id: inter
@@ -43,12 +45,37 @@ ApplicationWindow {
         for (const value of [cropX, cropY, cropWidth, cropHeight, rotation, customWidth, customHeight])
             value.reset();
         aspect.reset();
-        aspectLocked = true;
     }
     function resetTransform() {
         for (const value of [vertical, horizontal, stretch, scale, offsetX, offsetY])
             value.reset();
         constrainCrop = true;
+    }
+    function setAspectLocked(locked) {
+        if (!locked) {
+            aspect.selectIndex(0);
+        } else {
+            // The schematic source is 3:2. Project only the sample menu and fields.
+            customWidth.editValue(cropWidth.value * 3);
+            customHeight.editValue(cropHeight.value * 2);
+            aspect.selectIndex(1);
+        }
+    }
+    function changeGuideOrientation() {
+        const spiral = guide.currentValue === "spiral";
+        if (spiral)
+            spiralOrientation = (spiralOrientation + 1) % 4;
+        else
+            triangleOrientation = (triangleOrientation + 1) % 2;
+        lastAction = qsTr("Guide orientation %1 selected. UI preview only.")
+            .arg((spiral ? spiralOrientation : triangleOrientation) + 1);
+    }
+    function resetGuide() {
+        guide.reset();
+        guideVisibility.reset();
+        triangleOrientation = 0;
+        spiralOrientation = 0;
+        previewState.selectIndex(0);
     }
 
     PreviewChoice {
@@ -66,15 +93,19 @@ ApplicationWindow {
             {
                 value: "error",
                 label: qsTr("Validation error")
+            },
+            {
+                value: "guide_error",
+                label: qsTr("Guide preference error")
             }
         ]
+        onCurrentValueChanged: window.guidePreferenceInvalid = currentValue === "guide_error"
     }
     PreviewChoice {
         id: aspect
         label: qsTr("Aspect")
         enabled: window.hasImage
-        defaultIndex: 2
-        currentIndex: defaultIndex
+        currentIndex: 2
         entries: [
             {
                 value: "free",
@@ -89,7 +120,7 @@ ApplicationWindow {
                 label: qsTr("1.5:1 (native or VistaVision)")
             },
             {
-                value: "ratio_2_35_1",
+                value: "ratio_2_35_1_35mm",
                 label: qsTr("2.35:1 (35mm)")
             },
             {
@@ -101,27 +132,27 @@ ApplicationWindow {
                 label: qsTr("16:9")
             },
             {
-                value: "ratio_1_9_1",
+                value: "ratio_1_9_1_imax",
                 label: qsTr("1.9:1 (IMAX)")
             },
             {
-                value: "ratio_1_85_1",
+                value: "ratio_1_85_1_dci",
                 label: qsTr("1.85:1 (DCI)")
             },
             {
-                value: "ratio_2_2_1",
+                value: "ratio_2_2_1_70mm",
                 label: qsTr("2.2:1 (70mm)")
             },
             {
-                value: "ratio_1_43_1",
+                value: "ratio_1_43_1_70mm_imax",
                 label: qsTr("1.43:1 (70mm IMAX)")
             },
             {
-                value: "ratio_4_3",
+                value: "ratio_4_3_35mm",
                 label: qsTr("4:3 (35mm)")
             },
             {
-                value: "ratio_2_76_1",
+                value: "ratio_2_76_1_panavision_ultra",
                 label: qsTr("2.76:1 (Panavision Ultra)")
             }
         ]
@@ -164,6 +195,12 @@ ApplicationWindow {
         ]
     }
     PreviewChoice {
+        id: invalidGuide
+        label: qsTr("Guide")
+        enabled: false
+        entries: [{ value: "invalid", label: qsTr("Unknown saved guide") }]
+    }
+    PreviewChoice {
         id: guideVisibility
         label: qsTr("Show guide")
         enabled: window.hasImage
@@ -185,25 +222,31 @@ ApplicationWindow {
     PreviewValue {
         id: customWidth
         label: qsTr("Custom width")
-        minimum: 0.1
+        minimum: 0.0001
         maximum: 100
-        defaultValue: 3
+        defaultValue: 1
+        value: 3
+        step: 0.01
+        precision: 2
         enabled: window.hasImage
     }
     PreviewValue {
         id: customHeight
         label: qsTr("Custom height")
-        minimum: 0.1
+        minimum: 0.0001
         maximum: 100
-        defaultValue: 2
+        defaultValue: 1
+        value: 2
+        step: 0.01
+        precision: 2
         enabled: window.hasImage
     }
     PreviewValue {
         id: cropX
         label: qsTr("Crop X")
-        minimum: 0
+        minimum: -1
         maximum: 1
-        defaultValue: 0.08
+        value: 0.08
         precision: 3
         step: 0.001
         enabled: window.hasImage
@@ -211,9 +254,9 @@ ApplicationWindow {
     PreviewValue {
         id: cropY
         label: qsTr("Crop Y")
-        minimum: 0
+        minimum: -1
         maximum: 1
-        defaultValue: 0.08
+        value: 0.08
         precision: 3
         step: 0.001
         enabled: window.hasImage
@@ -221,9 +264,10 @@ ApplicationWindow {
     PreviewValue {
         id: cropWidth
         label: qsTr("Crop width")
-        minimum: 0.001
+        minimum: 0.0001
         maximum: 1
-        defaultValue: 0.84
+        defaultValue: 1
+        value: 0.84
         precision: 3
         step: 0.001
         enabled: window.hasImage
@@ -231,9 +275,10 @@ ApplicationWindow {
     PreviewValue {
         id: cropHeight
         label: qsTr("Crop height")
-        minimum: 0.001
+        minimum: 0.0001
         maximum: 1
-        defaultValue: 0.84
+        defaultValue: 1
+        value: 0.84
         precision: 3
         step: 0.001
         enabled: window.hasImage
@@ -241,8 +286,8 @@ ApplicationWindow {
     PreviewValue {
         id: rotation
         label: qsTr("Rotation")
-        minimum: -45
-        maximum: 45
+        minimum: -180
+        maximum: 180
         suffix: "°"
         enabled: window.hasImage
     }
@@ -542,11 +587,9 @@ ApplicationWindow {
                                             actionName: modelData.name
                                             toolTipText: actionName === qsTr("Swap Aspect") ? qsTr("Swap Aspect (X)") : actionName
                                             onClicked: window.lastAction = qsTr("%1 selected. UI preview only.").arg(actionName)
-                                            Label {
+                                            PreviewActionGlyph {
                                                 anchors.centerIn: parent
-                                                text: parent.modelData.symbol
-                                                font.pixelSize: appTheme.iconOpticalSize
-                                                color: window.hasImage ? appTheme.iconColor : appTheme.textMutedColor
+                                                symbol: parent.modelData.symbol
                                             }
                                         }
                                     }
@@ -559,10 +602,10 @@ ApplicationWindow {
                                 }
                                 UI.ThemeCheckBox {
                                     text: qsTr("Lock aspect ratio")
-                                    enabled: window.hasImage && aspect.currentValue !== "free"
+                                    enabled: window.hasImage
                                     checked: window.aspectLocked
                                     onToggled: function (checked) {
-                                        window.aspectLocked = checked;
+                                        window.setAspectLocked(checked);
                                     }
                                 }
                                 UI.AdjustmentSlider {
@@ -583,6 +626,7 @@ ApplicationWindow {
                                 UI.AdjustmentSlider {
                                     model: cropY
                                     flickable: scroller
+                                    infoText: qsTr("Position of the crop frame. Y Offset in Transform moves image content.")
                                 }
                                 UI.AdjustmentSlider {
                                     model: cropWidth
@@ -600,7 +644,8 @@ ApplicationWindow {
                                     Layout.fillWidth: true
                                     spacing: appTheme.spaceXs
                                     UI.AdjustmentCombo {
-                                        model: guide
+                                        model: window.guidePreferenceInvalid ? invalidGuide : guide
+                                        warning: window.guidePreferenceInvalid
                                         showResetButton: false
                                         controlObjectName: "previewGuideSelector"
                                     }
@@ -608,19 +653,36 @@ ApplicationWindow {
                                         compact: true
                                         actionName: qsTr("Change guide orientation")
                                         toolTipText: qsTr("Change guide orientation (Shift+O)")
-                                        enabled: window.hasImage && ["spiral", "triangle"].indexOf(guide.currentValue) >= 0
-                                        onClicked: window.guideOrientation += 1
-                                        Label {
+                                        enabled: window.hasImage && !window.guidePreferenceInvalid
+                                                 && ["spiral", "triangle"].indexOf(guide.currentValue) >= 0
+                                        onClicked: window.changeGuideOrientation()
+                                        PreviewActionGlyph {
                                             anchors.centerIn: parent
-                                            text: "↷"
-                                            font.pixelSize: appTheme.iconOpticalSize
-                                            color: parent.enabled ? appTheme.iconColor : appTheme.textMutedColor
+                                            symbol: "↷"
                                         }
                                     }
                                 }
                                 UI.AdjustmentCombo {
                                     model: guideVisibility
                                     showResetButton: false
+                                }
+                                Label {
+                                    Layout.fillWidth: true
+                                    visible: window.guidePreferenceInvalid
+                                    text: qsTr("The saved guide preference is invalid. Reset Guide to restore the default preferences.")
+                                    color: appTheme.dangerColor
+                                    font.pixelSize: appTheme.fontSizeCaption
+                                    wrapMode: Text.Wrap
+                                }
+                                UI.DialogActionButton {
+                                    objectName: "previewResetGuide"
+                                    visible: window.guidePreferenceInvalid
+                                    enabled: window.hasImage
+                                    text: qsTr("Reset Guide")
+                                    Accessible.name: text
+                                    buttonHeight: appTheme.iconButtonHitSizeCompact
+                                    font.pixelSize: appTheme.fontSizeBody
+                                    onClicked: window.resetGuide()
                                 }
                             }
                         }

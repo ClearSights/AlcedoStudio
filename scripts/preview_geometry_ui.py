@@ -17,7 +17,7 @@ CONFIG = ROOT / "alcedo_studio/src/config"
 PREVIEW = ROOT / "ui_previews/geometry"
 COMPONENTS = (
     "AdjustmentSlider", "AlcedoSlider", "AdjustmentCombo", "AdjustmentResetButton", "IconActionButton",
-    "CollapsibleSection", "EditorInfoHint", "ThemeCheckBox",
+    "CollapsibleSection", "EditorInfoHint", "ThemeCheckBox", "DialogActionButton",
 )
 
 
