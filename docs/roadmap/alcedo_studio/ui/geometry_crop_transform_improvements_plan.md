@@ -4,7 +4,7 @@ Date: 2026-11-14
 
 Revised: 2026-11-21
 
-Status: UI layout approved from the standalone QML preview. Product implementation has not started.
+Status: UI layout approved from the standalone QML preview. A1 is complete and verified locally.
 The numerical and persistence design below remains an implementation proposal.
 
 Parent: Standalone extension to the editor workspace roadmap.
@@ -668,7 +668,7 @@ Reread `AGENTS.md`, `CONTRIBUTING.md`, and the applicable skills before each PR.
 Use `alcedo-qml-ui`, `alcedo-msvc-cmake`, and `opencl-program-registry` where their scopes apply.
 Review and merge one row per PR. Base each PR on the preceding merged work in the order shown.
 The dependency column records the work each PR needs. The review order also keeps shared files
-and format revisions easy to review. All implementation rows have planned status.
+and format revisions easy to review. Use the phase completion records for implementation status.
 
 | PR | Result | Main owners | Required prior PRs | Expected changed lines | Review scope |
 | --- | --- | --- | --- | ---: | --- |
@@ -890,7 +890,66 @@ Add `AspectMenuUsesReviewedLabelsAndOrderForExistingPresets` and
 height pair. Restore the saved `ratio_1_5_1_native_vistavision` as `3:2` without a submitted edit.
 Build `EditorGeometryMathTest`, `EditorParameterCatalogTest`, and `EditorGeometryPanelQmlTest`.
 Use Section 8 to discover and run their focused cases.
-Completion record pending. Use Section 9.
+#### A1 completion record (2026-11-21)
+
+**Status** Complete and verified locally.
+
+Branch `feature/geometry-crop-transform-a1` starts at upstream `main`
+revision `61d59bc98afad3be7b0d855bebdb86d7b9225e62`.
+The phase changes the preset table and its tests. All twelve identifiers and numeric pairs match
+the base revision. The English and Chinese catalogs contain no previous keys for the renamed labels.
+
+**Success, restore, and failure paths**
+
+```text
+CropAspectPresetOptions -> EditorParameterCatalog -> catalog adapter -> Geometry Aspect menu
+Saved identifier -> panel state projection -> indexOfAspect -> ComboBox selection, with no write
+Preset selection -> catalog crop constraint -> typed geometry update with the same stored identifier
+Invalid identifier -> catalog option validation -> error before a model write
+```
+
+**Verification**
+
+| Behavior | Executed tests | Result |
+| --- | --- | --- |
+| All current labels, order, IDs, and numeric pairs | `AspectMenuUsesReviewedLabelsAndOrderForExistingPresets`, `CatalogJsonListsEveryEntryWithUiRange` | Pass |
+| A saved 3:2 ID restores the new label and the same crop without a write | `SavedPresetSelectionSurvivesLabelAndOrderChanges` | Pass |
+| Stable IDs remain valid and display labels are rejected as input | `CropPresetWriteRequiresIdentifierInsteadOfDisplayLabel` | Pass |
+| A preset selection makes one settled crop write and fits the source orientation | `SelectingAspectPresetSubmitsOneSettledCropOfThatShape`, `SelectingLandscapePresetOrientsCropForPortraitImage` | Pass |
+
+Build, discovery, and test exits were all 0 after matching the local MSVC and Qt runtime.
+CTest found 68 cases. All 68 passed, with zero failures or skips.
+`EditorGeometryMathTest` passed 5, `EditorParameterCatalogTest` passed 53, and
+`EditorGeometryPanelQmlTest` passed 10.
+
+```powershell
+$env:VCVARS_USER_VERSION = '14.44.35207'
+cmd /c scripts\msvc_env.cmd --build --preset win_debug --target EditorGeometryMathTest EditorParameterCatalogTest EditorGeometryPanelQmlTest --parallel 4
+$alcedoDebugBins = (Resolve-Path 'vcpkg/installed/x64-windows/debug/bin').Path
+$env:PATH = "C:/Qt/6.12.0/msvc2022_64/bin;$alcedoDebugBins;$env:PATH"
+ctest --test-dir build/debug -N -R '^(EditorGeometryMathTest|EditorParameterCatalogTest|EditorGeometryPanelQmlTest)\.'
+ctest --test-dir build/debug -R '^(EditorGeometryMathTest|EditorParameterCatalogTest|EditorGeometryPanelQmlTest)\.' --output-on-failure -j 1
+```
+
+**Review**
+
+Two selection tests used row numbers. They now find entries by identifier. A separate test checks
+the exact order. The catalog still constructs its option projection once. The table change
+adds no work to crop edits and introduces no new function or data owner.
+
+| Changed source or test | Total lines | Added | Removed |
+| --- | ---: | ---: | ---: |
+| `geometry.cpp` | 221 | 9 | 10 |
+| `editor_geometry_math_test.cpp` | 116 | 34 | 7 |
+| `editor_parameter_catalog_test.cpp` | 1853 | 27 | 3 |
+| `editor_geometry_panel_qml_test.cpp` | 560 | 50 | 6 |
+
+The catalog test file covers several parameter families. Its crop projection helper and crop
+write cases form a separate test responsibility under the existing CMake target.
+A1 keeps the current test sources and target registration.
+
+The restore test starts from the panel projection of a saved crop. QML coverage uses an
+offscreen component. The phase verification covers the revised menu, crop selection, and restore.
 
 ### A2. Aspect lock and Swap Aspect
 
