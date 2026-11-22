@@ -2,7 +2,7 @@
 
 Date: 2026-11-14
 
-Revised: 2026-11-21
+Revised: 2026-11-22
 
 Status: UI layout approved from the standalone QML preview. A1 is complete and verified locally.
 The numerical and persistence design below remains an implementation proposal.
@@ -250,8 +250,8 @@ Do not shrink labels until they become unreadable.
 | 5 | 3:2 | `ratio_1_5_1_native_vistavision` | `1.5, 1.0` |
 | 6 | 4:3 | `ratio_4_3_35mm` | `4.0, 3.0` |
 | 7 | 16:9 | `ratio_16_9` | `16.0, 9.0` |
-| 8 | 1.43:1 (IMAX) | `ratio_1_43_1_70mm_imax` | `1.43, 1.0` |
-| 9 | 1.85:1 (Flat) | `ratio_1_85_1_dci` | `1.85, 1.0` |
+| 8 | 1.43:1 (70mm IMAX) | `ratio_1_43_1_70mm_imax` | `1.43, 1.0` |
+| 9 | 1.85:1 (DCI Flat) | `ratio_1_85_1_dci` | `1.85, 1.0` |
 | 10 | 1.90:1 (IMAX) | `ratio_1_9_1_imax` | `1.9, 1.0` |
 | 11 | 2.20:1 (70 mm) | `ratio_2_2_1_70mm` | `2.2, 1.0` |
 | 12 | 2.35:1 (CinemaScope) | `ratio_2_35_1_35mm` | `2.35, 1.0` |
@@ -279,9 +279,9 @@ The cinema sources below use decimal names. Equivalent integer pairs give the sa
 
 | Label | Integer equivalent | Reason and reference |
 | --- | ---: | --- |
-| 1.43:1 (IMAX) | 143:100 | IMAX uses this ratio for film and some laser presentations. [IMAX film and laser presentations](https://www.imax.com/news/one-battle-after-another-in-imax) |
-| 1.85:1 (Flat) | 37:20 | Digital Cinema Initiatives calls this image format Flat. [DCI compliance test plan](https://ctp.dcimovies.com/0b5699a0b76a57547576565b89fd052467c8ac20/ctp-diff.html) |
-| 1.90:1 (IMAX) | 19:10 | IMAX writes the value as `1.90:1`. [Filmed for IMAX](https://www.imax.com/filmed-for-imax) |
+| 1.43:1 (70mm IMAX) | 143:100 | IMAX identifies 1.43:1 as the expanded ratio for 15-perforation 70 mm film presentations of *Oppenheimer*. The film name distinguishes the two IMAX presets in the menu. Some IMAX laser presentations also use 1.43:1. [IMAX 70 mm film](https://www.imax.com/news/oppenheimer-in-imax-70mm), [IMAX film and laser presentations](https://www.imax.com/news/sinners-imax) |
+| 1.85:1 (DCI Flat) | 37:20 | Digital Cinema Initiatives specifies 1.85:1 for its DCI Flat Transition Sequence. The DCI name identifies the digital cinema format in the menu. [DCI compliance test plan, section A.2.23](https://ctp.dcimovies.com/a4cfc7b0e4f82e3598ef4ce277d756aa5e59cc38/ctp.html) |
+| 1.90:1 (IMAX) | 19:10 | IMAX lists this ratio as `1.90:1`. Keep both decimal places and the IMAX name. [Filmed for IMAX](https://www.imax.com/filmed-for-imax) |
 | 2.20:1 (70 mm) | 11:5 | Sony Pictures uses `2.20:1` for flat 65 mm features presented on 70 mm film. [Sony Pictures master and archive specifications](https://partnerzone.sonypictures.com/imf-specification.html) |
 | 2.35:1 (CinemaScope) | 47:20 | This is the historical 35 mm anamorphic ratio. Modern Scope uses 2.39:1. A 2.39:1 option is outside this menu revision. [ARRI anamorphic white paper](https://www.arri.com/resource/blob/178026/228c1a0523ed25947174567833cd8fb4/anamorphic-de-squeeze-white-paper-data.pdf) |
 | 2.76:1 (Ultra Panavision 70) | 69:25 | Use the published name of the 70 mm anamorphic format. [American Society of Cinematographers](https://theasc.com/post/feature/ultra-panavision-70/) |
