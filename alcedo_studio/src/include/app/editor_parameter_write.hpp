@@ -77,6 +77,15 @@ using EditorCurveWrite = CurveUpdate;
  */
 using EditorLutWrite       = LmtUpdate;
 
+/// Rotate in the current displayed axes. The viewport supplies the source extent at submission.
+struct EditorRotateImageWrite {
+  QuarterTurnDirection direction;
+  Extent2D             source;
+};
+
+/// Reset the Crop and Rotate section using the document owner's defaults.
+struct EditorResetCropRotateWrite {};
+
 /**
  * @brief One field write as a concrete Model operation.
  *
@@ -89,7 +98,8 @@ using EditorParameterWrite =
                  EditorLutWrite, HlsUpdate, ColorWheelUpdate, Cat02WhiteBalanceUpdate,
                  SharpenUpdate, DevelopRawDecodeUpdate, DevelopColorTemperatureUpdate,
                  DevelopLensCalibrationUpdate, DevelopInputProfileUpdate, DrtParameterUpdate,
-                 ImageGeometryUpdate, DrtFilmFormatUpdate, DevelopCameraProfileFileUpdate>;
+                 ImageGeometryUpdate, EditorRotateImageWrite, EditorResetCropRotateWrite,
+                 DrtFilmFormatUpdate, DevelopCameraProfileFileUpdate>;
 
 /**
  * @brief Parse a field JSON object into the matching Model operation.

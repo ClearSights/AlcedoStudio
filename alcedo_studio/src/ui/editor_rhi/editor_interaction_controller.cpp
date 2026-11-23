@@ -13,6 +13,7 @@
 #include <cmath>
 #include <mutex>
 
+#include "edit/geometry/frame_orientation.hpp"
 #include "ui/editor_rhi/ai_mask_input_overlay_item.hpp"
 #include "ui/editor_rhi/editor_overlay_item.hpp"
 #include "ui/editor_rhi/editor_viewport_item.hpp"
@@ -89,6 +90,11 @@ auto EditorInteractionController::cropRectNormalized() const -> QRectF {
 
 auto EditorInteractionController::cropRotationDegrees() const -> float {
   return viewer_state_.GetCropOverlay().rotation_degrees;
+}
+
+auto EditorInteractionController::rotationLabelDegrees() const -> float {
+  const float angle = cropRotationDegrees();
+  return FrameOrientationReflects(displayed_mask_geometry_.orientation) ? -angle : angle;
 }
 
 auto EditorInteractionController::aspectLocked() const -> bool {

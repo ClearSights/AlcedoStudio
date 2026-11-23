@@ -154,6 +154,7 @@ struct EditorPanelGeometryValue {
   float           rotation_degrees = 0.0f;
   std::string     aspect_preset;
   CropAspectRatio aspect_ratio{};
+  FrameOrientation orientation = FrameOrientation::Identity;
 };
 
 using EditorPanelFieldValue =

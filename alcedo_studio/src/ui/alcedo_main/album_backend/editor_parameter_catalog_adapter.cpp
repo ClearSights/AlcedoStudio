@@ -11,13 +11,16 @@
 #include <algorithm>
 #include <array>
 #include <cstdint>
+#include <exception>
 #include <json.hpp>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 
 #include "app/editor_parameter_catalog.hpp"
 #include "app/film_stock_presentation.hpp"
+#include "edit/geometry/frame_orientation.hpp"
 #include "edit/graph/film_print_model.hpp"
 #include "utils/diagnostics/app_logging.hpp"
 
@@ -273,6 +276,52 @@ QVariantMap EditorParameterCatalogAdapter::constrainCrop(const QVariantMap& crop
   }
   return ToVariantMap(EditorParameterCatalog::ConstrainCrop(*state, ParseCropDriver(driver),
                                                             ToSource(sourceWidth, sourceHeight)));
+}
+
+QVariantMap EditorParameterCatalogAdapter::projectCrop(const QVariantMap& cropState,
+                                                       const QString&     orientation,
+                                                       bool               toDisplayed) const {
+  try {
+    const auto mapping = ParseFrameOrientation(orientation.toStdString());
+    if (mapping == FrameOrientation::Identity) {
+      return cropState;
+    }
+    return ToVariantMap(EditorParameterCatalog::ProjectCropUi(
+        ToJson(cropState), toDisplayed ? mapping : InverseFrameOrientation(mapping)));
+  } catch (const std::exception& error) {
+    qCWarning(alcedo::diag::editorLog, "EditorParameterCatalog: %s", error.what());
+    return {};
+  }
+}
+
+QVariantMap EditorParameterCatalogAdapter::constrainDisplayedCrop(
+    const QVariantMap& cropState, const QString& driver, int sourceWidth, int sourceHeight,
+    const QString& orientation) const {
+  try {
+    const auto mapping = ParseFrameOrientation(orientation.toStdString());
+    std::string error;
+    auto        crop = ValidCropState(cropState, &error);
+    if (!crop) {
+      qCWarning(alcedo::diag::editorLog, "EditorParameterCatalog: %s", error.c_str());
+      return {};
+    }
+    auto stored_driver = ParseCropDriver(driver);
+    if (FrameOrientationSwapsAxes(mapping)) {
+      if (stored_driver == EditorCropDriver::Width) {
+        stored_driver = EditorCropDriver::Height;
+      } else if (stored_driver == EditorCropDriver::Height) {
+        stored_driver = EditorCropDriver::Width;
+      }
+    }
+    const auto stored =
+        EditorParameterCatalog::ProjectCropUi(std::move(*crop), InverseFrameOrientation(mapping));
+    auto constrained = EditorParameterCatalog::ConstrainCrop(
+        stored, stored_driver, ToSource(sourceWidth, sourceHeight));
+    return ToVariantMap(EditorParameterCatalog::ProjectCropUi(std::move(constrained), mapping));
+  } catch (const std::exception& error) {
+    qCWarning(alcedo::diag::editorLog, "EditorParameterCatalog: %s", error.what());
+    return {};
+  }
 }
 
 QVariant EditorParameterCatalogAdapter::cropLockedAspectRatio(const QVariantMap& cropState,

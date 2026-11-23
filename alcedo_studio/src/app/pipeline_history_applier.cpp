@@ -15,10 +15,11 @@
 #include "app/editor_adjustment_pipeline.hpp"
 #include "app/editor_pipeline_command_service.hpp"
 #include "app/pipeline_document_history.hpp"
+#include "edit/geometry/frame_orientation.hpp"
+#include "edit/geometry/types.hpp"
 #include "edit/graph/color_grade_node_model.hpp"
 #include "edit/graph/pipeline_graph_commands.hpp"
 #include "edit/history/commit_graph.hpp"
-#include "edit/geometry/types.hpp"
 #include "edit/mask/mask_model.hpp"
 
 namespace alcedo {
@@ -112,6 +113,12 @@ auto DevelopFieldOwnedKeys(std::string_view field_key) -> const std::vector<std:
 /// fields own their whole Model JSON and are returned unchanged.
 auto FieldOwnedParameterJson(std::string_view field_key, const nlohmann::json& json)
     -> nlohmann::json {
+  // An old crop value represents identity orientation. Compare it without changing its commit.
+  if (field_key == "crop_rotate" && json.is_object() && !json.contains("orientation")) {
+    auto geometry           = json;
+    geometry["orientation"] = FrameOrientationId(FrameOrientation::Identity);
+    return geometry;
+  }
   const auto* keys = DevelopFieldOwnedKeys(field_key);
   if (keys == nullptr || !json.is_object()) {
     return json;

@@ -11,6 +11,8 @@
 #include <variant>
 #include <vector>
 
+#include "edit/geometry/frame_orientation.hpp"
+
 namespace alcedo::ui {
 namespace {
 
@@ -200,6 +202,10 @@ auto FieldMap(const alcedo::EditorPanelFieldPresentation& field) -> QVariantMap 
           QVariantMap crop;
           crop.insert(QStringLiteral("crop_rect"), rect);
           crop.insert(QStringLiteral("angle_degrees"), value.rotation_degrees);
+          const auto orientation = alcedo::FrameOrientationId(value.orientation);
+          crop.insert(
+              QStringLiteral("orientation"),
+              QString::fromLatin1(orientation.data(), static_cast<qsizetype>(orientation.size())));
           crop.insert(QStringLiteral("aspect_ratio_preset"), String(value.aspect_preset));
           QVariantMap aspect;
           aspect.insert(QStringLiteral("width"), value.aspect_ratio.width);

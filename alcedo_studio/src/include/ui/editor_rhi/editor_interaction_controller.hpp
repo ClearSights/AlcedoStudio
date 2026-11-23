@@ -74,7 +74,7 @@ class EditorInteractionController : public QObject {
                  overlayGeometryChanged)
   Q_PROPERTY(int cursorShape READ cursorShape NOTIFY cursorChanged)
   Q_PROPERTY(bool hasCustomCursor READ hasCustomCursor NOTIFY cursorChanged)
-  Q_PROPERTY(float rotationLabelDegrees READ rotationLabelDegrees NOTIFY cropChanged)
+  Q_PROPERTY(float rotationLabelDegrees READ rotationLabelDegrees NOTIFY overlayGeometryChanged)
   Q_PROPERTY(QPointF angleBadgeItemPos READ angleBadgeItemPos NOTIFY overlayGeometryChanged)
   Q_PROPERTY(bool overlayGeometryValid READ overlayGeometryValid NOTIFY overlayGeometryChanged)
   Q_PROPERTY(bool interactionEnabled READ interactionEnabled WRITE setInteractionEnabled NOTIFY
@@ -136,7 +136,8 @@ class EditorInteractionController : public QObject {
     return static_cast<int>(cursor_.value_or(Qt::ArrowCursor));
   }
   [[nodiscard]] auto hasCustomCursor() const -> bool { return cursor_.has_value(); }
-  [[nodiscard]] auto rotationLabelDegrees() const -> float { return cropRotationDegrees(); }
+  /// Straightening angle in the displayed axes, including the sign change under reflection.
+  [[nodiscard]] auto  rotationLabelDegrees() const -> float;
   [[nodiscard]] auto angleBadgeItemPos() const -> QPointF;
   [[nodiscard]] auto overlayGeometryValid() const -> bool;
   [[nodiscard]] auto interactionEnabled() const -> bool { return interaction_enabled_; }
@@ -181,7 +182,7 @@ class EditorInteractionController : public QObject {
   // Ctrl. A trackpad scroll pans, and zooms only when Ctrl is held.
   Q_INVOKABLE void handleWheel(qreal x, qreal y, int angleDeltaY, int pixelDeltaX, int pixelDeltaY,
                                int modifiers, bool synthesized);
-  // Relative pinch step (ZoomNativeGesture-style): zoom *= (1 + scaleDelta).
+  // Relative pinch step: zoom *= (1 + scaleDelta).
   // Prefer handlePinchTo for Qt Quick PinchHandler.
   Q_INVOKABLE void handlePinch(qreal x, qreal y, qreal scaleDelta);
   // Absolute pinch target zoom (fit-relative field). QML PinchHandler should

@@ -263,6 +263,8 @@ class EditorSessionController final : public QObject, public IEditorAdjustmentSu
   // parameters or history were updated. These are user writes: they are refused while an
   // automation agent holds control (InteractionPolicyController::canChangeStateAsUser).
   Q_INVOKABLE bool   submitPatch(QString fieldKey, QString paramsJson, bool settled) override;
+  /// Submit a named geometry command as one settled edit. An empty result means it was queued.
+  Q_INVOKABLE QString submitGeometryCommand(const QString& command);
   auto               submitWrite(QString fieldKey, alcedo::EditorParameterWrite write, bool settled)
       -> bool override;
   /**

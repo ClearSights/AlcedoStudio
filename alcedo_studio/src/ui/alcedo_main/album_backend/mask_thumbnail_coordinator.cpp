@@ -145,6 +145,7 @@ auto MaskThumbnailCoordinator::MakeGeometry(const alcedo::PipelineDocument& docu
   geometry.full_reference    = full_reference_;
   geometry.crop_rect         = document.Geometry().CropRect();
   geometry.rotation_degrees  = document.Geometry().RotationDegrees();
+  geometry.orientation       = document.Geometry().Orientation();
   return geometry;
 }
 

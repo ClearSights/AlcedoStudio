@@ -207,7 +207,14 @@ auto ApplyEditorParameterWrite(PipelineDocument& document, const EditorParameter
         return true;
       }
       case EditorParameterOwnerKind::Document: {
-        document.Geometry().ApplyUpdate(RequireWrite<ImageGeometryUpdate>(write, target.field_key));
+        auto& geometry = document.Geometry();
+        if (const auto* turn = std::get_if<EditorRotateImageWrite>(&write)) {
+          geometry.RotateImageQuarterTurn(turn->direction, turn->source);
+        } else if (std::holds_alternative<EditorResetCropRotateWrite>(write)) {
+          geometry.ResetCropRotate();
+        } else {
+          geometry.ApplyUpdate(RequireWrite<ImageGeometryUpdate>(write, target.field_key));
+        }
         return true;
       }
       case EditorParameterOwnerKind::Develop: {

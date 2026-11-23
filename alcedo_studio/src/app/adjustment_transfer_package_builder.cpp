@@ -203,7 +203,8 @@ auto BuildDevelopEntry(const PipelineDocument& document, const DevelopNodeModel&
         entry.lens_calib = FieldOwnedParameterJson("lens_calib", params);
         break;
       case AdjustmentTransferItemKind::Geometry:
-        entry.geometry = document.Geometry().ToJson();
+        entry.geometry = document.Geometry().ToJson(document.FormatVersion() ==
+                                                    kOrientationDocumentFormatVersion);
         break;
       case AdjustmentTransferItemKind::NodeEnabled:
       case AdjustmentTransferItemKind::NodeMix:

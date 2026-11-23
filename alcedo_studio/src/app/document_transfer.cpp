@@ -237,7 +237,7 @@ auto DevelopEntryFromJson(const nlohmann::json& json) -> TransferDevelopValue {
 
 /// Checks each present Develop value by applying it to a clean default document
 /// through the same parameter write path Paste uses.
-void ValidateDevelopEntry(const TransferDevelopValue& develop) {
+void ValidateDevelopEntry(const TransferDevelopValue& develop, std::uint32_t document_version) {
   if (develop.Empty()) {
     return;
   }
@@ -276,6 +276,10 @@ void ValidateDevelopEntry(const TransferDevelopValue& develop) {
     }
   }
   if (develop.geometry.has_value()) {
+    if (develop.geometry->contains("orientation") !=
+        (document_version == kOrientationDocumentFormatVersion)) {
+      Fail("transfer geometry orientation does not match document_format_version");
+    }
     EditorParameterTarget target;
     target.owner_kind = EditorParameterOwnerKind::Document;
     target.field_key  = kGeometryFieldKey;
@@ -330,7 +334,7 @@ void ValidateDocumentTransfer(const AdjustmentTransferPackage& package) {
   if (package.Empty()) {
     Fail("transfer package requires at least one selected item");
   }
-  ValidateDevelopEntry(package.develop_);
+  ValidateDevelopEntry(package.develop_, package.document_format_version_);
 
   std::set<std::string> identities;
   const auto            claim = [&identities](const std::string& id, const char* kind) {

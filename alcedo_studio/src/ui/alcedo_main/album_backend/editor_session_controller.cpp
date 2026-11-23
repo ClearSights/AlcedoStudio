@@ -1944,6 +1944,38 @@ bool EditorSessionController::submitPatch(QString fieldKey, QString paramsJson, 
   return submitWrite(std::move(fieldKey), std::move(*write), settled);
 }
 
+QString EditorSessionController::submitGeometryCommand(const QString& command) {
+  if (const QString refusal = UserStateChangeRefusalText(); !refusal.isEmpty()) {
+    return refusal;
+  }
+  const auto* interaction =
+      qobject_cast<const editor_rhi::EditorInteractionController*>(interaction_controller_.data());
+  if (interaction == nullptr || interaction->sourceImageWidth() <= 0 ||
+      interaction->sourceImageHeight() <= 0) {
+    return tr("Image geometry requires source dimensions.");
+  }
+  alcedo::EditorParameterWrite write = alcedo::EditorResetCropRotateWrite{};
+  if (command == QStringLiteral("geometry.rotate_left") ||
+      command == QStringLiteral("geometry.rotate_right")) {
+    const auto direction = command == QStringLiteral("geometry.rotate_left")
+                               ? alcedo::QuarterTurnDirection::Left
+                               : alcedo::QuarterTurnDirection::Right;
+    write                = alcedo::EditorRotateImageWrite{
+        direction,
+        {static_cast<std::uint32_t>(interaction->sourceImageWidth()),
+         static_cast<std::uint32_t>(interaction->sourceImageHeight())}};
+  } else if (command != QStringLiteral("geometry.reset_crop_rotate")) {
+    return tr("Unknown geometry command.");
+  }
+  alcedo::EditorParameterTarget target;
+  target.owner_kind = alcedo::EditorParameterOwnerKind::Document;
+  target.field_key  = "crop_rotate";
+  const auto result =
+      EnqueueTargetedFieldWrite(std::move(target), std::move(write), true, std::nullopt);
+  return alcedo::EditorSessionResultIsFailure(result.kind) ? QString::fromStdString(result.message)
+                                                           : QString{};
+}
+
 bool EditorSessionController::enqueueNodeSwitchBoundary() {
   if (session_backend_ == nullptr || !can_edit()) {
     return false;

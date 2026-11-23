@@ -98,15 +98,22 @@ auto ReadDocumentGeometry(const nlohmann::json& json, std::uint32_t format_versi
     -> ImageGeometryModel {
   switch (format_version) {
     case kCropRotateDocumentFormatVersion:
+    case kOrientationDocumentFormatVersion:
       return ImageGeometryModel::FromJson(json);
     default:
       throw std::runtime_error("Unsupported pipeline document geometry format_version");
   }
 }
 
-void ValidateDocumentShape(const nlohmann::json& json) {
+void ValidateDocumentShape(const nlohmann::json& json, std::uint32_t format_version) {
   if (!json.contains("geometry") || !json["geometry"].is_object()) {
     throw std::runtime_error("Pipeline document is missing an object geometry");
+  }
+  const auto orientation     = json.at("geometry").find("orientation");
+  const bool has_orientation = orientation != json.at("geometry").end();
+  if ((format_version == kOrientationDocumentFormatVersion) != has_orientation ||
+      (has_orientation && !orientation->is_string())) {
+    throw std::runtime_error("Invalid pipeline document orientation for format_version");
   }
   if (!json.contains("nodes") || !json["nodes"].is_array()) {
     throw std::runtime_error("Pipeline document is missing a nodes array");
@@ -378,20 +385,22 @@ auto PipelineDocument::ToJson() const -> nlohmann::json {
                      {"to", nlohmann::json::array({std::string{edge.to_node.Value()},
                                                    std::string{edge.to_port.Value()}})}});
   }
-  return {{"format_version", format_version_},
-          {"geometry", geometry_.ToJson()},
-          {"next_color_grade_name_number", next_color_grade_name_number_},
-          {"default_grade_id", default_grade_id_.Empty() ? nlohmann::json(nullptr)
-                                                        : nlohmann::json(default_grade_id_.Value())},
-          {"nodes", std::move(nodes)},
-          {"edges", std::move(edges)}};
+  const auto format_version = FormatVersion();
+  return {
+      {"format_version", format_version},
+      {"geometry", geometry_.ToJson(format_version == kOrientationDocumentFormatVersion)},
+      {"next_color_grade_name_number", next_color_grade_name_number_},
+      {"default_grade_id", default_grade_id_.Empty() ? nlohmann::json(nullptr)
+                                                     : nlohmann::json(default_grade_id_.Value())},
+      {"nodes", std::move(nodes)},
+      {"edges", std::move(edges)}};
 }
 
 auto PipelineDocument::FromJson(const nlohmann::json&        json,
                                 std::optional<std::uint32_t> declared_format_version)
     -> PipelineDocument {
   const auto format_version = ReadDocumentFormatVersion(json, declared_format_version);
-  ValidateDocumentShape(json);
+  ValidateDocumentShape(json, format_version);
   PipelineDocument document;
   document.format_version_ = format_version;
   document.SetNextColorGradeNameNumber(json["next_color_grade_name_number"].get<std::uint64_t>());
@@ -649,6 +658,7 @@ auto DocumentRevisionFingerprint(const PipelineDocument& document) -> std::uint6
 
 auto ClonePipelineDocument(const PipelineDocument& src) -> PipelineDocument {
   auto        clone          = PipelineDocument::FromJson(src.ToJson());
+  clone.UseFormatOfHistoryRoot(src);
   // JSON carries only the DNG profile fingerprint. Keep the profile the source has bound, so a
   // clone renders like its source without another read of the source file.
   const auto* source_develop = src.Develop();

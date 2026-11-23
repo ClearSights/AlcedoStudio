@@ -181,7 +181,8 @@ void MixLinear(std::uint64_t& hash, const LinearGradientMaskParams& params) {
 auto MaskThumbnailGeometry::operator==(const MaskThumbnailGeometry& other) const -> bool {
   return full_reference == other.full_reference && crop_rect.x == other.crop_rect.x &&
          crop_rect.y == other.crop_rect.y && crop_rect.w == other.crop_rect.w &&
-         crop_rect.h == other.crop_rect.h && rotation_degrees == other.rotation_degrees;
+         crop_rect.h == other.crop_rect.h && rotation_degrees == other.rotation_degrees &&
+         orientation == other.orientation;
 }
 
 auto MaskThumbnailLayer::operator==(const MaskThumbnailLayer& other) const -> bool {
@@ -246,6 +247,7 @@ auto CanonicalizeMaskThumbnailSpec(MaskThumbnailSpec spec) -> MaskThumbnailSpec 
   MixFloat(hash, spec.geometry.crop_rect.w);
   MixFloat(hash, spec.geometry.crop_rect.h);
   MixFloat(hash, spec.geometry.rotation_degrees);
+  MixU32(hash, static_cast<std::uint32_t>(spec.geometry.orientation));
   MixHash(hash, spec.layers.size());
   for (const auto& layer : spec.layers) {
     MixU32(hash, static_cast<std::uint32_t>(layer.kind));

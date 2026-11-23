@@ -81,6 +81,7 @@ auto ImageParamsForRequest(const PipelineDocument& document, DocumentGeometryUse
     return params;
   }
   params.rotation_degrees = document.Geometry().RotationDegrees();
+  params.orientation      = document.Geometry().Orientation();
   if (use == DocumentGeometryUse::RotatedUncroppedSource) {
     params.output_frame = GeometryOutputFrame::RotatedSourceBounds;
     return params;

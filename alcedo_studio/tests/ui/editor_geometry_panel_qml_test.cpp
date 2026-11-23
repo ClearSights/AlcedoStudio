@@ -93,6 +93,12 @@ class GeometrySession final : public QObject, public IEditorAdjustmentSubmitter 
 
   std::vector<Call> calls;
   QStringList       actions;
+  QStringList         geometry_commands;
+
+  Q_INVOKABLE QString submitGeometryCommand(const QString& command) {
+    geometry_commands.push_back(command);
+    return {};
+  }
 
  signals:
   void adjustmentSnapshotChanged();
@@ -190,7 +196,8 @@ auto AdjustmentStackUrl() -> QUrl {
 
 // The crop_rotate projection EditorPanelPresentation publishes.
 auto MakeSnapshot(const QString& preset, double x, double y, double width, double height,
-                  double angle) -> QVariantMap {
+                  double angle, const QString& orientation = QStringLiteral("identity"))
+    -> QVariantMap {
   QVariantMap cropRect;
   cropRect.insert(QStringLiteral("x"), x);
   cropRect.insert(QStringLiteral("y"), y);
@@ -204,6 +211,7 @@ auto MakeSnapshot(const QString& preset, double x, double y, double width, doubl
   QVariantMap crop;
   crop.insert(QStringLiteral("crop_rect"), cropRect);
   crop.insert(QStringLiteral("angle_degrees"), angle);
+  crop.insert(QStringLiteral("orientation"), orientation);
   crop.insert(QStringLiteral("aspect_ratio_preset"), preset);
   crop.insert(QStringLiteral("aspect_ratio"), aspect);
   QVariantMap cropWrapper;
@@ -474,27 +482,75 @@ TEST(EditorGeometryPanelQmlTest, SelectingLandscapePresetOrientsCropForPortraitI
   EXPECT_NEAR(rect.center().x(), 0.5, 1e-4);
 }
 
-TEST(EditorGeometryPanelQmlTest, ResetSubmitsOneSettledFullFrameUnrotatedFreeCrop) {
+TEST(EditorGeometryPanelQmlTest, CropResetUsesOneOwnerCommandWithoutSubmittingCropValues) {
   GeometrySession session(MakeSnapshot(QStringLiteral("ratio_16_9"), 0.1, 0.2, 0.5, 0.3, 6.0));
   FakeGeometryInteraction interaction;
   AdjustmentStackHarness  harness(&session, &interaction);
   ASSERT_NE(harness.root(), nullptr) << harness.errors().toStdString();
 
-  auto* geometryPanel =
-      harness.findObject<QObject>(QStringLiteral("editorAdjustmentPanel_geometry"));
-  ASSERT_NE(geometryPanel, nullptr);
-  ASSERT_TRUE(QMetaObject::invokeMethod(geometryPanel, "resetGeometry"));
+  auto* reset = harness.findObject<QQuickItem>(QStringLiteral("geometryResetButton"));
+  ASSERT_NE(reset, nullptr);
+  ASSERT_TRUE(reset->isEnabled());
+  ASSERT_TRUE(QMetaObject::invokeMethod(reset, "clicked"));
+  EXPECT_EQ(session.geometry_commands, QStringList{QStringLiteral("geometry.reset_crop_rotate")});
+  EXPECT_TRUE(session.calls.empty());
+}
 
+TEST(EditorGeometryPanelQmlTest, RotationButtonsWorkOnFullFrameAndRequireSourceSize) {
+  GeometrySession         session;
+  FakeGeometryInteraction interaction;
+  interaction.presentSource(0, 0);
+  AdjustmentStackHarness harness(&session, &interaction);
+  ASSERT_NE(harness.root(), nullptr) << harness.errors().toStdString();
+  auto* left  = harness.findObject<QQuickItem>(QStringLiteral("geometryRotateLeftButton"));
+  auto* right = harness.findObject<QQuickItem>(QStringLiteral("geometryRotateRightButton"));
+  ASSERT_NE(left, nullptr);
+  ASSERT_NE(right, nullptr);
+  EXPECT_FALSE(left->isEnabled());
+  EXPECT_FALSE(right->isEnabled());
+  EXPECT_EQ(left->property("actionName").toString(), QStringLiteral("Rotate Left"));
+  EXPECT_EQ(right->property("actionName").toString(), QStringLiteral("Rotate Right"));
+  EXPECT_TRUE(left->activeFocusOnTab());
+  EXPECT_TRUE(right->activeFocusOnTab());
+  ASSERT_TRUE(QMetaObject::invokeMethod(right, "clicked"));
+  EXPECT_TRUE(session.geometry_commands.empty());
+
+  interaction.presentSource(750, 500);
+  EXPECT_TRUE(left->isEnabled());
+  EXPECT_TRUE(right->isEnabled());
+  EXPECT_EQ(interaction.cropRectNormalized(), QRectF(0.0, 0.0, 1.0, 1.0));
+  ASSERT_TRUE(QMetaObject::invokeMethod(left, "clicked"));
+  ASSERT_TRUE(QMetaObject::invokeMethod(right, "clicked"));
+  EXPECT_EQ(session.geometry_commands, (QStringList{QStringLiteral("geometry.rotate_left"),
+                                                    QStringLiteral("geometry.rotate_right")}));
+  EXPECT_TRUE(session.calls.empty());
+}
+
+TEST(EditorGeometryPanelQmlTest, RotatedCropDisplaysSwappedAxesAndKeepsOverlayInStoredAxes) {
+  GeometrySession         session(MakeSnapshot(QStringLiteral("custom"), 0.1, 0.2, 0.5, 0.3, 6.0,
+                                               QStringLiteral("rotate_90_cw")));
+  FakeGeometryInteraction interaction;
+  AdjustmentStackHarness  harness(&session, &interaction);
+  ASSERT_NE(harness.root(), nullptr) << harness.errors().toStdString();
+  const auto value = [&](const QString& name) {
+    auto* model = harness.findObject<QObject>(name);
+    EXPECT_NE(model, nullptr);
+    return model == nullptr ? 0.0 : model->property("value").toDouble();
+  };
+  EXPECT_NEAR(value(QStringLiteral("geometryCropWidthModel")), 0.3, 1e-6);
+  EXPECT_NEAR(value(QStringLiteral("geometryCropHeightModel")), 0.5, 1e-6);
+  EXPECT_NEAR(value(QStringLiteral("geometryAspectWidthModel")), 9.0, 1e-6);
+  EXPECT_NEAR(value(QStringLiteral("geometryAspectHeightModel")), 16.0, 1e-6);
+  EXPECT_NEAR(value(QStringLiteral("geometryRotationModel")), 6.0, 1e-6);
+  EXPECT_NEAR(interaction.cropRectNormalized().x(), 0.1, 1e-6);
+  EXPECT_NEAR(interaction.cropRectNormalized().width(), 0.5, 1e-6);
+  EXPECT_TRUE(session.calls.empty());
+
+  interaction.editCropFrame(QRectF(0.15, 0.2, 0.4, 0.3), 5.0f, true);
   ASSERT_EQ(session.calls.size(), 1u);
-  EXPECT_TRUE(session.calls.back().settled);
-  const QRectF rect = RectOf(session.calls.back());
-  EXPECT_DOUBLE_EQ(rect.x(), 0.0);
-  EXPECT_DOUBLE_EQ(rect.y(), 0.0);
-  EXPECT_DOUBLE_EQ(rect.width(), 1.0);
-  EXPECT_DOUBLE_EQ(rect.height(), 1.0);
-  EXPECT_DOUBLE_EQ(AngleOf(session.calls.back()), 0.0);
-  EXPECT_EQ(PresetOf(session.calls.back()), QStringLiteral("free"));
-  EXPECT_FALSE(interaction.aspectLocked());
+  EXPECT_NEAR(RectOf(session.calls.front()).width(), 0.4, 1e-6);
+  EXPECT_NEAR(RectOf(session.calls.front()).height(), 0.3, 1e-6);
+  EXPECT_FALSE(GeometryOf(session.calls.front()).orientation.has_value());
 }
 
 TEST(EditorGeometryPanelQmlTest, LeavingGeometryHidesTheOverlayWithoutSubmitting) {

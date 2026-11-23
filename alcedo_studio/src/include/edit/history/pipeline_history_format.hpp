@@ -12,9 +12,7 @@ namespace alcedo {
 /**
  * @brief Published format identities for pipeline-document history.
  *
- * One incompatible project release. Loaders accept only these values. Older
- * project, document, history, root, checkpoint, WAL, and transfer identities
- * are rejected without conversion.
+ * Loaders accept the ranges specified below for each serialized artifact.
  *
  * Project metadata 0.10.0 stores no DNG color profile tables: the Image metadata
  * and the Develop JSON keep only a profile fingerprint, and the pipeline service
@@ -29,9 +27,12 @@ namespace alcedo {
  *
  * | Identity | Constant | Value |
  * | --- | --- | --- |
- * | Project metadata | @ref kProjectFileVersion | 0.11.0 |
+ * Project metadata 0.12.0 and document revision 8 add whole-image orientation.
+ * Legacy documents represent identity orientation and retain their serialized bytes.
+ *
+ * | Project metadata | @ref kProjectFileVersion | 0.12.0 |
  * | Packed project header | @ref kPackedProjectFormatVersion | 7 |
- * | Pipeline document JSON | @ref kPipelineDocumentFormatVersion | 7 |
+ * | Pipeline document JSON | @ref kPipelineDocumentFormatVersion | 8 |
  * | Image edit schema | @ref kImageEditSchemaVersion | 5 |
  * | Commit hash input | @ref kCommitFormatVersion | 5 |
  * | Chain-fold hash input | @ref kChainFormatVersion | 5 |
@@ -43,24 +44,28 @@ namespace alcedo {
  */
 
 /// Project metadata version written by SaveProject and required on open.
-inline constexpr std::string_view kProjectFileVersion = "0.11.0";
+inline constexpr std::string_view kProjectFileVersion               = "0.12.0";
 /// Inclusive lower bound of accepted project metadata: 0.10.0 opens and gains the mark columns.
 inline constexpr std::string_view kMinSupportedProjectFileVersion = "0.10.0";
 /// Inclusive upper bound of accepted project metadata. Equals @ref kProjectFileVersion.
-inline constexpr std::string_view kMaxSupportedProjectFileVersion = "0.11.0";
+inline constexpr std::string_view kMaxSupportedProjectFileVersion   = kProjectFileVersion;
 /// Packed `.alcd` header version. Independent of the metadata string.
 inline constexpr std::uint32_t kPackedProjectFormatVersion = 7;
 
 /// Document revision with the crop rectangle, straightening angle, and aspect preference.
 inline constexpr std::uint32_t    kCropRotateDocumentFormatVersion = 7;
 
+/// Document revision that stores the exact displayed orientation.
+inline constexpr std::uint32_t    kOrientationDocumentFormatVersion = 8;
+
 /// `PipelineDocument` JSON `format_version` for newly created documents.
-inline constexpr std::uint32_t    kPipelineDocumentFormatVersion = kCropRotateDocumentFormatVersion;
+inline constexpr std::uint32_t kPipelineDocumentFormatVersion = kOrientationDocumentFormatVersion;
 
 /// True if the document reader supports the stored revision. Compare before narrowing from JSON.
 [[nodiscard]] constexpr auto      IsSupportedPipelineDocumentFormatVersion(std::uint64_t version)
     -> bool {
-  return version == kCropRotateDocumentFormatVersion;
+  return version == kCropRotateDocumentFormatVersion ||
+         version == kOrientationDocumentFormatVersion;
 }
 
 /// Per-image history schema stored on `ImageEditState.project_schema_version`.

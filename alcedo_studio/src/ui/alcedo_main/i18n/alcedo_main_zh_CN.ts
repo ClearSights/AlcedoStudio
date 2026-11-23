@@ -3687,6 +3687,22 @@ Original source files on disk will be kept.</source>
 <context>
     <name>EditorGeometryPanel</name>
     <message>
+        <source>Rotate Left</source>
+        <translation>向左旋转</translation>
+    </message>
+    <message>
+        <source>Rotate Right</source>
+        <translation>向右旋转</translation>
+    </message>
+    <message>
+        <source>Rotate 90° left</source>
+        <translation>向左旋转 90°</translation>
+    </message>
+    <message>
+        <source>Rotate 90° right</source>
+        <translation>向右旋转 90°</translation>
+    </message>
+    <message>
         <location filename="../qml/EditorGeometryPanel.qml" line="+409"/>
         <source>Crop X</source>
         <translation>裁剪 X</translation>

@@ -21,6 +21,7 @@
 #include "app/pipeline_document_history.hpp"
 #include "app/pipeline_history_applier.hpp"
 #include "app/project_package_backend.hpp"
+#include "edit/geometry/frame_orientation.hpp"
 #include "edit/graph/color_grade_node_model.hpp"
 #include "edit/graph/develop_node_model.hpp"
 #include "edit/graph/drt_node_model.hpp"
@@ -90,8 +91,16 @@ void ApplyImportLookBeforeFilmLike(PipelineDocument& document) {
   curve->SetPoints(IdentityCurvePoints());
 }
 
+/// Construct a document with the encoding used by the stored compatibility files.
+auto LegacyDocument() -> PipelineDocument {
+  auto stored              = CreateDefaultPipelineDocument().ToJson();
+  stored["format_version"] = kCropRotateDocumentFormatVersion;
+  stored.at("geometry").erase("orientation");
+  return PipelineDocument::FromJson(stored);
+}
+
 auto MultiGradeDocument() -> PipelineDocument {
-  auto document = CreateDefaultPipelineDocument();
+  auto document = LegacyDocument();
   ApplyImportLookBeforeFilmLike(document);
   EXPECT_TRUE(AddCleanColorGrade(document, NodeId{"drt"}, NodeId{"grade.look"}).empty());
   grade_mask_test::AddRadialMask(document, MaskId{"mask.radial"});
@@ -128,7 +137,7 @@ void RecordParameterEntry(PipelineDocument& document, std::string_view field,
 auto MakeFilmGrainHistoryCase(std::string_view name) -> FilmGrainHistoryCase {
   FilmGrainHistoryCase result;
   result.raw_json = nlohmann::json{{"CameraModel", "RootStateCamera"}};
-  auto document   = CreateDefaultPipelineDocument();
+  auto document   = LegacyDocument();
   ApplyImportLookBeforeFilmLike(document);
   gpu_dag_test::EnsureTestCameraProfile(document);
   std::string error;
@@ -185,11 +194,11 @@ auto FilmGrainHistoryChainHash(const root_id_t& root_id, const std::vector<EditC
 }  // namespace
 
 TEST(PipelineHistoryFormatTable, PublishedConstantsIdentifyTheDocumentHistoryCutover) {
-  EXPECT_EQ(kProjectFileVersion, "0.11.0");
+  EXPECT_EQ(kProjectFileVersion, "0.12.0");
   EXPECT_EQ(kMinSupportedProjectFileVersion, "0.10.0");
   EXPECT_EQ(kMaxSupportedProjectFileVersion, kProjectFileVersion);
   EXPECT_EQ(kPackedProjectFormatVersion, 7u);
-  EXPECT_EQ(kPipelineDocumentFormatVersion, 7u);
+  EXPECT_EQ(kPipelineDocumentFormatVersion, 8u);
   EXPECT_EQ(kImageEditSchemaVersion, 5u);
   EXPECT_EQ(kCommitFormatVersion, 5u);
   EXPECT_EQ(kChainFormatVersion, 5u);
@@ -260,7 +269,7 @@ TEST(PipelineDocumentCheckpointFormat,
   // the document code of main (abdb000c8) before raster input existed: the default document with
   // a bound camera profile, element 42. The same RAW document must encode to the same bytes, keep
   // its root id, and never gain the Develop "input" key. Its color wheels are version 1 JSON.
-  auto document = CreateDefaultPipelineDocument();
+  auto document = LegacyDocument();
   ApplyImportLookBeforeFilmLike(document);
   gpu_dag_test::EnsureTestCameraProfile(document);
   LoadVersionOneNeutralColorWheels(document);
@@ -301,7 +310,7 @@ TEST(PipelineDocumentCheckpointFormat,
   // JSON of the code before the red, green, and blue curves: {"points": [...]} only. The same
   // document must encode to the same bytes (so it keeps its root id), read identity channel
   // curves, and never gain the channel keys (tone_curve_editor_plan.md, TC2).
-  auto document = CreateDefaultPipelineDocument();
+  auto document = LegacyDocument();
   ApplyImportLookBeforeFilmLike(document);
   gpu_dag_test::EnsureTestCameraProfile(document);
   LoadVersionOneNeutralColorWheels(document);
@@ -348,7 +357,7 @@ TEST(PipelineDocumentCheckpointFormat,
   // same document must encode to the same bytes, keep its root id, read both encodings as
   // ACEScc, and never gain the encoding keys (lut_color_encoding_plan.md, section 6.1). Its color
   // wheels are version 1 JSON.
-  auto document = CreateDefaultPipelineDocument();
+  auto document = LegacyDocument();
   ApplyImportLookBeforeFilmLike(document);
   gpu_dag_test::EnsureTestCameraProfile(document);
   LoadVersionOneNeutralColorWheels(document);
@@ -631,6 +640,69 @@ TEST(PipelineDocumentCheckpointFormat, DocumentRejectsFutureAndOutOfRangeVersion
     stored["format_version"] = invalid_version;
     EXPECT_THROW((void)PipelineDocument::FromJson(stored), std::runtime_error);
   }
+}
+
+TEST(PipelineDocumentCheckpointFormat, OrientationRevisionRoundTripsEverySavedOrientation) {
+  auto       document    = LegacyDocument();
+  const auto legacy      = document.ToJson();
+  const auto legacy_root = ComputeRootId(42, document, std::nullopt);
+  EXPECT_FALSE(legacy.at("geometry").contains("orientation"));
+  EXPECT_EQ(document.Geometry().Orientation(), FrameOrientation::Identity);
+
+  auto stored = CreateDefaultPipelineDocument().ToJson();
+  for (const auto orientation : kFrameOrientationIds) {
+    SCOPED_TRACE(orientation);
+    stored.at("geometry")["orientation"] = orientation;
+    const auto loaded                    = PipelineDocument::FromJson(stored);
+    EXPECT_EQ(FrameOrientationId(loaded.Geometry().Orientation()), orientation);
+    EXPECT_EQ(loaded.ToJson(), stored);
+  }
+  document.Geometry().RotateImageQuarterTurn(QuarterTurnDirection::Right, {5, 3});
+  EXPECT_EQ(document.FormatVersion(), kOrientationDocumentFormatVersion);
+  const auto root = EncodePipelineRootState(42, document, std::nullopt);
+  EXPECT_NE(ComputeRootId(42, document, std::nullopt), legacy_root);
+  const auto checkpoint = EncodePipelineDocumentCheckpoint(
+      legacy_root, std::nullopt, ComputeRootChainHash(legacy_root), document);
+  EXPECT_EQ(checkpoint.at("pipeline_document_format_version"), kOrientationDocumentFormatVersion);
+  EXPECT_EQ(DecodePipelineDocumentCheckpoint(checkpoint).document.ToJson(), document.ToJson());
+  EXPECT_EQ(DecodePipelineRootState(root).document.ToJson(), document.ToJson());
+  EXPECT_EQ(ComputeRootId(42, PipelineDocument::FromJson(legacy), std::nullopt), legacy_root);
+}
+
+TEST(PipelineDocumentCheckpointFormat, FourQuarterTurnsRestoreExactOrientation) {
+  auto               document = CreateDefaultPipelineDocument();
+  constexpr Extent2D source{5, 3};
+  for (const auto id : kFrameOrientationIds) {
+    const auto first = ParseFrameOrientation(id);
+    document.Geometry().ApplyUpdate({.orientation = first});
+    for (const auto direction : {QuarterTurnDirection::Left, QuarterTurnDirection::Right}) {
+      for (int turn = 0; turn < 4; ++turn) {
+        document.Geometry().RotateImageQuarterTurn(direction, source);
+      }
+      EXPECT_EQ(document.Geometry().Orientation(), first) << id;
+    }
+    document.Geometry().RotateImageQuarterTurn(QuarterTurnDirection::Left, source);
+    document.Geometry().RotateImageQuarterTurn(QuarterTurnDirection::Right, source);
+    EXPECT_EQ(document.Geometry().Orientation(), first) << id;
+  }
+  document.Geometry().ResetCropRotate();
+  document.Geometry().RotateImageQuarterTurn(QuarterTurnDirection::Right, source);
+  EXPECT_EQ(document.Geometry().Orientation(), FrameOrientation::Rotate90Clockwise);
+  document.Geometry().RotateImageQuarterTurn(QuarterTurnDirection::Right, source);
+  EXPECT_EQ(document.Geometry().Orientation(), FrameOrientation::Rotate180);
+}
+
+TEST(PipelineDocumentCheckpointFormat, DocumentRejectsInvalidAndMismatchedOrientation) {
+  auto stored                          = CreateDefaultPipelineDocument().ToJson();
+  stored.at("geometry")["orientation"] = "unknown_turn";
+  EXPECT_THROW((void)PipelineDocument::FromJson(stored), std::invalid_argument);
+  stored.at("geometry")["orientation"] = nullptr;
+  EXPECT_THROW((void)PipelineDocument::FromJson(stored), std::runtime_error);
+  stored.at("geometry").erase("orientation");
+  EXPECT_THROW((void)PipelineDocument::FromJson(stored), std::runtime_error);
+  stored["format_version"]             = kCropRotateDocumentFormatVersion;
+  stored.at("geometry")["orientation"] = "rotate_90_cw";
+  EXPECT_THROW((void)PipelineDocument::FromJson(stored), std::runtime_error);
 }
 
 TEST(PipelineDocumentCheckpointFormat, CheckpointRejectsMismatchedNestedDocumentVersion) {

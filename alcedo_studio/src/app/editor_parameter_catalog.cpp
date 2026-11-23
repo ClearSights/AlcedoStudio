@@ -15,6 +15,7 @@
 #include "app/editor_adjustment_context.hpp"
 #include "app/editor_panel_projection.hpp"
 #include "edit/geometry/crop_frame.hpp"
+#include "edit/geometry/frame_orientation.hpp"
 #include "edit/geometry/types.hpp"
 #include "edit/graph/develop_raster_input.hpp"
 #include "edit/graph/film_format.hpp"
@@ -1988,6 +1989,55 @@ auto EditorParameterCatalog::UiDefault(const EditorParameterCatalogEntry& entry)
     return entry.ui_default();
   }
   return json(entry.range.default_value);
+}
+
+auto EditorParameterCatalog::ProjectCropUi(json crop_ui, FrameOrientation orientation) -> json {
+  using enum FrameOrientation;
+  if (orientation == Identity) {
+    return crop_ui;
+  }
+  const double x          = crop_ui.at("x").get<double>();
+  const double y          = crop_ui.at("y").get<double>();
+  const double opposite_x = 1.0 - x - crop_ui.at("width").get<double>();
+  const double opposite_y = 1.0 - y - crop_ui.at("height").get<double>();
+  switch (orientation) {
+    case Identity:
+      break;
+    case Rotate90Clockwise:
+      crop_ui["x"] = opposite_y;
+      crop_ui["y"] = x;
+      break;
+    case Rotate180:
+      crop_ui["x"] = opposite_x;
+      crop_ui["y"] = opposite_y;
+      break;
+    case Rotate90Counterclockwise:
+      crop_ui["x"] = y;
+      crop_ui["y"] = opposite_x;
+      break;
+    case FlipHorizontal:
+      crop_ui["x"] = opposite_x;
+      break;
+    case FlipVertical:
+      crop_ui["y"] = opposite_y;
+      break;
+    case Transpose:
+      crop_ui["x"] = y;
+      crop_ui["y"] = x;
+      break;
+    case Transverse:
+      crop_ui["x"] = opposite_y;
+      crop_ui["y"] = opposite_x;
+      break;
+  }
+  if (FrameOrientationSwapsAxes(orientation)) {
+    std::swap(crop_ui["width"], crop_ui["height"]);
+    std::swap(crop_ui["aspect_width"], crop_ui["aspect_height"]);
+  }
+  if (FrameOrientationReflects(orientation)) {
+    crop_ui["angle_degrees"] = -crop_ui.at("angle_degrees").get<double>();
+  }
+  return crop_ui;
 }
 
 auto EditorParameterCatalog::CropLockedAspectRatio(const json&                  crop_ui,

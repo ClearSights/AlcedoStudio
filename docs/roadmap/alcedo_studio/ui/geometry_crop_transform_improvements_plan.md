@@ -5,7 +5,8 @@ Date: 2026-11-14
 Revised: 2026-11-22
 
 Status: UI layout approved from the standalone QML preview. A1 is complete and verified locally.
-The numerical and persistence design below remains an implementation proposal.
+O2 is implemented and passed its feature tests. Its regression results are in Section 7.
+The remaining numerical and persistence design is an implementation proposal.
 
 Parent: Standalone extension to the editor workspace roadmap.
 
@@ -904,7 +905,74 @@ including both directions and 180 degrees. Verify Undo, Redo, version switching,
 export, and rejection by the actual prior reader. Build the F1 and O1 targets plus
 `EditorParameterCatalogTest`, `EditorGeometryPanelQmlTest`, `EditorOverlayInteractionTest`,
 and `OverlayCursorTest`. Check both buttons on a full-frame crop without activating the handles.
-Completion record pending. Use Section 9.
+
+#### O2 completion record (2026-11-22)
+
+**Status** Implemented on `feature/geometry-crop-transform-o2` from `8db8f959`.
+The feature tests passed. The regression run had five failures with existing issue records.
+
+**Implementation** Rotate Left and Rotate Right compose exact orientation in displayed axes.
+The editor shows crop dimensions, aspect dimensions, and straightening in those axes. Crop writes
+and pointer input use the stored axes. Crop reset restores the full frame, zero straightening,
+Free aspect, and identity orientation in one edit. The approved Tabler actions use the shared
+compact button.
+
+Project metadata advances to 0.12.0. New documents use revision 8. A legacy revision 7 root
+keeps its canonical bytes and identity orientation. A document from that root uses revision 8
+when its orientation differs from identity. Replay and a verified checkpoint use the same
+root encoding rule. Stored commits with no orientation read as identity without changing
+their recorded hashes. Transfer checks the geometry fields against the stated document revision.
+
+**Primary success chain**
+
+```text
+Crop button -> EditorSessionController::submitGeometryCommand -> settled editor field write
+  -> ImageGeometryModel::RotateImageQuarterTurn -> one Mini-Git commit
+  -> GraphCompiler::BindFrameGeometry -> oriented preview, comparison, masks, and export
+
+Packed project -> metadata check -> verified root and checkpoint or replay
+  -> restored orientation -> full-resolution export
+```
+
+**Primary failure chain**
+
+```text
+Missing source dimensions -> command error -> no geometry or history change
+Invalid stored orientation -> revision-aware reader rejects the document
+Render failure after a commit -> editor render error -> committed rotation remains available to Undo
+```
+
+**Verification** Windows Release, MSVC 14.44, Qt 6.12.0, CUDA 12.8, and GeForce RTX 3080.
+
+| Required result | Observed result |
+| --- | --- |
+| Exact turns, composition, and crop preservation | `FourQuarterTurnsRestoreExactOrientation` and `OrientationActionsPreserveExistingCropContentAndStraightening` passed. These cases verify 180 degrees after two right turns, inverse turns, retained framing, Undo, Redo, checkout, missing dimensions, and crop reset. |
+| Exact pixels and dimensions | CUDA and OpenCL `QuarterTurnSwapsCanvasAndPreservesEverySourcePixel` passed through document-to-render projection. Preview and export used the expected pixel permutation for all eight states. |
+| Crop controls and overlay | All 11 `EditorGeometryPanelQmlTest` cases passed. They verify both accessible actions on the full frame, the source-size requirement, displayed crop values, and pointer writes in stored axes. The crop interaction, overlay, cursor, and comparison cases passed. |
+| Saved project and transfer | `QuarterTurnsRestoreOnReopenAndExport` passed through packed save and reopen. The exported PNG matched the rotated reference at every pixel. `AcceptedProjectKeepsCanonicalRootBytesAndCommitHash`, `OrientationRevisionRoundTripsEverySavedOrientation`, and `LegacyGeometryImportsAsIdentityAndRejectsAnOrientationField` passed. |
+| Prior reader | The packed and workspace metadata readers compiled from `8db8f959` accepted 0.11.0 and rejected the new packed project's 0.12.0 metadata before document replay. |
+
+```powershell
+$env:VCVARS_USER_VERSION = '14.44'
+cmd /c scripts\msvc_env.cmd --build --preset win_release --parallel 6 --target alcedo_main ProjectCompatibilityTest ProjectServiceTest PipelineDocumentCheckpointTest EditorMiniGitMaterializerTest DocumentTransferTest GpuDagGeometryTest EditorComparisonGeometryTest EditorCropInteractionTest ExportServiceTest EditorParameterCatalogTest EditorGeometryPanelQmlTest EditorOverlayInteractionTest OverlayCursorTest GpuDagCudaDevelopTest GpuDagOpenClDevelopTest CudaImageGeometryOpsTest EditorSessionHistoryPortTest PipelineEditBatchTest CommitGraphTest
+$suites = '^(ProjectCompatibilityTest|ProjectServiceTest|PipelineDocumentCheckpointTest|EditorMiniGitMaterializerTest|DocumentTransferTest|GpuDagGeometryTest|EditorComparisonGeometryTest|EditorCropInteractionTest|ExportServiceTest|EditorParameterCatalogTest|EditorGeometryPanelQmlTest|EditorOverlayInteractionTest|OverlayCursorTest|CudaImageGeometryOpsTest|EditorSessionHistoryPortTest|PipelineEditBatchTest|CommitGraphTest)\.|^GpuDag(Cuda|OpenCl)DevelopTest\..*QuarterTurnSwapsCanvasAndPreservesEverySourcePixel$'
+ctest --test-dir build/release -N -R $suites --no-tests=error
+ctest --test-dir build/release -R $suites --output-on-failure --no-tests=error -j 1
+```
+
+The build and test discovery exited with code 0. CTest found 495 cases. It reported 486 passes,
+five failures, one skip for the unavailable sample DNG, and three disabled cases. CTest exited
+with code 8. The final application rebuild, the separate run of all 14 orientation cases, and
+the prior-reader check each exited with code 0. The three historical
+checkpoint fixture failures match [#553](https://github.com/zidage/AlcedoStudio/issues/553).
+The transfer key failure matches [#554](https://github.com/zidage/AlcedoStudio/issues/554).
+The Paste hashes match the failing values recorded in [#555](https://github.com/zidage/AlcedoStudio/issues/555).
+The evidence is in `build/tmp/geometry_crop_transform/o2/`. Metal, the disabled Brush target,
+and manual visual review have no results in this run.
+
+**File size** The parameter catalog and parser remain the owners of parameter conversion.
+The session controller admits the command and sends it to the existing executor. The large
+existing catalog, parser, controller, and test files keep their current module boundaries.
 
 ### O3. Whole-image flips
 

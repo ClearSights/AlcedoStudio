@@ -6,7 +6,9 @@
 
 #include <optional>
 #include <string>
+#include <utility>
 
+#include "edit/geometry/frame_orientation.hpp"
 #include "edit/geometry/types.hpp"
 #include "json.hpp"
 
@@ -30,6 +32,7 @@ struct ImageGeometryUpdate {
   std::optional<float>           rotation_degrees;
   std::optional<std::string>     aspect_preset;
   std::optional<CropAspectRatio> aspect_ratio;
+  std::optional<FrameOrientation> orientation;
 };
 
 /**
@@ -54,14 +57,32 @@ class ImageGeometryModel {
   [[nodiscard]] auto RotationDegrees() const -> float { return rotation_degrees_; }
   [[nodiscard]] auto AspectPreset() const -> const std::string& { return aspect_preset_; }
   [[nodiscard]] auto AspectRatio() const -> CropAspectRatio { return aspect_ratio_; }
+  [[nodiscard]] auto Orientation() const -> FrameOrientation { return orientation_; }
 
   void               SetCropRect(NormalizedRect rect) { crop_rect_ = rect; }
   void               SetRotationDegrees(float degrees) { rotation_degrees_ = degrees; }
 
+  /// Turn the framed image in displayed axes without changing crop or straightening.
+  void               RotateImageQuarterTurn(QuarterTurnDirection direction, Extent2D source) {
+    if (source.Empty()) {
+      throw std::invalid_argument("Image rotation requires source dimensions");
+    }
+    orientation_ = TurnFrameOrientation(orientation_, direction);
+  }
+
+  /// Reset all Crop and Rotate fields together. Other document settings remain intact.
+  void ResetCropRotate() {
+    ApplyUpdate(
+        {NormalizedRect{}, 0.0f, kFreeAspectPreset, CropAspectRatio{}, FrameOrientation::Identity});
+  }
+
   /**
    * @brief Apply geometry fields together so a validated patch cannot expose partial state.
    */
-  void               ApplyUpdate(const ImageGeometryUpdate& update) {
+  void ApplyUpdate(ImageGeometryUpdate update) {
+    if (update.orientation) {
+      static_cast<void>(FrameOrientationId(*update.orientation));
+    }
     if (update.crop_rect.has_value()) {
       crop_rect_ = *update.crop_rect;
     }
@@ -69,19 +90,28 @@ class ImageGeometryModel {
       rotation_degrees_ = *update.rotation_degrees;
     }
     if (update.aspect_preset.has_value()) {
-      aspect_preset_ = *update.aspect_preset;
+      aspect_preset_ = std::move(*update.aspect_preset);
     }
     if (update.aspect_ratio.has_value()) {
       aspect_ratio_ = *update.aspect_ratio;
     }
+    if (update.orientation) {
+      orientation_ = *update.orientation;
+    }
   }
 
-  [[nodiscard]] auto ToJson() const -> nlohmann::json {
-    return {{"crop_rect",
-             nlohmann::json::array({crop_rect_.x, crop_rect_.y, crop_rect_.w, crop_rect_.h})},
-            {"rotation_degrees", rotation_degrees_},
-            {"aspect_preset", aspect_preset_},
-            {"aspect_ratio", nlohmann::json::array({aspect_ratio_.width, aspect_ratio_.height})}};
+  /// Write the saved geometry. Revision 7 has no orientation field.
+  [[nodiscard]] auto ToJson(bool include_orientation = true) const -> nlohmann::json {
+    nlohmann::json json{
+        {"crop_rect",
+         nlohmann::json::array({crop_rect_.x, crop_rect_.y, crop_rect_.w, crop_rect_.h})},
+        {"rotation_degrees", rotation_degrees_},
+        {"aspect_preset", aspect_preset_},
+        {"aspect_ratio", nlohmann::json::array({aspect_ratio_.width, aspect_ratio_.height})}};
+    if (include_orientation) {
+      json["orientation"] = FrameOrientationId(orientation_);
+    }
+    return json;
   }
 
   /**
@@ -108,6 +138,10 @@ class ImageGeometryModel {
       model.aspect_ratio_.width  = json["aspect_ratio"][0].get<float>();
       model.aspect_ratio_.height = json["aspect_ratio"][1].get<float>();
     }
+    if (json.contains("orientation")) {
+      model.orientation_ =
+          ParseFrameOrientation(json.at("orientation").get_ref<const std::string&>());
+    }
     return model;
   }
 
@@ -116,6 +150,7 @@ class ImageGeometryModel {
   float           rotation_degrees_ = 0.0f;
   std::string     aspect_preset_    = kFreeAspectPreset;
   CropAspectRatio aspect_ratio_{};
+  FrameOrientation orientation_ = FrameOrientation::Identity;
 };
 
 }  // namespace alcedo

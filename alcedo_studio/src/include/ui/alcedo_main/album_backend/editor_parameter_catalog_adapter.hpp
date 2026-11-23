@@ -102,6 +102,16 @@ class EditorParameterCatalogAdapter : public QObject {
   Q_INVOKABLE QVariantMap  constrainCrop(const QVariantMap& cropState, const QString& driver,
                                          int sourceWidth, int sourceHeight) const;
 
+  /// Map a complete crop value between stored and displayed axes for the given orientation.
+  Q_INVOKABLE QVariantMap  projectCrop(const QVariantMap& cropState, const QString& orientation,
+                                       bool toDisplayed) const;
+
+  /// Constrain a displayed crop in the stored axes, then project the accepted value back.
+  Q_INVOKABLE QVariantMap  constrainDisplayedCrop(const QVariantMap& cropState,
+                                                  const QString& driver, int sourceWidth,
+                                                  int            sourceHeight,
+                                                  const QString& orientation) const;
+
   /// Width / height of the locked crop frame oriented to the source, or undefined when the
   /// aspect is not locked.
   Q_INVOKABLE QVariant     cropLockedAspectRatio(const QVariantMap& cropState, int sourceWidth,

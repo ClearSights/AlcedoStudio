@@ -2606,6 +2606,22 @@ Original source files on disk will be kept.</source>
 <context>
     <name>EditorGeometryPanel</name>
     <message>
+        <source>Rotate Left</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Rotate Right</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Rotate 90° left</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Rotate 90° right</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
         <location filename="../qml/EditorGeometryPanel.qml" line="+409"/>
         <source>Crop X</source>
         <translation type="unfinished"></translation>

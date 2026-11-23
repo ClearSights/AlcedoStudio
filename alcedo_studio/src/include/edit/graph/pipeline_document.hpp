@@ -62,7 +62,18 @@ class PipelineDocument {
    */
   [[nodiscard]] auto Freeze() const -> std::shared_ptr<const PipelineDocument>;
 
-  [[nodiscard]] auto FormatVersion() const -> std::uint32_t { return format_version_; }
+  /// A legacy document requires the orientation revision only when it contains a turn or flip.
+  [[nodiscard]] auto FormatVersion() const -> std::uint32_t {
+    return format_version_ == kCropRotateDocumentFormatVersion &&
+                   geometry_.Orientation() != FrameOrientation::Identity
+               ? kOrientationDocumentFormatVersion
+               : format_version_;
+  }
+  /// After verifying a checkpoint, use the same identity-geometry encoding as replay from the
+  /// immutable root. This does not change any geometry or stored history object.
+  void UseFormatOfHistoryRoot(const PipelineDocument& root) {
+    format_version_ = root.format_version_;
+  }
   [[nodiscard]] auto Geometry() -> ImageGeometryModel& { return geometry_; }
   [[nodiscard]] auto Geometry() const -> const ImageGeometryModel& { return geometry_; }
   [[nodiscard]] auto Graph() -> PipelineGraph& { return graph_; }

@@ -407,7 +407,7 @@ TEST(ProjectCompatibilityTest, AcceptedProjectKeepsCanonicalRootBytesAndCommitHa
 }
 
 // #769: a 0.10.0 project opens, gains the library mark columns with empty marks, keeps its root
-// ids, stores marks, and saves as 0.11.0.
+// ids, stores marks, and saves with the current project metadata revision.
 TEST(ProjectCompatibilityTest, Version010ProjectGainsLibraryMarksAndKeepsRootIds) {
   const test::TestTempDirectory temp_dir;
   TimeProvider::Refresh();
@@ -455,7 +455,7 @@ TEST(ProjectCompatibilityTest, Version010ProjectGainsLibraryMarksAndKeepsRootIds
     project.SaveProject(meta_path);
   }
 
-  EXPECT_EQ(ReadProjectFileVersion(meta_path), "0.11.0");
+  EXPECT_EQ(ReadProjectFileVersion(meta_path), kProjectFileVersion);
   EXPECT_EQ(QueryDatabaseFileInt64(db_path, kImageMarkColumnCountSql), 2);
   EXPECT_EQ(QueryDatabaseFileInt64(
                 db_path, "SELECT color_labels FROM Image WHERE id = " + std::to_string(image_id)),

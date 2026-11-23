@@ -530,6 +530,7 @@ auto HashResolvedRenderGeometry(const ResolvedRenderGeometry& geometry) -> Conte
   MixRect(hash, geometry.required_decoded_region);
   MixRect(hash, geometry.required_reference_region);
   hash.MixU32(static_cast<std::uint32_t>(geometry.filter));
+  hash.MixU32(static_cast<std::uint32_t>(geometry.orientation));
   hash.MixU32(geometry.gpu_data.decoded_width);
   hash.MixU32(geometry.gpu_data.decoded_height);
   hash.MixU32(geometry.gpu_data.render_width);

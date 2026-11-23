@@ -143,6 +143,7 @@ auto BuildDocumentFromCheckpoint(const PipelineDocumentCheckpoint& checkpoint,
                                  const LoadedRootState&            root_state)
     -> std::shared_ptr<PipelineDocument> {
   auto document = std::make_shared<PipelineDocument>(ClonePipelineDocument(checkpoint.document));
+  document->UseFormatOfHistoryRoot(root_state.document);
   BindRootCameraProfile(*document, root_state.raw_color_context);
   return document;
 }

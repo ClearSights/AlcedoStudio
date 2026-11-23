@@ -641,6 +641,28 @@ TEST(EditorParameterCatalogTest, PartialCropMergesWithCurrentValue) {
   EXPECT_EQ(error, "crop_rotate.aspect_width and aspect_height need aspect_preset custom");
 }
 
+TEST(EditorParameterCatalogTest, CropProjectionMapsDisplayedAxesAndInvertsReflectionAngle) {
+  const nlohmann::json stored{{"x", 0.125},           {"y", 0.25},
+                              {"width", 0.5},         {"height", 0.125},
+                              {"angle_degrees", 7.0}, {"aspect_width", 4.0},
+                              {"aspect_height", 3.0}, {"aspect_preset", "custom"}};
+  const auto           clockwise =
+      EditorParameterCatalog::ProjectCropUi(stored, FrameOrientation::Rotate90Clockwise);
+  EXPECT_EQ(clockwise.at("x"), 0.625);
+  EXPECT_EQ(clockwise.at("y"), 0.125);
+  EXPECT_EQ(clockwise.at("width"), 0.125);
+  EXPECT_EQ(clockwise.at("height"), 0.5);
+  EXPECT_EQ(clockwise.at("aspect_width"), 3.0);
+  EXPECT_EQ(clockwise.at("aspect_height"), 4.0);
+  EXPECT_EQ(clockwise.at("angle_degrees"), 7.0);
+  EXPECT_EQ(
+      EditorParameterCatalog::ProjectCropUi(clockwise, FrameOrientation::Rotate90Counterclockwise),
+      stored);
+  const auto reflected = EditorParameterCatalog::ProjectCropUi(stored, FrameOrientation::Transpose);
+  EXPECT_EQ(reflected.at("angle_degrees"), -7.0);
+  EXPECT_EQ(EditorParameterCatalog::ProjectCropUi(reflected, FrameOrientation::Transpose), stored);
+}
+
 TEST(EditorParameterCatalogTest, CompleteCropValueConstrainsForTheChangedValueOnly) {
   // editor.get -> change the angle -> editor.set with the complete value: the locked 16:9 frame
   // keeps its rectangle, because only the rotation changed.

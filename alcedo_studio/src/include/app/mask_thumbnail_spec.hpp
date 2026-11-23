@@ -21,13 +21,14 @@ inline constexpr std::size_t   kMaskThumbnailCacheCapacity   = 1000;
 /**
  * @brief Photograph geometry that changes 128×128 Mask coverage pixels.
  *
- * Holds full-reference size and committed crop/rotation. Viewer pan, zoom, DPR,
+ * Holds full-reference size, committed crop, straightening, and orientation. Viewer pan, zoom, DPR,
  * decode size, NodeId, MaskId, and history revision are not part of this value.
  */
 struct MaskThumbnailGeometry {
   Extent2D       full_reference{};
   NormalizedRect crop_rect{};
   float          rotation_degrees = 0.0f;
+  FrameOrientation   orientation      = FrameOrientation::Identity;
 
   [[nodiscard]] auto operator==(const MaskThumbnailGeometry& other) const -> bool;
 };

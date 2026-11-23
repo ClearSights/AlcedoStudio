@@ -2,8 +2,6 @@
 //  SPDX-License-Identifier: GPL-3.0-only
 //  Additional permission under GPLv3 section 7 applies; see the LICENSE file.
 
-#include "app/editor_parameter_write.hpp"
-
 #include <array>
 #include <cmath>
 #include <exception>
@@ -17,6 +15,8 @@
 #include <vector>
 
 #include "app/dcp_camera_profile_binding.hpp"
+#include "app/editor_parameter_write.hpp"
+#include "edit/geometry/frame_orientation.hpp"
 #include "edit/graph/develop_node_model.hpp"
 #include "edit/graph/drt_node_model.hpp"
 #include "edit/graph/film_format.hpp"
@@ -644,14 +644,15 @@ auto ParseCropAspectRatio(const nlohmann::json& value, std::string_view context)
   return ratio;
 }
 
-auto ParseGeometryUpdate(const nlohmann::json& params) -> ImageGeometryUpdate {
+/// Decode a crop patch or a complete saved crop value. Only saved values default orientation.
+auto ParseGeometryUpdate(const nlohmann::json& params, ParseForm form) -> ImageGeometryUpdate {
   const auto& object = UnwrapObject(params, {"crop_rotate"}, "crop_rotate");
   // History commits replay stored ImageGeometryModel JSON through this parser. Models stored
   // before the crop-frame semantics carry `expand_to_fit`; the key has no meaning now and is read
   // as a known key so that history still loads.
   RejectUnknownKeys(object,
                     {"crop_rect", "rotation_degrees", "angle_degrees", "aspect_ratio_preset",
-                     "aspect_preset", "aspect_ratio", "expand_to_fit"},
+                     "aspect_preset", "aspect_ratio", "expand_to_fit", "orientation"},
                     "crop_rotate");
   if (object.contains("expand_to_fit")) {
     static_cast<void>(ReadBoolean(object.at("expand_to_fit"), "crop_rotate.expand_to_fit"));
@@ -667,6 +668,11 @@ auto ParseGeometryUpdate(const nlohmann::json& params) -> ImageGeometryUpdate {
   if (object.contains("aspect_ratio")) {
     update.aspect_ratio =
         ParseCropAspectRatio(object.at("aspect_ratio"), "crop_rotate.aspect_ratio");
+  }
+  if (const auto orientation = ReadOptionalString(object, {"orientation"}, "crop_rotate")) {
+    update.orientation = ParseFrameOrientation(*orientation);
+  } else if (form == ParseForm::Value) {
+    update.orientation = FrameOrientation::Identity;
   }
   return update;
 }
@@ -1063,7 +1069,7 @@ auto ParseWriteOrThrow(std::string_view field, const nlohmann::json& params, Par
     return update;
   }
   if (field == "crop_rotate") {
-    return ParseGeometryUpdate(params);
+    return ParseGeometryUpdate(params, form);
   }
   RequireObject(params, field);
   if (params.contains("index") && params.contains("value") && params.at("value").is_string()) {

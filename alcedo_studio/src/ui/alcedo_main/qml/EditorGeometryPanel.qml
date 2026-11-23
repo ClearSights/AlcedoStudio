@@ -30,6 +30,8 @@ Item {
     property bool restoring: false
     property bool overlayInputActive: false
     property var aspectEntries: []
+    property string orientation: "identity"
+    property string geometryCommandError: ""
 
     readonly property color colText: theme ? theme.colText : appTheme.textColor
     readonly property color colMuted: theme ? theme.colTextMuted : appTheme.textMutedColor
@@ -42,6 +44,8 @@ Item {
     readonly property int sourceImageWidth: root.interaction ? root.interaction.sourceImageWidth : 0
     readonly property int sourceImageHeight: root.interaction ? root.interaction.sourceImageHeight : 0
     readonly property bool hasSourceSize: root.sourceImageWidth > 0 && root.sourceImageHeight > 0
+    readonly property bool canRunCropCommand: root.canUseGeometry && root.hasSourceSize
+                                              && root.editorSession !== null && !root.inputActive
     readonly property double imageAspect: root.hasSourceSize
                                           ? root.sourceImageWidth / root.sourceImageHeight : 1.0
     readonly property var cropDefaults: parameterCatalog.uiDefault("crop_rotate")
@@ -99,16 +103,9 @@ Item {
         }
     }
 
-    /// Crop width / height in source pixels for a locked aspect, oriented to
-    /// the source (16:9 becomes 9:16 for a portrait photograph). Undefined when
-    /// the aspect is not locked.
-    function lockedAspectRatio() {
-        return parameterCatalog.cropLockedAspectRatio(root.cropState(), root.sourceImageWidth,
-                                                      root.sourceImageHeight)
-    }
-
-    function rectFromModels() {
-        return Qt.rect(cropXModel.value, cropYModel.value, cropWidthModel.value, cropHeightModel.value)
+    /// Document edits and the pointer overlay use pre-orientation source coordinates.
+    function storedCropState() {
+        return parameterCatalog.projectCrop(root.cropState(), root.orientation, false)
     }
 
     function setRectModels(rect) {
@@ -126,6 +123,7 @@ Item {
         const wasRestoring = root.restoring
         root.restoring = true
         root.setRectModels(Qt.rect(state.x, state.y, state.width, state.height))
+        rotationModel.value = Number(state.angle_degrees)
         aspectWidthModel.value = Number(state.aspect_width)
         aspectHeightModel.value = Number(state.aspect_height)
         const presetIndex = root.indexOfAspect(state.aspect_preset)
@@ -137,11 +135,15 @@ Item {
     function syncOverlay() {
         if (!root.interaction)
             return
-        const ratio = root.lockedAspectRatio()
+        const state = root.storedCropState()
+        const ratio = parameterCatalog.cropLockedAspectRatio(state, root.sourceImageWidth,
+                                                            root.sourceImageHeight)
         const locked = ratio !== undefined
         root.interaction.setCropAspectLock(locked, locked ? ratio : 1.0)
-        root.interaction.setCropRotationDegrees(rotationModel.value)
-        root.interaction.setCropRectNormalized(root.rectFromModels())
+        if (state.x !== undefined) {
+            root.interaction.setCropRotationDegrees(state.angle_degrees)
+            root.interaction.setCropRectNormalized(Qt.rect(state.x, state.y, state.width, state.height))
+        }
     }
 
     /// Apply the catalog crop constraint after the change @p driver (position,
@@ -149,9 +151,10 @@ Item {
     /// result on the overlay. A fixed preset sets the aspect size to its ratio;
     /// an aspect size edit selects the custom preset.
     function applyConstraints(driver) {
-        const state = parameterCatalog.constrainCrop(root.cropState(), driver,
-                                                     root.sourceImageWidth,
-                                                     root.sourceImageHeight)
+        const state = parameterCatalog.constrainDisplayedCrop(root.cropState(), driver,
+                                                              root.sourceImageWidth,
+                                                              root.sourceImageHeight,
+                                                              root.orientation)
         if (state.x !== undefined)
             root.setStateModels(state)
         root.wireEnabled()
@@ -159,7 +162,7 @@ Item {
     }
 
     function buildCropParams() {
-        return parameterCatalog.modelParamsJson("crop_rotate", root.cropState())
+        return parameterCatalog.modelParamsJson("crop_rotate", root.storedCropState())
     }
 
     /// paramsBuilder for the models: constrain, then send the whole geometry.
@@ -181,6 +184,7 @@ Item {
     }
 
     function resetModelsToDefaults() {
+        root.orientation = "identity"
         root.restoring = true
         cropXModel.value = cropXModel.defaultValue
         cropYModel.value = cropYModel.defaultValue
@@ -193,12 +197,10 @@ Item {
         root.restoring = false
     }
 
-    /// Reset button: one settled edit back to a full-frame, unrotated, free crop.
-    function resetGeometry() {
-        root.resetModelsToDefaults()
-        root.wireEnabled()
-        root.syncOverlay()
-        root.submitGeometry(true)
+    /// The document owner applies the named operation against the current image.
+    function runCropCommand(command) {
+        if (root.canRunCropCommand)
+            root.geometryCommandError = root.editorSession.submitGeometryCommand(command)
     }
 
     function loadCropSnapshot(snapshot) {
@@ -210,18 +212,17 @@ Item {
         }
         const rect = entry["crop_rect"] || {}
         const aspect = entry["aspect_ratio"] || {}
-        root.restoring = true
-        cropXModel.value = Number(rect["x"] !== undefined ? rect["x"] : 0.0)
-        cropYModel.value = Number(rect["y"] !== undefined ? rect["y"] : 0.0)
-        cropWidthModel.value = Number(rect["w"] !== undefined ? rect["w"] : 1.0)
-        cropHeightModel.value = Number(rect["h"] !== undefined ? rect["h"] : 1.0)
-        rotationModel.value = Number(entry["angle_degrees"] !== undefined ? entry["angle_degrees"] : 0.0)
-        aspectWidthModel.value = Number(aspect["width"] !== undefined ? aspect["width"] : 1.0)
-        aspectHeightModel.value = Number(aspect["height"] !== undefined ? aspect["height"] : 1.0)
-        const presetIndex = root.indexOfAspect(entry["aspect_ratio_preset"] !== undefined
-                                               ? entry["aspect_ratio_preset"] : "free")
-        aspectModel.currentIndex = presetIndex >= 0 ? presetIndex : aspectModel.defaultIndex
-        root.restoring = false
+        root.orientation = entry["orientation"] ?? "identity"
+        root.setStateModels(parameterCatalog.projectCrop({
+            x: rect["x"] ?? 0.0,
+            y: rect["y"] ?? 0.0,
+            width: rect["w"] ?? 1.0,
+            height: rect["h"] ?? 1.0,
+            angle_degrees: entry["angle_degrees"] ?? 0.0,
+            aspect_preset: entry["aspect_ratio_preset"] ?? "free",
+            aspect_width: aspect["width"] ?? 1.0,
+            aspect_height: aspect["height"] ?? 1.0
+        }, root.orientation, true))
     }
 
     function loadFromSnapshot(snapshot) {
@@ -257,7 +258,7 @@ Item {
     }
 
     function wireEnabled() {
-        const enabled = root.controlsEnabled
+        const enabled = root.controlsEnabled && root.hasSourceSize
         cropXModel.enabled = enabled
         cropYModel.enabled = enabled
         cropWidthModel.enabled = enabled
@@ -282,7 +283,9 @@ Item {
             root.leaveGeometryTool()
     }
     onInteractionChanged: root.enterGeometryTool()
+    onHasSourceSizeChanged: root.wireEnabled()
     onEditorSessionChanged: {
+        root.geometryCommandError = ""
         root.loadFromSnapshot(root.editorSession ? root.editorSession.adjustmentSnapshot : null)
     }
 
@@ -399,11 +402,13 @@ Item {
             if (!root.panelActive || root.restoring)
                 return
             root.overlayInputActive = !isFinal
-            root.setRectModels(rect)
-            const wasRestoring = root.restoring
-            root.restoring = true
-            rotationModel.value = Number(degrees)
-            root.restoring = wasRestoring
+            const state = root.storedCropState()
+            state.x = rect.x
+            state.y = rect.y
+            state.width = rect.width
+            state.height = rect.height
+            state.angle_degrees = Number(degrees)
+            root.setStateModels(parameterCatalog.projectCrop(state, root.orientation, true))
             root.submitGeometry(isFinal)
         }
         function onImageGeometryChanged() {
@@ -503,7 +508,7 @@ Item {
                 mutedColor: root.colMuted
                 hoverColor: root.colHover
                 accentColor: root.colAccent
-                bodyContentHeight: cropControls.implicitHeight + appTheme.spaceSm
+                bodyContentHeight: cropControls.implicitHeight
 
                 ColumnLayout {
                     id: cropControls
@@ -513,6 +518,38 @@ Item {
                     anchors.margins: appTheme.spaceXs
                     spacing: appTheme.spaceSm
 
+                    Flow {
+                        Layout.fillWidth: true
+                        spacing: appTheme.spaceXs
+
+                        IconActionButton {
+                            objectName: "geometryRotateLeftButton"
+                            compact: true
+                            enabled: root.canRunCropCommand
+                            iconSrc: "qrc:/panel_icons/rotate-left.svg"
+                            actionName: qsTr("Rotate Left")
+                            toolTipText: qsTr("Rotate 90° left")
+                            onClicked: root.runCropCommand("geometry.rotate_left")
+                        }
+                        IconActionButton {
+                            objectName: "geometryRotateRightButton"
+                            compact: true
+                            enabled: root.canRunCropCommand
+                            iconSrc: "qrc:/panel_icons/rotate-right.svg"
+                            actionName: qsTr("Rotate Right")
+                            toolTipText: qsTr("Rotate 90° right")
+                            onClicked: root.runCropCommand("geometry.rotate_right")
+                        }
+                    }
+                    Label {
+                        Layout.fillWidth: true
+                        visible: text.length > 0
+                        text: root.geometryCommandError
+                              || (root.editorSession ? (root.editorSession.lastError ?? "") : "")
+                        color: appTheme.dangerColor
+                        font.pixelSize: appTheme.fontSizeCaption
+                        wrapMode: Text.Wrap
+                    }
                     AdjustmentCombo {
                         objectName: "geometryAspectCombo"
                         Layout.fillWidth: true
@@ -569,10 +606,10 @@ Item {
                         IconActionButton {
                             objectName: "geometryResetButton"
                             compact: true
-                            enabled: root.canUseGeometry
+                            enabled: root.canRunCropCommand
                             iconSrc: "qrc:/panel_icons/reset.svg"
                             actionName: qsTr("Reset crop and rotation")
-                            onClicked: root.resetGeometry()
+                            onClicked: root.runCropCommand("geometry.reset_crop_rotate")
                         }
                     }
                 }

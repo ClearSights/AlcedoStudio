@@ -201,6 +201,7 @@ TEST(DocumentTransferTest, PasteAppliesDevelopFieldsAndGeometryButKeepsTargetCam
 
   auto       source          = test::DocumentWithExposureEv(-0.5);
   source.Geometry().SetRotationDegrees(90.0f);
+  source.Geometry().RotateImageQuarterTurn(QuarterTurnDirection::Left, {750, 500});
   // The recorded aspect constraint travels with the geometry.
   ImageGeometryUpdate source_aspect;
   source_aspect.aspect_preset = std::string("ratio_4_3_35mm");
@@ -210,7 +211,8 @@ TEST(DocumentTransferTest, PasteAppliesDevelopFieldsAndGeometryButKeepsTargetCam
   source_develop.highlights_reconstruct = true;
   source_develop.demosaic_method        = "default";
   source.Develop()->Params().ReplaceParams(source_develop);
-  const auto                     package = CaptureDocumentTransfer(source);
+  const auto package =
+      ImportDocumentTransfer(ExportDocumentTransfer(CaptureDocumentTransfer(source)));
   CountingTransferIdentitySource identity;
   DocumentTransferPasteOptions   options;
   options.identity_source = &identity;
@@ -229,6 +231,7 @@ TEST(DocumentTransferTest, PasteAppliesDevelopFieldsAndGeometryButKeepsTargetCam
         << field;
   }
   EXPECT_EQ(working.Geometry().ToJson().dump(), source.Geometry().ToJson().dump());
+  EXPECT_EQ(working.Geometry().Orientation(), FrameOrientation::Rotate90Counterclockwise);
   EXPECT_NE(working.Geometry().ToJson().dump(), geometry_before.dump());
   // The camera profile and as-shot white balance are target image data.
   EXPECT_EQ(pasted_develop.at("camera_profile").dump(), develop_before.at("camera_profile").dump());
@@ -334,6 +337,31 @@ TEST(DocumentTransferTest, ImportRejectsDevelopFieldCarryingImportBoundData) {
   auto missing_develop = json;
   missing_develop.erase("develop");
   EXPECT_THROW((void)ImportDocumentTransfer(missing_develop), std::runtime_error);
+}
+
+TEST(DocumentTransferTest, LegacyGeometryImportsAsIdentityAndRejectsAnOrientationField) {
+  auto serialized =
+      ExportDocumentTransfer(CaptureDocumentTransfer(CreateDefaultPipelineDocument()));
+  serialized.erase("fingerprint");
+  serialized["document_format_version"] = kCropRotateDocumentFormatVersion;
+  auto& geometry                        = serialized.at("develop").at("geometry");
+  geometry.erase("orientation");
+  const auto legacy = ImportDocumentTransfer(serialized);
+  EXPECT_FALSE(ExportDocumentTransfer(legacy).at("develop").at("geometry").contains("orientation"));
+
+  auto target = CreateDefaultPipelineDocument();
+  target.Geometry().RotateImageQuarterTurn(QuarterTurnDirection::Right, {750, 500});
+  const auto  prepared = DocumentTransferPlanner::Plan(legacy, target, {});
+  std::string error;
+  ASSERT_TRUE(
+      ApplyPipelineEditBatch(target, prepared.batch, PipelineEditApplyDirection::Forward, &error))
+      << error;
+  EXPECT_EQ(target.Geometry().Orientation(), FrameOrientation::Identity);
+  geometry["orientation"] = "rotate_90_cw";
+  EXPECT_THROW((void)ImportDocumentTransfer(serialized), std::runtime_error);
+  serialized["document_format_version"] = kOrientationDocumentFormatVersion;
+  geometry["orientation"]               = "unknown_turn";
+  EXPECT_THROW((void)ImportDocumentTransfer(serialized), std::runtime_error);
 }
 
 TEST(DocumentTransferTest, PasteRemapsEveryNodeAdjustmentAndMaskId) {

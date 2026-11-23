@@ -61,10 +61,11 @@ void VerifyExactOrientationPixels(Develop develop, Resample resample) {
     for (const auto& c : cases) {
       SCOPED_TRACE(static_cast<int>(quality));
       SCOPED_TRACE(static_cast<int>(c.orientation));
-      plan.geometry = ResolveRenderGeometry(MakeSourceGeometry(source, source),
-                                            ImageGeometryParams{.orientation = c.orientation}, {},
-                                            ResolutionRequest{.quality = quality}, {});
-      plan.encode_geometry_resample = !IsIdentityResample(plan.geometry);
+      document.Geometry().ApplyUpdate({.orientation = c.orientation});
+      RenderRequest request;
+      request.resolution.quality = quality;
+      GraphCompiler::BindFrameGeometry(plan, document, request);
+      ASSERT_EQ(plan.geometry.orientation, c.orientation);
       device.BeginRender();
       develop(device, plan, prepared, document);
       auto& workspace = device.Workspace();

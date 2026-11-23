@@ -485,6 +485,7 @@ auto ReadGeometry(const PipelineDocument& document, const EditorParameterTarget&
   value.rotation_degrees  = geometry.RotationDegrees();
   value.aspect_preset     = geometry.AspectPreset();
   value.aspect_ratio      = geometry.AspectRatio();
+  value.orientation       = geometry.Orientation();
   return FinishField(target, std::move(value), out);
 }
 

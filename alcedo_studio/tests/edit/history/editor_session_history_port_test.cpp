@@ -301,6 +301,70 @@ TEST_F(EditorSessionHistoryPortTest, SettledAdjustmentCreatesOneCommitAndUndoRed
   EXPECT_TRUE(Head().has_value());
 }
 
+TEST_F(EditorSessionHistoryPortTest,
+       OrientationActionsPreserveExistingCropContentAndStraightening) {
+  std::string error;
+  const auto  handle = history_.Acquire(42, &error);
+  ASSERT_TRUE(handle.valid) << error;
+  auto history =
+      std::shared_ptr<alcedo::IEditorHistoryPort>(&history_, [](alcedo::IEditorHistoryPort*) {});
+  alcedo::EditorSessionEditController edit({history});
+  alcedo::EditorSessionIdentity       identity;
+  identity.element_id = 42;
+
+  alcedo::EditorAdjustmentPatch patch;
+  patch.field_key         = "crop_rotate";
+  patch.target.field_key  = patch.field_key;
+  patch.target.owner_kind = alcedo::EditorParameterOwnerKind::Document;
+  patch.write = alcedo::ImageGeometryUpdate{alcedo::NormalizedRect{0.1f, 0.2f, 0.6f, 0.4f}, 7.0f,
+                                            "custom", alcedo::CropAspectRatio{2.0f, 1.0f}};
+  const auto apply = [&] { return edit.HandlePatch(patch, true, handle, identity); };
+  ASSERT_EQ(apply().kind, alcedo::EditorEditOutcome::Kind::RenderRouted);
+  const auto crop_head = Head();
+  const auto crop_json = Working()->Document().Geometry().ToJson(false);
+
+  patch.write          = alcedo::EditorRotateImageWrite{alcedo::QuarterTurnDirection::Right, {}};
+  EXPECT_EQ(apply().kind, alcedo::EditorEditOutcome::Kind::Rejected);
+  EXPECT_EQ(Head(), crop_head);
+  EXPECT_EQ(Graph()->CommitCount(), 1u);
+
+  patch.write = alcedo::EditorRotateImageWrite{alcedo::QuarterTurnDirection::Right, {750, 500}};
+  ASSERT_EQ(apply().kind, alcedo::EditorEditOutcome::Kind::RenderRouted);
+  const auto rotated_head = Head();
+  EXPECT_NE(rotated_head, crop_head);
+  EXPECT_EQ(Graph()->CommitCount(), 2u);
+  EXPECT_EQ(Working()->Document().Geometry().ToJson(false), crop_json);
+  EXPECT_EQ(Working()->Document().Geometry().Orientation(),
+            alcedo::FrameOrientation::Rotate90Clockwise);
+
+  ASSERT_TRUE(history_.Undo(handle, &error)) << error;
+  EXPECT_EQ(Working()->Document().Geometry().Orientation(), alcedo::FrameOrientation::Identity);
+  ASSERT_TRUE(history_.Redo(handle, &error)) << error;
+  EXPECT_EQ(Head(), rotated_head);
+  EXPECT_EQ(Working()->Document().Geometry().Orientation(),
+            alcedo::FrameOrientation::Rotate90Clockwise);
+
+  alcedo::version_ref_id_t rotated_version{};
+  alcedo::version_ref_id_t root_version{};
+  ASSERT_TRUE(history_.ReadActiveVersionId(handle, &rotated_version, &error)) << error;
+  ASSERT_TRUE(history_.CreateRootVersionAndCheckout(handle, "Unrotated", &root_version, &error))
+      << error;
+  EXPECT_EQ(Working()->Document().Geometry().Orientation(), alcedo::FrameOrientation::Identity);
+  ASSERT_TRUE(history_.CheckoutVersion(handle, rotated_version, &error)) << error;
+  EXPECT_EQ(Working()->Document().Geometry().Orientation(),
+            alcedo::FrameOrientation::Rotate90Clockwise);
+  EXPECT_EQ(Working()->Document().Geometry().ToJson(false), crop_json);
+
+  patch.write = alcedo::EditorResetCropRotateWrite{};
+  ASSERT_EQ(apply().kind, alcedo::EditorEditOutcome::Kind::RenderRouted);
+  EXPECT_EQ(Working()->Document().Geometry().ToJson(), alcedo::ImageGeometryModel{}.ToJson());
+  EXPECT_EQ(Graph()->CommitCount(), 3u);
+  ASSERT_EQ(apply().kind, alcedo::EditorEditOutcome::Kind::RenderRouted);
+  EXPECT_EQ(Graph()->CommitCount(), 3u);
+  ASSERT_TRUE(history_.Undo(handle, &error)) << error;
+  EXPECT_EQ(Head(), rotated_head);
+}
+
 /// The Default document with the RAW import look before #891 (contrast 15, identity curve): the
 /// look that the pinned hashes below fold in as prior values.
 auto DefaultDocumentWithTheImportLookBeforeFilmLike() -> alcedo::PipelineDocument {

@@ -77,6 +77,7 @@ auto RenderMaskThumbnail(const MaskThumbnailSpec& spec) -> QImage {
   ImageGeometryParams image;
   image.crop_rect        = spec.geometry.crop_rect;
   image.rotation_degrees = spec.geometry.rotation_degrees;
+  image.orientation      = spec.geometry.orientation;
   ResolutionRequest resolution;
   resolution.render_scale = 1.0f;
   resolution.max_edge     = kMaskThumbnailSize;

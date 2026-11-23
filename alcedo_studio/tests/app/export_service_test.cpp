@@ -7,8 +7,11 @@
 #include <OpenImageIO/imageio.h>
 #include <gtest/gtest.h>
 
+#include <QString>
 #include <algorithm>
 #include <chrono>
+#include <cstdint>
+#include <cstdlib>
 #include <exiv2/exiv2.hpp>
 #include <filesystem>
 #include <fstream>
@@ -26,21 +29,26 @@
 #include <ultrahdr_api.h>
 #endif
 
+#include "app/editor_parameter_write.hpp"
+#include "app/editor_pipeline_command_service.hpp"
 #include "app/import_service.hpp"
+#include "app/pipeline_document_history.hpp"
 #include "app/pipeline_service.hpp"
+#include "app/project_package_backend.hpp"
 #include "app/project_service.hpp"
 #include "edit/graph/pipeline_document.hpp"
+#include "edit/history/mini_git_working_history.hpp"
 #include "edit/operators/utils/color_utils.hpp"
 #include "image/image.hpp"
 #include "io/image/export_color_profile_config.hpp"
 #include "io/image/export_icc_profile_resolver.hpp"
 #include "io/image/image_writer.hpp"
+#include "support/storage_invariants.hpp"
+#include "support/test_temp_directory.hpp"
 #include "type/supported_file_type.hpp"
 #include "utils/clock/time_provider.hpp"
 #include "utils/profiler/profiler.hpp"
 #include "utils/string/convert.hpp"
-#include "support/storage_invariants.hpp"
-#include "support/test_temp_directory.hpp"
 
 namespace alcedo {
 namespace {
@@ -707,6 +715,121 @@ TEST_F(ExportServiceTests, ReexportedRasterUsesExportProfileNotSourceIcc) {
   EXPECT_EQ(exported_icc, ExportIccProfileResolver::ResolveIccProfileBytes(rec709));
   EXPECT_NE(exported_icc, source_icc);
   AssertReadableNonEmptyImageFile(export_path);
+}
+
+TEST_F(ExportServiceTests, QuarterTurnsRestoreOnReopenAndExport) {
+  cv::Mat source(21, 35, CV_8UC3);
+  for (int y = 0; y < source.rows; ++y) {
+    for (int x = 0; x < source.cols; ++x) {
+      source.at<cv::Vec3b>(y, x) = {static_cast<std::uint8_t>(5 * x + 3 * y),
+                                    static_cast<std::uint8_t>(3 * x + 6 * y),
+                                    static_cast<std::uint8_t>(7 * x)};
+    }
+  }
+  const auto source_path = temp_dir_ / "source.png";
+  ASSERT_TRUE(cv::imwrite(source_path.string(), source));
+  sl_element_id_t element_id{};
+  image_id_t      image_id{};
+  const auto      export_image = [&](ProjectService&                             project,
+                                     const std::shared_ptr<PipelineMgmtService>& pipelines,
+                                     const std::filesystem::path& path, cv::Mat* result) {
+    ExportService service(project.GetSleeveService(), project.GetImagePoolService(), pipelines);
+    ExportTask    task;
+    task.sleeve_id_            = element_id;
+    task.image_id_             = image_id;
+    task.options_.format_      = ImageFormatType::PNG;
+    task.options_.export_path_ = path;
+    AttachLegacyRecipe(task);
+    service.EnqueueExportTask(task);
+    std::promise<std::shared_ptr<std::vector<ExportResult>>> done;
+    auto                                                     future = done.get_future();
+    service.ExportAll([&done](auto results) { done.set_value(std::move(results)); });
+    ASSERT_EQ(future.wait_for(180s), std::future_status::ready);
+    const auto results = future.get();
+    ASSERT_NE(results, nullptr);
+    ASSERT_EQ(results->size(), 1u);
+    ASSERT_TRUE(results->front().success_) << results->front().message_;
+    *result = ReadExportRgb8(results->front().output_path_);
+    ASSERT_FALSE(result->empty());
+  };
+
+  cv::Mat            identity;
+  head_commit_hash_t turned_head;
+  {
+    ProjectService    project(db_path_, meta_path_);
+    auto              pipelines = std::make_shared<PipelineMgmtService>(project.GetStorage());
+    ImportServiceImpl importer(project.GetSleeveService(), project.GetImagePoolService(),
+                               pipelines);
+    auto              job = std::make_shared<ImportJob>();
+    std::promise<ImportResult> done;
+    auto                       future = done.get_future();
+    job->on_finished_ = [&done](const ImportResult& result) { done.set_value(result); };
+    job               = importer.ImportToFolder({source_path}, L"", {}, job);
+    ASSERT_EQ(future.wait_for(120s), std::future_status::ready);
+    ASSERT_EQ(future.get().imported_, 1u);
+    const auto imported = job->import_log_->Snapshot();
+    importer.SyncImports(imported, L"");
+    ASSERT_EQ(imported.created_.size(), 1u);
+    element_id = imported.created_.front().element_id_;
+    image_id   = imported.created_.front().image_id_;
+    export_image(project, pipelines, temp_dir_ / "identity.png", &identity);
+    ASSERT_FALSE(identity.empty());
+    EXPECT_EQ(identity.size(), source.size());
+
+    const auto            base  = pipelines->LoadHistorySnapshot(element_id);
+    auto                  graph = std::make_shared<CommitGraph>(*base.graph_);
+    MiniGitWorkingHistory history(graph, std::make_shared<MiniGitJournal>());
+    auto                  document = ClonePipelineDocument(base.root_->document);
+    std::string           error;
+    const auto target = CompleteCurrentPanelParameterTarget(document, "crop_rotate", &error);
+    ASSERT_TRUE(target.has_value()) << error;
+    nlohmann::json before;
+    nlohmann::json after;
+    ASSERT_TRUE(ReadEditorParameterJson(document, *target, &before, &error)) << error;
+    ASSERT_TRUE(ApplyEditorParameterWrite(
+        document, *target, EditorRotateImageWrite{QuarterTurnDirection::Right, {35, 21}}, &error))
+        << error;
+    ASSERT_TRUE(ReadEditorParameterJson(document, *target, &after, &error)) << error;
+    const auto prepared =
+        history.PrepareAppendEdit(MakeSetParameterBatch(*target, before, after, true, true, ""));
+    ASSERT_TRUE(prepared.ready) << prepared.error;
+    const auto committed = history.PublishPreparedEdit(prepared);
+    ASSERT_TRUE(committed.committed) << committed.error;
+    const auto snapshot = pipelines->PersistHistory(base, *graph);
+    ASSERT_NE(snapshot, nullptr);
+    turned_head = snapshot->Head();
+    ASSERT_TRUE(turned_head.has_value());
+    project.SaveProject(meta_path_);
+  }
+
+  const auto packed = temp_dir_ / "oriented.alcd";
+  QString    package_error;
+  ASSERT_TRUE(project_pack::WritePackedProject(packed, meta_path_, db_path_, &package_error))
+      << package_error.toStdString();
+  // Keep a copy only for a caller that will test this file with a previous application build.
+  if (const char* output = std::getenv("ALCEDO_TEST_ORIENTED_PROJECT_PATH")) {
+    std::filesystem::copy_file(packed, output, std::filesystem::copy_options::overwrite_existing);
+  }
+  std::filesystem::path reopened_db;
+  std::filesystem::path reopened_meta;
+  ASSERT_TRUE(project_pack::UnpackProjectToWorkspace(packed, temp_dir_ / "workspace",
+                                                     QStringLiteral("Oriented"), &reopened_db,
+                                                     &reopened_meta, &package_error))
+      << package_error.toStdString();
+  ProjectService reopened(reopened_db, reopened_meta);
+  auto           pipelines = std::make_shared<PipelineMgmtService>(reopened.GetStorage());
+  const auto     snapshot  = pipelines->AcquireCommittedSnapshot(element_id);
+  ASSERT_NE(snapshot, nullptr);
+  EXPECT_EQ(snapshot->Head(), turned_head);
+  EXPECT_EQ(snapshot->Document().Geometry().Orientation(), FrameOrientation::Rotate90Clockwise);
+  cv::Mat rotated;
+  export_image(reopened, pipelines, temp_dir_ / "rotated.png", &rotated);
+  ASSERT_FALSE(rotated.empty());
+  cv::Mat expected;
+  cv::rotate(identity, expected, cv::ROTATE_90_CLOCKWISE);
+  ASSERT_EQ(rotated.size(), expected.size());
+  ASSERT_EQ(rotated.type(), expected.type());
+  EXPECT_EQ(cv::norm(rotated, expected, cv::NORM_INF), 0.0);
 }
 
 TEST_F(ExportServiceTests, ExportPixelsAndIccUseTheSameRecipeColorConfiguration) {

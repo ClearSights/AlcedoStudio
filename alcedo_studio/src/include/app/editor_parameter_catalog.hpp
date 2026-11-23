@@ -12,6 +12,7 @@
 #include <string_view>
 
 #include "app/editor_adjustment_pipeline.hpp"
+#include "edit/geometry/types.hpp"
 
 namespace alcedo {
 
@@ -261,6 +262,10 @@ class EditorParameterCatalog {
    */
   [[nodiscard]] static auto ConstrainCrop(const nlohmann::json& crop_ui, EditorCropDriver driver,
                                           const EditorParameterSource& source) -> nlohmann::json;
+
+  /// Map a complete crop value through @p orientation. Use its inverse for display-to-storage.
+  [[nodiscard]] static auto ProjectCropUi(nlohmann::json crop_ui, FrameOrientation orientation)
+      -> nlohmann::json;
 
   /// Width / height of the crop frame for a locked aspect, oriented to the source (a 16:9
   /// preset is 9:16 for a portrait source). nullopt when the aspect is not locked.
