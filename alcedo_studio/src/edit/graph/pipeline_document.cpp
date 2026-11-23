@@ -99,6 +99,7 @@ auto ReadDocumentGeometry(const nlohmann::json& json, std::uint32_t format_versi
   switch (format_version) {
     case kCropRotateDocumentFormatVersion:
     case kOrientationDocumentFormatVersion:
+    case kEffectiveCropAspectDocumentFormatVersion:
       return ImageGeometryModel::FromJson(json);
     default:
       throw std::runtime_error("Unsupported pipeline document geometry format_version");
@@ -109,9 +110,20 @@ void ValidateDocumentShape(const nlohmann::json& json, std::uint32_t format_vers
   if (!json.contains("geometry") || !json["geometry"].is_object()) {
     throw std::runtime_error("Pipeline document is missing an object geometry");
   }
-  const auto orientation     = json.at("geometry").find("orientation");
+  const auto& geometry = json.at("geometry");
+  if (format_version >= kEffectiveCropAspectDocumentFormatVersion) {
+    const auto ratio = geometry.find("aspect_ratio");
+    if (ratio == geometry.end() || !ratio->is_array() || ratio->size() != 2 ||
+        !std::all_of(ratio->begin(), ratio->end(), [](const auto& side) {
+          return side.is_number() && std::isfinite(side.template get<float>()) &&
+                 side.template get<float>() > 0.0f;
+        })) {
+      throw std::runtime_error("Invalid pipeline document crop aspect ratio");
+    }
+  }
+  const auto orientation     = geometry.find("orientation");
   const bool has_orientation = orientation != json.at("geometry").end();
-  if ((format_version == kOrientationDocumentFormatVersion) != has_orientation ||
+  if ((format_version >= kOrientationDocumentFormatVersion) != has_orientation ||
       (has_orientation && !orientation->is_string())) {
     throw std::runtime_error("Invalid pipeline document orientation for format_version");
   }
@@ -388,12 +400,26 @@ auto PipelineDocument::ToJson() const -> nlohmann::json {
   const auto format_version = FormatVersion();
   return {
       {"format_version", format_version},
-      {"geometry", geometry_.ToJson(format_version == kOrientationDocumentFormatVersion)},
+      {"geometry", geometry_.ToJson(format_version >= kOrientationDocumentFormatVersion)},
       {"next_color_grade_name_number", next_color_grade_name_number_},
       {"default_grade_id", default_grade_id_.Empty() ? nlohmann::json(nullptr)
                                                      : nlohmann::json(default_grade_id_.Value())},
       {"nodes", std::move(nodes)},
       {"edges", std::move(edges)}};
+}
+
+void PipelineDocument::ApplyGeometryUpdate(ImageGeometryUpdate update) {
+  const auto revision = update.document_format_version;
+  if (revision &&
+      (!IsSupportedPipelineDocumentFormatVersion(*revision) ||
+       (*revision == kCropRotateDocumentFormatVersion &&
+        update.orientation.value_or(geometry_.Orientation()) != FrameOrientation::Identity))) {
+    throw std::invalid_argument("Invalid document revision for geometry update");
+  }
+  geometry_.ApplyUpdate(std::move(update));
+  if (revision) {
+    format_version_ = *revision;
+  }
 }
 
 auto PipelineDocument::FromJson(const nlohmann::json&        json,

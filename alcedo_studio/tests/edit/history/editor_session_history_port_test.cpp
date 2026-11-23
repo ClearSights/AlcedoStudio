@@ -24,6 +24,7 @@
 #include "app/editor_history_types.hpp"
 #include "app/editor_mini_git_materializer.hpp"
 #include "app/editor_pending_input.hpp"
+#include "app/editor_parameter_write.hpp"
 #include "app/editor_pipeline_command_service.hpp"
 #include "app/editor_session_edit_controller.hpp"
 #include "app/pipeline_document_history.hpp"
@@ -37,6 +38,7 @@
 #include "edit/history/edit_commit_attribution.hpp"
 #include "edit/history/mini_git_working_history.hpp"
 #include "edit/history/pipeline_document_checkpoint.hpp"
+#include "edit/history/pipeline_history_format.hpp"
 #include "edit/operators/models/builtin_type_ids.hpp"
 #include "edit/operators/models/curve_model.hpp"
 #include "edit/operators/models/scalar_operator_model.hpp"
@@ -364,6 +366,147 @@ TEST_F(EditorSessionHistoryPortTest,
   EXPECT_EQ(Graph()->CommitCount(), 3u);
   ASSERT_TRUE(history_.Undo(handle, &error)) << error;
   EXPECT_EQ(Head(), rotated_head);
+}
+
+TEST_F(EditorSessionHistoryPortTest, SwapAspectChangesFrameWithoutRotatingImage) {
+  std::string error;
+  const auto  handle = history_.Acquire(42, &error);
+  ASSERT_TRUE(handle.valid) << error;
+  alcedo::EditorSessionEditController edit(
+      {std::shared_ptr<alcedo::IEditorHistoryPort>(&history_, [](auto*) {})});
+  const alcedo::EditorSessionIdentity identity{.element_id = 42};
+  alcedo::EditorAdjustmentPatch       patch;
+  patch.field_key = "crop_rotate";
+  patch.target    = {.owner_kind = alcedo::EditorParameterOwnerKind::Document,
+                     .field_key  = patch.field_key};
+  patch.write =
+      alcedo::ImageGeometryUpdate{.crop_rect = alcedo::NormalizedRect{0.25f, 0.25f, 0.5f, 0.5f},
+                                  .rotation_degrees = 7.0f,
+                                  .orientation      = alcedo::FrameOrientation::Transpose};
+  const auto apply = [&] { return edit.HandlePatch(patch, true, handle, identity); };
+  ASSERT_EQ(apply().kind, alcedo::EditorEditOutcome::Kind::RenderRouted);
+  const auto before      = Working()->Document().Geometry().ToJson();
+  const auto before_head = Head();
+
+  patch.write            = alcedo::EditorSwapCropAspectWrite{{}};
+  EXPECT_EQ(apply().kind, alcedo::EditorEditOutcome::Kind::Rejected);
+  EXPECT_EQ(Head(), before_head);
+  patch.write = alcedo::EditorSwapCropAspectWrite{{1000, 1000}};
+  ASSERT_EQ(apply().kind, alcedo::EditorEditOutcome::Kind::RenderRouted);
+  EXPECT_EQ(Head(), before_head);
+  EXPECT_EQ(Graph()->CommitCount(), 1u);
+
+  patch.write = alcedo::EditorSwapCropAspectWrite{{800, 400}};
+  ASSERT_EQ(apply().kind, alcedo::EditorEditOutcome::Kind::RenderRouted);
+  const auto& geometry = Working()->Document().Geometry();
+  const auto  crop     = geometry.CropRect();
+  EXPECT_NEAR(crop.w * 2.0 / crop.h, 0.5, 1e-6);
+  EXPECT_NEAR(crop.x + crop.w * 0.5, 0.5, 1e-6);
+  EXPECT_NEAR(crop.y + crop.h * 0.5, 0.5, 1e-6);
+  EXPECT_EQ(geometry.AspectPreset(), "free");
+  EXPECT_FLOAT_EQ(geometry.RotationDegrees(), 7.0f);
+  EXPECT_EQ(geometry.Orientation(), alcedo::FrameOrientation::Transpose);
+  const auto after = geometry.ToJson();
+  EXPECT_EQ(Graph()->CommitCount(), 2u);
+  ASSERT_TRUE(history_.Undo(handle, &error)) << error;
+  EXPECT_EQ(Working()->Document().Geometry().ToJson(), before);
+  ASSERT_TRUE(history_.Redo(handle, &error)) << error;
+  EXPECT_EQ(Working()->Document().Geometry().ToJson(), after);
+}
+
+TEST_F(EditorSessionHistoryPortTest, FixedPresetSwapSurvivesFurtherCropEditsAndReopen) {
+  auto legacy_json                 = alcedo::CreateDefaultPipelineDocument().ToJson();
+  legacy_json["format_version"]    = alcedo::kOrientationDocumentFormatVersion;
+  auto& legacy_geometry            = legacy_json["geometry"];
+  legacy_geometry["aspect_preset"] = "ratio_16_9";
+  legacy_geometry["aspect_ratio"]  = {16.0, 9.0};
+  legacy_geometry["crop_rect"]     = {0.25, 0.125, 0.5, 0.75};
+  legacy_geometry["orientation"]   = "transpose";
+  lease_ =
+      alcedo::test::MakeInMemoryEditorLease(42, alcedo::PipelineDocument::FromJson(legacy_json));
+  std::string error;
+  const auto  handle = history_.Acquire(42, &error);
+  ASSERT_TRUE(handle.valid) << error;
+  EXPECT_EQ(Working()->Document().ToJson().at("geometry"), legacy_geometry);
+  alcedo::EditorSessionEditController edit(
+      {std::shared_ptr<alcedo::IEditorHistoryPort>(&history_, [](auto*) {})});
+  const alcedo::EditorSessionIdentity identity{.element_id = 42};
+  alcedo::EditorAdjustmentPatch       patch;
+  patch.field_key  = "crop_rotate";
+  patch.target     = {.owner_kind = alcedo::EditorParameterOwnerKind::Document,
+                      .field_key  = patch.field_key};
+  patch.write      = alcedo::EditorSwapCropAspectWrite{{3000, 4000}};
+  const auto apply = [&] { return edit.HandlePatch(patch, true, handle, identity); };
+  ASSERT_EQ(apply().kind, alcedo::EditorEditOutcome::Kind::RenderRouted);
+  const auto swapped = Working()->Document().ToJson();
+  EXPECT_EQ(swapped.at("format_version"), alcedo::kEffectiveCropAspectDocumentFormatVersion);
+  EXPECT_EQ(swapped.at("geometry").at("aspect_ratio"), nlohmann::json::array({16.0, 9.0}));
+  EXPECT_EQ(swapped.at("geometry").at("aspect_preset"), "ratio_16_9");
+  EXPECT_EQ(swapped.at("geometry").at("orientation"), "transpose");
+  ASSERT_TRUE(history_.Undo(handle, &error)) << error;
+  EXPECT_EQ(Working()->Document().FormatVersion(), alcedo::kOrientationDocumentFormatVersion);
+  EXPECT_EQ(Working()->Document().ToJson().at("geometry"), legacy_geometry);
+  ASSERT_TRUE(history_.Redo(handle, &error)) << error;
+  EXPECT_EQ(Working()->Document().ToJson(), swapped);
+
+  const auto rect = Working()->Document().Geometry().CropRect();
+  const auto x = rect.x * 0.5f;
+  patch.write = alcedo::ParseEditorParameterWrite(
+      "crop_rotate", {{"crop_rect", {{"x", x}, {"y", rect.y}, {"w", rect.w}, {"h", rect.h}}}},
+      &error);
+  ASSERT_TRUE(patch.write) << error;
+  ASSERT_EQ(apply().kind, alcedo::EditorEditOutcome::Kind::RenderRouted);
+  const auto expected = Working()->Document().ToJson();
+  const auto moved_crop = Working()->Document().Geometry().CropRect();
+  EXPECT_FLOAT_EQ(moved_crop.x, x);
+  EXPECT_NEAR(moved_crop.w * 0.75 / moved_crop.h, 16.0 / 9.0, 1e-6);
+  EXPECT_EQ(Working()->Document().Geometry().Orientation(), alcedo::FrameOrientation::Transpose);
+  const auto save = history_.CaptureSaveCheckpoint(handle, &error);
+  ASSERT_TRUE(save) << error;
+  ASSERT_TRUE(save->materialization.image_state.serialized_pipeline_state);
+  const auto saved = alcedo::DecodePipelineDocumentCheckpoint(
+      *save->materialization.image_state.serialized_pipeline_state);
+  EXPECT_EQ(saved.document.ToJson(), expected);
+
+  // Reacquire from the original lease and replay the committed journal.
+  const auto head = Head();
+  history_.Release(handle);
+  const auto reopened = history_.Acquire(42, &error);
+  ASSERT_TRUE(reopened.valid) << error;
+  EXPECT_EQ(Head(), head);
+  EXPECT_EQ(Working()->Document().ToJson(), expected);
+}
+
+TEST_F(EditorSessionHistoryPortTest, LockToggleKeepsFrameAndUsesFreeOrCustomPreset) {
+  std::string error;
+  const auto  handle = history_.Acquire(42, &error);
+  ASSERT_TRUE(handle.valid) << error;
+  alcedo::EditorSessionEditController edit(
+      {std::shared_ptr<alcedo::IEditorHistoryPort>(&history_, [](auto*) {})});
+  const alcedo::EditorSessionIdentity identity{.element_id = 42};
+  alcedo::EditorAdjustmentPatch       patch;
+  patch.field_key   = "crop_rotate";
+  patch.target      = {.owner_kind = alcedo::EditorParameterOwnerKind::Document,
+                       .field_key  = patch.field_key};
+  const auto before = Working()->Document().Geometry().ToJson();
+  patch.write       = alcedo::EditorSetCropAspectLockWrite{{6000, 4000}, true};
+  ASSERT_EQ(edit.HandlePatch(patch, true, handle, identity).kind,
+            alcedo::EditorEditOutcome::Kind::RenderRouted);
+  const auto locked = Working()->Document().Geometry().ToJson();
+  EXPECT_EQ(locked.at("crop_rect"), before.at("crop_rect"));
+  EXPECT_EQ(locked.at("aspect_preset"), "custom");
+  EXPECT_EQ(locked.at("aspect_ratio"), nlohmann::json::array({1.5, 1.0}));
+  EXPECT_EQ(Graph()->CommitCount(), 1u);
+
+  patch.write = alcedo::EditorSetCropAspectLockWrite{{6000, 4000}, false};
+  ASSERT_EQ(edit.HandlePatch(patch, true, handle, identity).kind,
+            alcedo::EditorEditOutcome::Kind::RenderRouted);
+  EXPECT_EQ(Working()->Document().Geometry().ToJson(), before);
+  EXPECT_EQ(Graph()->CommitCount(), 2u);
+  ASSERT_TRUE(history_.Undo(handle, &error)) << error;
+  EXPECT_EQ(Working()->Document().Geometry().ToJson(), locked);
+  ASSERT_TRUE(history_.Redo(handle, &error)) << error;
+  EXPECT_EQ(Working()->Document().Geometry().ToJson(), before);
 }
 
 TEST_F(EditorSessionHistoryPortTest, QueuedFlipsCommitSeparatelyAndUndoRedoRestoreOrientation) {

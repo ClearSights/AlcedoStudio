@@ -335,8 +335,9 @@ void AppendDrtParameterChanges(const PipelineDocument& root, const TransferDrtPo
 /// the target root. Develop fields compare and store only owned keys, so the
 /// target camera profile and as-shot white balance are never rewritten.
 void AppendParameterChange(const PipelineDocument& root, const EditorParameterTarget& target,
-                           const nlohmann::json& selected_value,
-                           std::vector<PipelineEditChange>* changes) {
+                           const nlohmann::json&            selected_value,
+                           std::vector<PipelineEditChange>* changes,
+                           std::optional<std::uint32_t>     geometry_revision = std::nullopt) {
   nlohmann::json before;
   std::string    error;
   if (!ReadEditorParameterJson(root, target, &before, &error)) {
@@ -344,6 +345,9 @@ void AppendParameterChange(const PipelineDocument& root, const EditorParameterTa
   }
   auto before_owned = FieldOwnedParameterJson(target.field_key, before);
   auto after_owned  = FieldOwnedParameterJson(target.field_key, selected_value);
+  if (geometry_revision) {
+    after_owned["document_format_version"] = *geometry_revision;
+  }
   if (before_owned.dump() == after_owned.dump()) {
     return;
   }
@@ -356,7 +360,9 @@ void AppendParameterChange(const PipelineDocument& root, const EditorParameterTa
   changes->push_back(std::move(change));
 }
 
-void AppendDevelopParameterChanges(const PipelineDocument& root, const TransferDevelopValue& develop,
+void AppendDevelopParameterChanges(const PipelineDocument&          root,
+                                   const TransferDevelopValue&      develop,
+                                   std::uint32_t                    document_version,
                                    std::vector<PipelineEditChange>* changes) {
   if (develop.Empty()) {
     return;
@@ -384,18 +390,18 @@ void AppendDevelopParameterChanges(const PipelineDocument& root, const TransferD
     EditorParameterTarget target;
     target.owner_kind = EditorParameterOwnerKind::Document;
     target.field_key  = "crop_rotate";
-    AppendParameterChange(root, target, *develop.geometry, changes);
+    AppendParameterChange(root, target, *develop.geometry, changes, document_version);
   }
 }
 
 auto BuildPasteBatch(const PipelineDocument&            root,
                      const std::vector<nlohmann::json>& materialized_grades,
-                     const TransferDevelopValue&        develop,
+                     const TransferDevelopValue& develop, std::uint32_t document_version,
                      const TransferDrtPostValue& drt_post, const NodeId& default_grade_id)
     -> PipelineEditBatch {
   auto                            working = ClonePipelineDocument(root);
   std::vector<PipelineEditChange> changes;
-  AppendDevelopParameterChanges(root, develop, &changes);
+  AppendDevelopParameterChanges(root, develop, document_version, &changes);
   if (!materialized_grades.empty()) {
     if (default_grade_id.Empty()) {
       Fail("selective paste requires one default Grade identity");
@@ -528,9 +534,9 @@ auto DocumentTransferPlanner::Plan(const AdjustmentTransferPackage&    package,
   prepared.package.develop_     = package.develop_;
   prepared.package.drt_post_    = package.drt_post_;
   prepared.package.fingerprint_ = DocumentTransferFingerprint(prepared.package);
-  prepared.batch                = BuildPasteBatch(root_document, materialized_grades,
-                                                  prepared.package.develop_, prepared.package.drt_post_,
-                                                  prepared.package.default_grade_id_);
+  prepared.batch = BuildPasteBatch(root_document, materialized_grades, prepared.package.develop_,
+                                   package.document_format_version_, prepared.package.drt_post_,
+                                   prepared.package.default_grade_id_);
   return prepared;
 }
 

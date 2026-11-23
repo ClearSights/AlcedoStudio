@@ -148,6 +148,7 @@ auto ReadEditorParameterJson(const PipelineDocument& document, const EditorParam
       }
       case EditorParameterOwnerKind::Document:
         *json = document.Geometry().ToJson();
+        (*json)["document_format_version"] = document.FormatVersion();
         return true;
       case EditorParameterOwnerKind::Develop: {
         const auto* develop = document.Develop();

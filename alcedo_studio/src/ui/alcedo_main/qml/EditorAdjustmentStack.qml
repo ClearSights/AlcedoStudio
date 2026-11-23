@@ -178,6 +178,13 @@ Item {
         return true
     }
 
+    readonly property bool canSwapCropAspect: root.activePanel === "geometry"
+                                                && geometryPanel.canRunCropCommand
+
+    function swapCropAspect() {
+        geometryPanel.swapCropAspect()
+    }
+
     function returnFromGeometryToTone() {
         if (root.activePanel !== "geometry")
             return false

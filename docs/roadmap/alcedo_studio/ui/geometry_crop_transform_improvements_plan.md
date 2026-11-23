@@ -6,7 +6,8 @@ Revised: 2026-11-22
 
 Status: UI layout approved from the standalone QML preview. A1 is complete and verified locally.
 O2 is implemented and passed its feature tests. Its regression results are in Section 7.
-O3 is implemented and verified in Windows Release. Manual visual verification is pending.
+O3 and A2 are implemented and verified in Windows Release.
+Manual visual verification is pending for O3 and A2.
 The remaining numerical and persistence design is an implementation proposal.
 
 Parent: Standalone extension to the editor workspace roadmap.
@@ -1187,7 +1188,81 @@ legacy portrait and landscape, Undo and Redo, and the actual prior reader. If O2
 verify reciprocal ratios after quarter turns and reflections. Build the F1 targets,
 `EditorParameterCatalogTest`, `EditorGeometryPanelQmlTest`, and `ShortcutRegistryTest`.
 Confirm `X` retains text entry and mask-tool priority.
-Completion record pending. Use Section 9.
+#### A2 completion record (2026-11-22)
+
+**Status** Complete for Windows Release. Visual verification on a photograph is pending.
+
+Branch `feature/geometry-crop-transform-a2` starts at `68686c5f` and includes F1, F2, and O1–O3.
+A1 has a separate branch. The Tabler `aspect-ratio` icon received explicit approval.
+Project metadata `0.13.0` and document revision `9` identify the effective ratio in `aspect_ratio`.
+The packed header stays at revision `7`.
+
+**Success and failure paths**
+
+```text
+Lock checkbox -> submitGeometryCommand -> typed lock write -> catalog resolves the frame ratio
+Swap button or scoped X -> submitGeometryCommand -> typed Swap Aspect write
+geometry.swap_aspect -> automation editor command -> the same typed write
+typed write -> EditorCropAspect -> PipelineDocument::ApplyGeometryUpdate
+  -> ImageGeometryModel::ApplyUpdate -> one history commit -> panel and frame publication
+
+saved legacy document -> version-aware reader -> crop projection
+  -> source dimensions -> resolve the prior fixed preset in stored axes -> display axes
+effective user crop edit -> store the accepted ratio with document revision 9
+
+missing source or impossible frame -> command error before mutation -> original head and geometry
+square frame -> no geometry update -> original history head
+```
+
+**Compatibility**
+
+The read path resolves legacy fixed ratios when source dimensions arrive. The first effective
+crop write stores the resolved choice. This keeps the existing frame, canonical historical bytes,
+and history replay comparisons intact. New crop history values carry their document revision so
+replay and Undo restore the correct meaning across the revision boundary. Transfer geometry uses
+its package's document revision.
+
+The previous Windows Release executable from `68686c5f` opened a checksum-valid `0.12.0` packed
+fixture. The same executable rejected the `0.13.0` fixture at the metadata check with exit code 4.
+The fixtures used the same database and packed header and had independently recomputed checksums.
+
+**Release verification**
+
+The `win_release` build succeeded. The application is at
+`build/release/alcedo_studio/src/alcedo_main.exe`.
+
+| Behavior | Executed evidence |
+| --- | --- |
+| Lock preserves the frame and uses Free or Custom | `LockToggleKeepsFrameAndUsesFreeOrCustomPreset` |
+| Swap preserves image orientation. Free and Custom exchange proportions. Square and invalid frames leave history intact. | `SwapAspectChangesFrameWithoutRotatingImage`, `SwapAspectExchangesFreeAndCustomPixelDimensions`, `SwapAspectRejectsAnImpossibleFrameAndSkipsSquareFrames` |
+| Fixed ratio survives resize, Undo, Redo, checkpoint, journal replay, and transfer | `ResizingASwappedFixedCropKeepsItsReciprocalRatio`, `FixedPresetSwapSurvivesFurtherCropEditsAndReopen`, `PasteAppliesDevelopFieldsAndGeometryButKeepsTargetCameraProfile` |
+| Legacy portrait and landscape preserve the frame. Older roots retain their bytes and hashes. | `LegacyFixedAspectResolvesAgainstBothSourceOrientations`, `AcceptedProjectKeepsCanonicalRootBytesAndCommitHash` |
+| The panel restores without an edit, and X yields to text input and mask editing | `AspectControlsSendOwnerCommandsAndRestoreWithoutAnEdit`, `CropShortcutScopeYieldsToTextInputAndMaskEditing` |
+| The automation command renders the reciprocal aspect on an imported RAW photograph | `CropRatioPresetGivesPresetAspectInPixels` through `alcedo-cli` and the Release editor |
+
+CTest passed 346 of 347 selected cases. The historical Paste hash assertion produced the same
+head and chain values recorded in [#555](https://github.com/zidage/AlcedoStudio/issues/555).
+The transfer test checks for history Version keys at the package level and accepts the Color
+Wheels adjustment's parameter revision. That assertion is tracked in
+[#484](https://github.com/zidage/AlcedoStudio/issues/484).
+
+```powershell
+$env:VCVARS_USER_VERSION = '14.44'
+$env:PATH = "$((Resolve-Path vcpkg/installed/x64-windows/bin).Path);C:/Qt/6.12.0/msvc2022_64/bin;$env:PATH"
+cmd /c scripts\msvc_env.cmd --build --preset win_release --parallel 8 --target alcedo_main ProjectCompatibilityTest PipelineDocumentCheckpointTest EditorMiniGitMaterializerTest DocumentTransferTest EditorParameterCatalogTest EditorGeometryPanelQmlTest ShortcutRegistryTest EditorSessionHistoryPortTest PipelineEditBatchTest CommitGraphTest AutomationEditorE2ETest
+$tests = '^(ProjectCompatibilityTest|PipelineDocumentCheckpointFormat|EditorMiniGitMaterializerTest|DocumentTransferTest|EditorParameterCatalogTest|EditorGeometryPanelQmlTest|ShortcutRegistryTest|EditorSessionHistoryPort(Test|PersistTest|ProjectTest)|PipelineEditBatch|PipelineEditChange|PipelineHistoryFormatTable|CommitGraph[^.]*|ProjectSchemaBoundaryTests)\.|^ProductionBinaryLoadsQuickQanavaModule$|^AutomationEditorE2ETest\.AutomationEditorE2ETest\.CropRatioPresetGivesPresetAspectInPixels$'
+ctest --test-dir build/release -N -R $tests
+ctest --test-dir build/release -R $tests --output-on-failure --no-tests=error -j 1
+```
+
+**File size**
+
+The crop-aspect calculations live in the 134-line `EditorCropAspect` implementation. The
+2,219-line parameter catalog and parameter writer both use this library. The catalog keeps
+the crop UI conversion with its other parameter definitions. The 2,387-line session controller
+and 1,108-line workspace route the action through their existing command paths. The 2,271-line
+history test source uses its existing fixture for the working document, checkpoint, and journal.
+The 1,907-line catalog test source verifies the crop constraints through the public catalog API.
 
 ### A3. Original aspect and crop reset
 

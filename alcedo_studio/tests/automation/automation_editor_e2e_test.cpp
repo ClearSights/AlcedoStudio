@@ -644,6 +644,24 @@ TEST_F(AutomationEditorE2ETest, CropRatioPresetGivesPresetAspectInPixels) {
   ASSERT_GT(width, 0);
   ASSERT_GT(height, 0);
   EXPECT_LE(std::abs(height - width / 2.35), 1.0) << width << "x" << height;
+
+  const auto swapped = Result(QStringLiteral("geometry.swap_aspect")).value("value").toObject();
+  EXPECT_EQ(swapped.value("aspect_preset"), crop.value("aspect_preset"));
+  EXPECT_EQ(swapped.value("angle_degrees"), crop.value("angle_degrees"));
+  EXPECT_NEAR(
+      swapped.value("width").toDouble() * source_aspect / swapped.value("height").toDouble(),
+      1.0 / 2.35, 5e-3);
+  const auto swapped_frame =
+      Result(QStringLiteral("render.preview"),
+             QJsonObject{{"out_dir", QDir(root_).filePath(QStringLiteral("swapped"))},
+                         {"long_edge", 1400}})
+          .value("current")
+          .toObject();
+  const auto swapped_width  = swapped_frame.value("width").toDouble();
+  const auto swapped_height = swapped_frame.value("height").toDouble();
+  ASSERT_GT(swapped_width, 0);
+  ASSERT_GT(swapped_height, 0);
+  EXPECT_LE(std::abs(swapped_width - swapped_height / 2.35), 1.0);
   Stop();
 }
 

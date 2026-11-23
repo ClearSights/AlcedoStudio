@@ -12,6 +12,7 @@
 
 #include "app/dcp_camera_profile_binding.hpp"
 #include "app/editor_adjustment_types.hpp"
+#include "app/editor_crop_aspect.hpp"
 #include "edit/graph/color_grade_node_model.hpp"
 #include "edit/graph/develop_node_model.hpp"
 #include "edit/graph/drt_node_model.hpp"
@@ -212,10 +213,20 @@ auto ApplyEditorParameterWrite(PipelineDocument& document, const EditorParameter
           geometry.RotateImageQuarterTurn(turn->direction, turn->source);
         } else if (const auto* flip = std::get_if<EditorFlipImageWrite>(&write)) {
           geometry.FlipImage(flip->axis, flip->source);
+        } else if (const auto* swap = std::get_if<EditorSwapCropAspectWrite>(&write)) {
+          if (auto update = SwapCropAspect(geometry, swap->source,
+                                                                   document.FormatVersion())) {
+            document.ApplyGeometryUpdate(std::move(*update));
+          }
+        } else if (const auto* lock = std::get_if<EditorSetCropAspectLockWrite>(&write)) {
+          if (auto update = SetCropAspectLocked(geometry, lock->source,
+                                                                        lock->locked)) {
+            document.ApplyGeometryUpdate(std::move(*update));
+          }
         } else if (std::holds_alternative<EditorResetCropRotateWrite>(write)) {
           geometry.ResetCropRotate();
         } else {
-          geometry.ApplyUpdate(RequireWrite<ImageGeometryUpdate>(write, target.field_key));
+          document.ApplyGeometryUpdate(RequireWrite<ImageGeometryUpdate>(write, target.field_key));
         }
         return true;
       }

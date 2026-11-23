@@ -166,6 +166,10 @@ void RegisterNodesPanelShortcuts(ShortcutRegistry* registry) {
 void RegisterBuiltinShortcuts(ShortcutRegistry* registry) {
   RegisterLibraryShortcuts(registry);
   RegisterEditorShortcuts(registry);
+  if (registry != nullptr) {
+    AddSpec(registry, shortcut_id::kGeometrySwapAspect, "Editor", "Swap Aspect", {Chord(Qt::Key_X)},
+            shortcut_scope::kEditorCropEdit, ShortcutInputKind::KeyChord, false);
+  }
   RegisterFilmstripShortcuts(registry);
   RegisterVersionsShortcuts(registry);
   RegisterLutShortcuts(registry);

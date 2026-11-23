@@ -112,10 +112,13 @@ class EditorParameterCatalogAdapter : public QObject {
                                                   int            sourceHeight,
                                                   const QString& orientation) const;
 
-  /// Width / height of the locked crop frame oriented to the source, or undefined when the
-  /// aspect is not locked.
-  Q_INVOKABLE QVariant     cropLockedAspectRatio(const QVariantMap& cropState, int sourceWidth,
-                                                 int sourceHeight) const;
+  /// Restore saved crop controls in displayed axes, resolving a legacy ratio when source size is
+  /// known.
+  Q_INVOKABLE QVariantMap  restoreCrop(const QVariantMap& entry, int sourceWidth,
+                                       int sourceHeight) const;
+
+  /// Effective aspect ratio in the given crop axes, or undefined for Free.
+  Q_INVOKABLE QVariant     cropLockedAspectRatio(const QVariantMap& cropState) const;
 };
 
 }  // namespace alcedo::ui

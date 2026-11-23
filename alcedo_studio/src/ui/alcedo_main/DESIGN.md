@@ -1367,10 +1367,11 @@ Non-Tabler assets are preserved for established Alcedo-specific actions
 (adjustments, aperture, etc.) and for the history operation set.
 
   In Geometry > Crop and Rotate, use compact `IconActionButton`s for Rotate Left,
-  Rotate Right, Flip Horizontal, and Flip Vertical in that order. The buttons use
+  Rotate Right, Flip Horizontal, Flip Vertical, and Swap Aspect in that order. The buttons use
   Tabler `rotate-2`, `rotate-clockwise-2`, `flip-horizontal`, and `flip-vertical`
-  (user-approved 2026-11-22), with white strokes at 1.5 px. Keep the actions
-  in a wrapping row and give each button its own accessible name.
+  and Tabler `aspect-ratio` for Swap Aspect (user-approved 2026-11-22). Use white strokes at
+  1.5 px. Keep the actions in a wrapping row and give each button its own accessible name.
+  Use `ThemeCheckBox` for Lock aspect ratio below the Aspect menu.
 
 ---
 

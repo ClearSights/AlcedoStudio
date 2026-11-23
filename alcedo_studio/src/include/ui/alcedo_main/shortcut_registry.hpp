@@ -46,6 +46,7 @@ inline constexpr const char* kLibraryExtendSelection        = "library.extendSel
 inline constexpr const char* kLibraryToggleSelection        = "library.toggleSelection";
 inline constexpr const char* kLibrarySaveProject            = "library.saveProject";
 
+inline constexpr const char* kGeometrySwapAspect            = "geometry.swap_aspect";
 inline constexpr const char* kEditorUndo                    = "editor.undo";
 inline constexpr const char* kEditorRedo                    = "editor.redo";
 inline constexpr const char* kEditorSaveCurrentImage        = "editor.saveCurrentImage";

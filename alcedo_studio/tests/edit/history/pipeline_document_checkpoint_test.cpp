@@ -194,11 +194,11 @@ auto FilmGrainHistoryChainHash(const root_id_t& root_id, const std::vector<EditC
 }  // namespace
 
 TEST(PipelineHistoryFormatTable, PublishedConstantsIdentifyTheDocumentHistoryCutover) {
-  EXPECT_EQ(kProjectFileVersion, "0.12.0");
+  EXPECT_EQ(kProjectFileVersion, "0.13.0");
   EXPECT_EQ(kMinSupportedProjectFileVersion, "0.10.0");
   EXPECT_EQ(kMaxSupportedProjectFileVersion, kProjectFileVersion);
   EXPECT_EQ(kPackedProjectFormatVersion, 7u);
-  EXPECT_EQ(kPipelineDocumentFormatVersion, 8u);
+  EXPECT_EQ(kPipelineDocumentFormatVersion, 9u);
   EXPECT_EQ(kImageEditSchemaVersion, 5u);
   EXPECT_EQ(kCommitFormatVersion, 5u);
   EXPECT_EQ(kChainFormatVersion, 5u);
@@ -702,6 +702,19 @@ TEST(PipelineDocumentCheckpointFormat, DocumentRejectsInvalidAndMismatchedOrient
   EXPECT_THROW((void)PipelineDocument::FromJson(stored), std::runtime_error);
   stored["format_version"]             = kCropRotateDocumentFormatVersion;
   stored.at("geometry")["orientation"] = "rotate_90_cw";
+  EXPECT_THROW((void)PipelineDocument::FromJson(stored), std::runtime_error);
+}
+
+TEST(PipelineDocumentCheckpointFormat, EffectiveAspectRevisionRejectsInvalidRatio) {
+  auto  stored              = CreateDefaultPipelineDocument().ToJson();
+  auto& geometry            = stored.at("geometry");
+  geometry["aspect_preset"] = "ratio_16_9";
+  for (const auto& invalid : {nlohmann::json::array({0, 16}), nlohmann::json::array({9, "16"}),
+                              nlohmann::json::array({9})}) {
+    geometry["aspect_ratio"] = invalid;
+    EXPECT_THROW((void)PipelineDocument::FromJson(stored), std::runtime_error);
+  }
+  geometry.erase("aspect_ratio");
   EXPECT_THROW((void)PipelineDocument::FromJson(stored), std::runtime_error);
 }
 

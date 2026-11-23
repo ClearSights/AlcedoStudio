@@ -201,6 +201,7 @@ auto FieldMap(const alcedo::EditorPanelFieldPresentation& field) -> QVariantMap 
           rect.insert(QStringLiteral("h"), value.crop_rect.h);
           QVariantMap crop;
           crop.insert(QStringLiteral("crop_rect"), rect);
+          crop.insert(QStringLiteral("document_format_version"), value.document_format_version);
           crop.insert(QStringLiteral("angle_degrees"), value.rotation_degrees);
           const auto orientation = alcedo::FrameOrientationId(value.orientation);
           crop.insert(

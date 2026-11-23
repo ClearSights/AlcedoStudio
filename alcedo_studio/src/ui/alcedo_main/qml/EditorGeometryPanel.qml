@@ -136,8 +136,7 @@ Item {
         if (!root.interaction)
             return
         const state = root.storedCropState()
-        const ratio = parameterCatalog.cropLockedAspectRatio(state, root.sourceImageWidth,
-                                                            root.sourceImageHeight)
+        const ratio = parameterCatalog.cropLockedAspectRatio(state)
         const locked = ratio !== undefined
         root.interaction.setCropAspectLock(locked, locked ? ratio : 1.0)
         if (state.x !== undefined) {
@@ -203,6 +202,10 @@ Item {
             root.geometryCommandError = root.editorSession.submitGeometryCommand(command)
     }
 
+    function swapCropAspect() {
+        root.runCropCommand("geometry.swap_aspect")
+    }
+
     function loadCropSnapshot(snapshot) {
         const raw = snapshot ? snapshot["crop_rotate"] : undefined
         const entry = raw && raw["crop_rotate"] !== undefined ? raw["crop_rotate"] : raw
@@ -210,19 +213,12 @@ Item {
             root.resetModelsToDefaults()
             return
         }
-        const rect = entry["crop_rect"] || {}
-        const aspect = entry["aspect_ratio"] || {}
-        root.orientation = entry["orientation"] ?? "identity"
-        root.setStateModels(parameterCatalog.projectCrop({
-            x: rect["x"] ?? 0.0,
-            y: rect["y"] ?? 0.0,
-            width: rect["w"] ?? 1.0,
-            height: rect["h"] ?? 1.0,
-            angle_degrees: entry["angle_degrees"] ?? 0.0,
-            aspect_preset: entry["aspect_ratio_preset"] ?? "free",
-            aspect_width: aspect["width"] ?? 1.0,
-            aspect_height: aspect["height"] ?? 1.0
-        }, root.orientation, true))
+        const state = parameterCatalog.restoreCrop(entry, root.sourceImageWidth,
+                                                  root.sourceImageHeight)
+        if (state.x !== undefined) {
+            root.orientation = entry["orientation"] ?? "identity"
+            root.setStateModels(state)
+        }
     }
 
     function loadFromSnapshot(snapshot) {
@@ -284,6 +280,14 @@ Item {
     }
     onInteractionChanged: root.enterGeometryTool()
     onHasSourceSizeChanged: root.wireEnabled()
+    onSourceImageWidthChanged: {
+        if (root.editorSession)
+            root.loadFromSnapshot(root.editorSession.adjustmentSnapshot)
+    }
+    onSourceImageHeightChanged: {
+        if (root.editorSession)
+            root.loadFromSnapshot(root.editorSession.adjustmentSnapshot)
+    }
     onEditorSessionChanged: {
         root.geometryCommandError = ""
         root.loadFromSnapshot(root.editorSession ? root.editorSession.adjustmentSnapshot : null)
@@ -412,8 +416,6 @@ Item {
             root.submitGeometry(isFinal)
         }
         function onImageGeometryChanged() {
-            // The source size arrived with a presented frame; redraw the frame
-            // and its aspect lock against it.
             if (root.panelActive)
                 root.syncOverlay()
         }
@@ -556,6 +558,15 @@ Item {
                             actionName: qsTr("Flip Vertical")
                             onClicked: root.runCropCommand("geometry.flip_vertical")
                         }
+                        IconActionButton {
+                            objectName: "geometrySwapAspectButton"
+                            compact: true
+                            enabled: root.canRunCropCommand
+                            iconSrc: "qrc:/panel_icons/swap-aspect.svg"
+                            actionName: qsTr("Swap Aspect")
+                            toolTipText: qsTr("Swap crop width and height")
+                            onClicked: root.swapCropAspect()
+                        }
                     }
                     Label {
                         Layout.fillWidth: true
@@ -570,6 +581,16 @@ Item {
                         objectName: "geometryAspectCombo"
                         Layout.fillWidth: true
                         model: aspectModel
+                    }
+                    ThemeCheckBox {
+                        objectName: "geometryLockAspectCheckBox"
+                        text: qsTr("Lock aspect ratio")
+                        checked: aspectModel.currentValue !== "free"
+                        enabled: root.canRunCropCommand
+                        onToggled: function(locked) {
+                            root.runCropCommand(locked ? "geometry.lock_aspect"
+                                                       : "geometry.unlock_aspect")
+                        }
                     }
                     AdjustmentSlider {
                         objectName: "geometryAspectWidthSlider"

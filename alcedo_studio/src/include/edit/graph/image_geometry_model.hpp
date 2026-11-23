@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include <cstdint>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -16,7 +17,7 @@
 namespace alcedo {
 
 /**
- * @brief Width and height of a custom crop aspect ratio. Only the quotient is meaningful.
+ * @brief Width and height of a crop aspect ratio in stored axes. Only the quotient is meaningful.
  */
 struct CropAspectRatio {
   float width  = 1.0f;
@@ -34,6 +35,8 @@ struct ImageGeometryUpdate {
   std::optional<std::string>     aspect_preset;
   std::optional<CropAspectRatio> aspect_ratio;
   std::optional<FrameOrientation> orientation;
+  // Present on versioned editor writes and history values, outside stored geometry JSON.
+  std::optional<std::uint32_t>    document_format_version;
 };
 
 /**

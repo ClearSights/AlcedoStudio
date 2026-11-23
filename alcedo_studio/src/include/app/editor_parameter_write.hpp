@@ -84,6 +84,17 @@ struct EditorRotateImageWrite {
 };
 
 /// Mirror in the displayed axes at apply time. The viewport supplies the source extent.
+/// Exchange the current crop's pixel proportions, using the reference extent.
+struct EditorSwapCropAspectWrite {
+  Extent2D source;
+};
+
+/// Set the lock explicitly without resizing the frame.
+struct EditorSetCropAspectLockWrite {
+  Extent2D source;
+  bool     locked;
+};
+
 struct EditorFlipImageWrite {
   ImageFlipAxis axis;
   Extent2D      source;
@@ -105,6 +116,7 @@ using EditorParameterWrite =
                  SharpenUpdate, DevelopRawDecodeUpdate, DevelopColorTemperatureUpdate,
                  DevelopLensCalibrationUpdate, DevelopInputProfileUpdate, DrtParameterUpdate,
                  ImageGeometryUpdate, EditorRotateImageWrite, EditorFlipImageWrite,
+                 EditorSwapCropAspectWrite, EditorSetCropAspectLockWrite,
                  EditorResetCropRotateWrite, DrtFilmFormatUpdate, DevelopCameraProfileFileUpdate>;
 
 /**

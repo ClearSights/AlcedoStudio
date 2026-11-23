@@ -21,6 +21,7 @@
 #include "edit/graph/drt_node_model.hpp"
 #include "edit/graph/film_format.hpp"
 #include "edit/graph/image_geometry_model.hpp"
+#include "edit/history/pipeline_history_format.hpp"
 #include "edit/operators/models/cat02_white_balance_model.hpp"
 #include "edit/operators/models/color_wheel_model.hpp"
 #include "edit/operators/models/curve_model.hpp"
@@ -650,14 +651,22 @@ auto ParseGeometryUpdate(const nlohmann::json& params, ParseForm form) -> ImageG
   // History commits replay stored ImageGeometryModel JSON through this parser. Models stored
   // before the crop-frame semantics carry `expand_to_fit`; the key has no meaning now and is read
   // as a known key so that history still loads.
-  RejectUnknownKeys(object,
-                    {"crop_rect", "rotation_degrees", "angle_degrees", "aspect_ratio_preset",
-                     "aspect_preset", "aspect_ratio", "expand_to_fit", "orientation"},
-                    "crop_rotate");
+  RejectUnknownKeys(
+      object,
+      {"crop_rect", "rotation_degrees", "angle_degrees", "aspect_ratio_preset", "aspect_preset",
+       "aspect_ratio", "expand_to_fit", "orientation", "document_format_version"},
+      "crop_rotate");
   if (object.contains("expand_to_fit")) {
     static_cast<void>(ReadBoolean(object.at("expand_to_fit"), "crop_rotate.expand_to_fit"));
   }
   ImageGeometryUpdate update;
+  if (const auto revision = object.find("document_format_version"); revision != object.end()) {
+    if (!(revision->is_number_unsigned() || revision->is_number_integer()) ||
+        !IsSupportedPipelineDocumentFormatVersion(revision->get<std::uint64_t>())) {
+      throw std::invalid_argument("Unsupported crop document_format_version");
+    }
+    update.document_format_version = revision->get<std::uint32_t>();
+  }
   if (object.contains("crop_rect")) {
     update.crop_rect = ParseNormalizedRect(object.at("crop_rect"), "crop_rotate.crop_rect");
   }

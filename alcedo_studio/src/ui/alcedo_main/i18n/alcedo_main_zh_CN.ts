@@ -3687,6 +3687,18 @@ Original source files on disk will be kept.</source>
 <context>
     <name>EditorGeometryPanel</name>
     <message>
+        <source>Swap Aspect</source>
+        <translation>交换宽高比</translation>
+    </message>
+    <message>
+        <source>Swap crop width and height</source>
+        <translation>交换裁剪框的宽度与高度</translation>
+    </message>
+    <message>
+        <source>Lock aspect ratio</source>
+        <translation>锁定宽高比</translation>
+    </message>
+    <message>
         <source>Rotate Left</source>
         <translation>向左旋转</translation>
     </message>
@@ -9863,6 +9875,13 @@ CLIP / SigLIP 这类视觉语言模型会把图像和文字映射到同一语义
     <message>
         <source>No OpenDRT look preset has the id %1.</source>
         <translation>没有 ID 为 %1 的 OpenDRT 外观预设。</translation>
+    </message>
+</context>
+<context>
+    <name>ShortcutRegistry</name>
+    <message>
+        <source>Swap Aspect</source>
+        <translation>交换宽高比</translation>
     </message>
 </context>
 </TS>

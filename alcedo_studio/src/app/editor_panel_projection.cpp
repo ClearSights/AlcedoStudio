@@ -481,6 +481,7 @@ auto ReadGeometry(const PipelineDocument& document, const EditorParameterTarget&
   }
   const auto& geometry = document.Geometry();
   EditorPanelGeometryValue value;
+  value.document_format_version = document.FormatVersion();
   value.crop_rect         = geometry.CropRect();
   value.rotation_degrees  = geometry.RotationDegrees();
   value.aspect_preset     = geometry.AspectPreset();

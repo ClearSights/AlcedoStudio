@@ -259,13 +259,8 @@ TEST_F(ShortcutRegistryTest, MaskExclusiveScopeMayUseNodesDeleteBinding) {
 }
 
 TEST_F(ShortcutRegistryTest, CropShortcutScopeYieldsToTextInputAndMaskEditing) {
-  auto                registry     = MakeRegistry();
-  const QString       crop_command = QStringLiteral("test.cropCommand");
-  ShortcutBindingSpec binding;
-  binding.id               = crop_command;
-  binding.scope            = QLatin1String(shortcut_scope::kEditorCropEdit);
-  binding.default_bindings = {{ShortcutInputKind::KeyChord, Qt::Key_X, Qt::NoModifier}};
-  registry->Register(binding);
+  auto          registry     = MakeRegistry();
+  const QString crop_command = QLatin1String(shortcut_id::kGeometrySwapAspect);
   ASSERT_TRUE(registry->FinalizeRegistration().isEmpty());
 
   QQuickItem workspace;
@@ -291,7 +286,7 @@ TEST_F(ShortcutRegistryTest, CropShortcutScopeYieldsToTextInputAndMaskEditing) {
 TEST_F(ShortcutRegistryTest, CropShortcutScopeLeavesExistingBindingsUnchanged) {
   const QString file         = QStringLiteral("crop-shortcuts.ini");
   const QString undo         = QLatin1String(shortcut_id::kEditorUndo);
-  const QString crop_command = QStringLiteral("test.cropCommand");
+  const QString crop_command = QLatin1String(shortcut_id::kGeometrySwapAspect);
   const QString mask_command = QLatin1String(shortcut_id::kMaskDeleteSelection);
   auto baseline = MakeRegistry(file);
   ASSERT_TRUE(baseline->FinalizeRegistration().isEmpty());
@@ -302,15 +297,9 @@ TEST_F(ShortcutRegistryTest, CropShortcutScopeLeavesExistingBindingsUnchanged) {
                   .value(QStringLiteral("succeeded"))
                   .toBool());
 
-  ShortcutBindingSpec binding;
-  binding.id               = crop_command;
-  binding.scope            = QLatin1String(shortcut_scope::kEditorCropEdit);
-  // Mask edit gets the same key when its higher-priority scope is active.
-  binding.default_bindings = {{ShortcutInputKind::KeyChord, Qt::Key_X, Qt::NoModifier}};
-  auto registry            = MakeRegistry(file);
-  registry->Register(binding);
+  auto registry = MakeRegistry(file);
   ASSERT_TRUE(registry->FinalizeRegistration().isEmpty());
-  ASSERT_EQ(registry->rowCount(), baseline->rowCount() + 1);
+  ASSERT_EQ(registry->rowCount(), baseline->rowCount());
   for (int row = 0; row < baseline->rowCount(); ++row) {
     const auto id =
         baseline->data(baseline->index(row, 0), ShortcutRegistry::CommandIdRole).toString();
@@ -333,7 +322,6 @@ TEST_F(ShortcutRegistryTest, CropShortcutScopeLeavesExistingBindingsUnchanged) {
   ASSERT_TRUE(saved.value(QStringLiteral("succeeded")).toBool());
   registry.reset();
   auto reopened = MakeRegistry(file);
-  reopened->Register(binding);
   ASSERT_TRUE(reopened->FinalizeRegistration().isEmpty());
   EXPECT_EQ(reopened->keySequenceTexts(crop_command), QStringList{QStringLiteral("O")});
   EXPECT_EQ(reopened->keySequenceTexts(undo), QStringList{QStringLiteral("Ctrl+J")});

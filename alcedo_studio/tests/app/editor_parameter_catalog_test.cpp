@@ -19,6 +19,7 @@
 #include <json.hpp>
 #include <optional>
 #include <set>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -27,6 +28,7 @@
 
 #include "app/editor_adjustment_context.hpp"
 #include "app/editor_adjustment_pipeline.hpp"
+#include "app/editor_crop_aspect.hpp"
 #include "app/editor_parameter_write.hpp"
 #include "app/film_stock_presentation.hpp"
 #include "edit/geometry/crop_frame.hpp"
@@ -34,6 +36,7 @@
 #include "edit/graph/drt_node_model.hpp"
 #include "edit/graph/film_format.hpp"
 #include "edit/graph/film_print_model.hpp"
+#include "edit/history/pipeline_history_format.hpp"
 #include "edit/operators/models/cat02_white_balance_model.hpp"
 #include "edit/operators/models/color_wheel_model.hpp"
 #include "edit/operators/models/color_wheel_tone.hpp"
@@ -89,7 +92,8 @@ auto KindName(const EditorParameterCatalogEntry& entry) -> std::string {
 auto CropProjection(double x, double y, double w, double h, double angle, const char* preset,
                     double aspect_width, double aspect_height) -> nlohmann::json {
   return {{"crop_rotate",
-           {{"crop_rect", {{"x", x}, {"y", y}, {"w", w}, {"h", h}}},
+           {{"document_format_version", kEffectiveCropAspectDocumentFormatVersion},
+            {"crop_rect", {{"x", x}, {"y", y}, {"w", w}, {"h", h}}},
             {"angle_degrees", angle},
             {"aspect_ratio_preset", preset},
             {"aspect_ratio", {{"width", aspect_width}, {"height", aspect_height}}}}}};
@@ -677,48 +681,45 @@ TEST(EditorParameterCatalogTest, CompleteCropValueConstrainsForTheChangedValueOn
   auto        ui = EditorParameterCatalog::ToUiValue("crop_rotate", current, &error);
   ASSERT_TRUE(ui.has_value()) << error;
   (*ui)["angle_degrees"] = 2.0;
-  const auto model = EditorParameterCatalog::ToModelJson("crop_rotate", *ui, current, &error);
+  const auto model = EditorParameterCatalog::ToModelJson("crop_rotate", *ui, current,
+                                                         EditorParameterSource{4000, 3000}, &error);
   ASSERT_TRUE(model.has_value()) << error;
   const auto& rect = model->at("crop_rotate").at("crop_rect");
-  EXPECT_DOUBLE_EQ(rect.at("x").get<double>(), 0.1);
-  EXPECT_DOUBLE_EQ(rect.at("y").get<double>(), 0.2);
-  EXPECT_DOUBLE_EQ(rect.at("w").get<double>(), 0.5);
-  EXPECT_DOUBLE_EQ(rect.at("h").get<double>(), 0.4);
+  EXPECT_NEAR(rect.at("x").get<double>(), 0.1, kRoundTripTolerance);
+  EXPECT_NEAR(rect.at("y").get<double>(), 0.2, kRoundTripTolerance);
+  EXPECT_NEAR(rect.at("w").get<double>(), 0.5, kRoundTripTolerance);
+  EXPECT_NEAR(rect.at("h").get<double>(), 0.4, kRoundTripTolerance);
   EXPECT_DOUBLE_EQ(model->at("crop_rotate").at("angle_degrees").get<double>(), 2.0);
   // An aspect size change without a preset selects custom.
-  const auto custom =
-      EditorParameterCatalog::ToModelJson("crop_rotate", {{"aspect_width", 3.0}}, current, &error);
+  const auto custom = EditorParameterCatalog::ToModelJson(
+      "crop_rotate", {{"aspect_width", 3.0}}, current, EditorParameterSource{4000, 3000}, &error);
   ASSERT_TRUE(custom.has_value()) << error;
   EXPECT_EQ(custom->at("crop_rotate").at("aspect_ratio_preset"), "custom");
 }
 
-TEST(EditorParameterCatalogTest, PortraitAspectFlipFollowsOrientation) {
+TEST(EditorParameterCatalogTest, LegacyFixedAspectResolvesAgainstBothSourceOrientations) {
   const auto* entry = EditorParameterCatalog::Find("crop_rotate");
   ASSERT_NE(entry, nullptr);
   auto ui             = EditorParameterCatalog::UiDefault(*entry);
   ui["aspect_preset"] = "ratio_16_9";
-  const auto landscape =
-      EditorParameterCatalog::CropLockedAspectRatio(ui, EditorParameterSource{4000, 3000});
-  const auto portrait =
-      EditorParameterCatalog::CropLockedAspectRatio(ui, EditorParameterSource{3000, 4000});
-  const auto unknown = EditorParameterCatalog::CropLockedAspectRatio(ui, EditorParameterSource{});
-  ASSERT_TRUE(landscape.has_value());
-  ASSERT_TRUE(portrait.has_value());
-  ASSERT_TRUE(unknown.has_value());
-  EXPECT_NEAR(*landscape, 16.0 / 9.0, 1e-5);
-  EXPECT_NEAR(*portrait, 9.0 / 16.0, 1e-5);
-  EXPECT_NEAR(*unknown, 16.0 / 9.0, 1e-5);
+  ui["width"]         = 0.75;
 
-  // A square preset does not flip; the free preset is not locked.
+  EditorParameterCatalog::ResolveLegacyCropAspect(ui, {4000, 3000});
+  ASSERT_TRUE(EditorParameterCatalog::CropLockedAspectRatio(ui));
+  EXPECT_NEAR(*EditorParameterCatalog::CropLockedAspectRatio(ui), 16.0 / 9.0, 1e-5);
+  EditorParameterCatalog::ResolveLegacyCropAspect(ui, {3000, 4000});
+  ASSERT_TRUE(EditorParameterCatalog::CropLockedAspectRatio(ui));
+  EXPECT_NEAR(*EditorParameterCatalog::CropLockedAspectRatio(ui), 9.0 / 16.0, 1e-5);
+  EXPECT_EQ(ui.at("width"), 0.75);
+
   ui["aspect_preset"] = "ratio_1_1";
-  EXPECT_NEAR(*EditorParameterCatalog::CropLockedAspectRatio(ui, EditorParameterSource{3000, 4000}),
-              1.0, 1e-6);
+  EditorParameterCatalog::ResolveLegacyCropAspect(ui, {3000, 4000});
+  ASSERT_TRUE(EditorParameterCatalog::CropLockedAspectRatio(ui));
+  EXPECT_NEAR(*EditorParameterCatalog::CropLockedAspectRatio(ui), 1.0, 1e-6);
   ui["aspect_preset"] = "free";
-  EXPECT_FALSE(
-      EditorParameterCatalog::CropLockedAspectRatio(ui, EditorParameterSource{3000, 4000})
-          .has_value());
+  EXPECT_FALSE(EditorParameterCatalog::CropLockedAspectRatio(ui));
 
-  // A preset write on a portrait source fits a 9:16 frame and keeps the unoriented 16:9 size.
+  // A preset write on a portrait source stores its effective orientation.
   std::string error;
   const auto  full  = CropProjection(0.0, 0.0, 1.0, 1.0, 0.0, "free", 1.0, 1.0);
   const auto  model = EditorParameterCatalog::ToModelJson(
@@ -727,14 +728,63 @@ TEST(EditorParameterCatalogTest, PortraitAspectFlipFollowsOrientation) {
   ASSERT_TRUE(model.has_value()) << error;
   EXPECT_NEAR(FramePixelAspect(*model, 3000.0, 4000.0), 9.0 / 16.0, 1e-3);
   EXPECT_EQ(model->at("crop_rotate").at("aspect_ratio_preset"), "ratio_16_9");
-  EXPECT_DOUBLE_EQ(model->at("crop_rotate").at("aspect_ratio").at("width").get<double>(), 16.0);
-  EXPECT_DOUBLE_EQ(model->at("crop_rotate").at("aspect_ratio").at("height").get<double>(), 9.0);
+  EXPECT_DOUBLE_EQ(model->at("crop_rotate").at("aspect_ratio").at("width").get<double>(), 9.0);
+  EXPECT_DOUBLE_EQ(model->at("crop_rotate").at("aspect_ratio").at("height").get<double>(), 16.0);
   // The same write on a landscape source fits a 16:9 frame.
   const auto wide = EditorParameterCatalog::ToModelJson(
       "crop_rotate", {{"aspect_preset", "ratio_16_9"}}, full, EditorParameterSource{4000, 3000},
       &error);
   ASSERT_TRUE(wide.has_value()) << error;
   EXPECT_NEAR(FramePixelAspect(*wide, 4000.0, 3000.0), 16.0 / 9.0, 1e-3);
+}
+
+TEST(EditorParameterCatalogTest, ResizingASwappedFixedCropKeepsItsReciprocalRatio) {
+  const auto current = CropProjection(0.25, 0.25, 0.25, 0.75, 0, "ratio_16_9", 9.0, 16.0);
+  std::string error;
+  const auto resized = EditorParameterCatalog::ToModelJson(
+      "crop_rotate", {{"width", 0.3}}, current, {4000, 3000}, &error);
+  ASSERT_TRUE(resized) << error;
+  EXPECT_NEAR(FramePixelAspect(*resized, 4000.0, 3000.0), 9.0 / 16.0, 1e-6);
+  EXPECT_EQ(resized->at("crop_rotate").at("aspect_ratio_preset"), "ratio_16_9");
+  EXPECT_EQ(resized->at("crop_rotate").at("aspect_ratio"),
+            (nlohmann::json{{"width", 9.0}, {"height", 16.0}}));
+}
+
+TEST(EditorParameterCatalogTest, SwapAspectExchangesFreeAndCustomPixelDimensions) {
+  for (const char* preset : {"free", "custom"}) {
+    ImageGeometryModel  geometry;
+    ImageGeometryUpdate crop;
+    crop.crop_rect     = NormalizedRect{0.25f, 0.25f, 0.5f, 0.5f};
+    crop.aspect_preset = preset;
+    crop.aspect_ratio  = CropAspectRatio{2.0f, 1.0f};
+    geometry.ApplyUpdate(crop);
+    const auto update = SwapCropAspect(
+        geometry, {4000, 2000}, kEffectiveCropAspectDocumentFormatVersion);
+    ASSERT_TRUE(update && update->crop_rect);
+    EXPECT_NEAR(update->crop_rect->x + update->crop_rect->w * 0.5, 0.5, 1e-6);
+    EXPECT_NEAR(update->crop_rect->y + update->crop_rect->h * 0.5, 0.5, 1e-6);
+    EXPECT_FLOAT_EQ(update->crop_rect->w, 0.25f);
+    EXPECT_FLOAT_EQ(update->crop_rect->h, 1.0f);
+    EXPECT_EQ(update->aspect_ratio.has_value(), std::string_view(preset) == "custom");
+    geometry.ApplyUpdate(*update);
+    EXPECT_EQ(geometry.AspectPreset(), preset);
+    if (std::string_view(preset) == "custom") {
+      EXPECT_EQ(geometry.AspectRatio(), (CropAspectRatio{1.0f, 2.0f}));
+    }
+  }
+}
+
+TEST(EditorParameterCatalogTest, SwapAspectRejectsAnImpossibleFrameAndSkipsSquareFrames) {
+  ImageGeometryModel geometry;
+  EXPECT_FALSE(SwapCropAspect(geometry, {100, 100},
+                                                      kEffectiveCropAspectDocumentFormatVersion));
+  EXPECT_THROW((void)SwapCropAspect(
+                   geometry, {}, kEffectiveCropAspectDocumentFormatVersion),
+               std::invalid_argument);
+  EXPECT_THROW((void)SwapCropAspect(
+                   geometry, {1000000, 1}, kEffectiveCropAspectDocumentFormatVersion),
+               std::invalid_argument);
+  EXPECT_EQ(geometry.ToJson(), ImageGeometryModel{}.ToJson());
 }
 
 TEST(EditorParameterCatalogTest, InvalidEotfForSpaceIsRejectedWithValidList) {

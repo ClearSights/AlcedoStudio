@@ -150,6 +150,7 @@ struct EditorPanelFilmFormatValue {
 };
 
 struct EditorPanelGeometryValue {
+  std::uint32_t    document_format_version = 0;
   NormalizedRect  crop_rect{};
   float           rotation_degrees = 0.0f;
   std::string     aspect_preset;

@@ -162,9 +162,15 @@ auto ExpectedParameterJson(const PipelineDocument& document, const SetParameterC
   const auto target = ToEditorParameterTarget(change.target);
   const auto& expected =
       direction == PipelineEditApplyDirection::Forward ? change.before_value : change.after_value;
-  return ReadEditorParameterJson(document, target, json, error) &&
-         JsonEqual(ComparedParameterJson(target.field_key, *json),
-                   ComparedParameterJson(target.field_key, expected));
+  if (!ReadEditorParameterJson(document, target, json, error)) {
+    return false;
+  }
+  auto current = ComparedParameterJson(target.field_key, *json);
+  if (target.field_key == "crop_rotate" && !expected.contains("document_format_version") &&
+      document.FormatVersion() < kEffectiveCropAspectDocumentFormatVersion) {
+    current.erase("document_format_version");
+  }
+  return JsonEqual(current, ComparedParameterJson(target.field_key, expected));
 }
 
 auto ApplySetParameter(PipelineDocument& document, const SetParameterChange& change,

@@ -9,9 +9,11 @@
 #include <set>
 #include <stdexcept>
 #include <utility>
+#include <variant>
 
 #include "app/adjustment_transfer_package_builder.hpp"
 #include "app/editor_adjustment_types.hpp"
+#include "app/editor_parameter_write.hpp"
 #include "app/editor_pipeline_command_service.hpp"
 #include "app/pipeline_history_applier.hpp"
 #include "edit/graph/adjustment_ownership.hpp"
@@ -276,14 +278,26 @@ void ValidateDevelopEntry(const TransferDevelopValue& develop, std::uint32_t doc
     }
   }
   if (develop.geometry.has_value()) {
+    if (develop.geometry->contains("document_format_version")) {
+      Fail("transfer declares the document revision outside its geometry");
+    }
     if (develop.geometry->contains("orientation") !=
-        (document_version == kOrientationDocumentFormatVersion)) {
+        (document_version >= kOrientationDocumentFormatVersion)) {
       Fail("transfer geometry orientation does not match document_format_version");
     }
     EditorParameterTarget target;
     target.owner_kind = EditorParameterOwnerKind::Document;
     target.field_key  = kGeometryFieldKey;
-    if (!ApplyEditorParameterPatch(document, target, *develop.geometry, &error)) {
+    auto write        = ParseEditorParameterValue(kGeometryFieldKey, *develop.geometry, &error);
+    if (!write) {
+      Fail("transfer geometry failed to load: " + error);
+    }
+    auto& update = std::get<ImageGeometryUpdate>(*write);
+    if (document_version >= kEffectiveCropAspectDocumentFormatVersion && !update.aspect_ratio) {
+      Fail("transfer geometry requires an effective aspect ratio");
+    }
+    update.document_format_version = document_version;
+    if (!ApplyEditorParameterWrite(document, target, *write, &error)) {
       Fail("transfer geometry failed to load: " + error);
     }
   }

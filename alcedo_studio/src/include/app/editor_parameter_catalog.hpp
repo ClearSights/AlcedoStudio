@@ -248,7 +248,8 @@ class EditorParameterCatalog {
    * @return The UI value, or nullopt with @p error set.
    */
   [[nodiscard]] static auto ToUiValue(std::string_view field_key, const nlohmann::json& model_json,
-                                      std::string* error) -> std::optional<nlohmann::json>;
+                                      std::string* error, const EditorParameterSource& source = {})
+      -> std::optional<nlohmann::json>;
 
   /// UI value of the field default: the scalar default or the default object.
   [[nodiscard]] static auto UiDefault(const EditorParameterCatalogEntry& entry) -> nlohmann::json;
@@ -267,11 +268,12 @@ class EditorParameterCatalog {
   [[nodiscard]] static auto ProjectCropUi(nlohmann::json crop_ui, FrameOrientation orientation)
       -> nlohmann::json;
 
-  /// Width / height of the crop frame for a locked aspect, oriented to the source (a 16:9
-  /// preset is 9:16 for a portrait source). nullopt when the aspect is not locked.
-  [[nodiscard]] static auto CropLockedAspectRatio(const nlohmann::json&        crop_ui,
-                                                  const EditorParameterSource& source)
+  /// Effective pixel width / height in the crop value's axes, or nullopt for Free.
+  [[nodiscard]] static auto CropLockedAspectRatio(const nlohmann::json& crop_ui)
       -> std::optional<double>;
+
+  /// Resolve a prior fixed preset's source-based ratio without changing the frame.
+  static void ResolveLegacyCropAspect(nlohmann::json& crop_ui, const EditorParameterSource& source);
 
   /// The EOTF choices of the display transform for @p encoding_space, in menu order. Empty for
   /// a space that is not an `odt.encoding_space` option.

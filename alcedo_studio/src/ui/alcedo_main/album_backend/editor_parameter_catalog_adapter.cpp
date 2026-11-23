@@ -306,6 +306,11 @@ QVariantMap EditorParameterCatalogAdapter::constrainDisplayedCrop(
       return {};
     }
     auto stored_driver = ParseCropDriver(driver);
+    const auto source        = ToSource(sourceWidth, sourceHeight);
+    if (stored_driver == EditorCropDriver::AspectPreset && FrameOrientationSwapsAxes(mapping)) {
+      return ToVariantMap(EditorParameterCatalog::ConstrainCrop(
+          *crop, stored_driver, EditorParameterSource{source.height, source.width}));
+    }
     if (FrameOrientationSwapsAxes(mapping)) {
       if (stored_driver == EditorCropDriver::Width) {
         stored_driver = EditorCropDriver::Height;
@@ -315,8 +320,7 @@ QVariantMap EditorParameterCatalogAdapter::constrainDisplayedCrop(
     }
     const auto stored =
         EditorParameterCatalog::ProjectCropUi(std::move(*crop), InverseFrameOrientation(mapping));
-    auto constrained = EditorParameterCatalog::ConstrainCrop(
-        stored, stored_driver, ToSource(sourceWidth, sourceHeight));
+    auto constrained = EditorParameterCatalog::ConstrainCrop(stored, stored_driver, source);
     return ToVariantMap(EditorParameterCatalog::ProjectCropUi(std::move(constrained), mapping));
   } catch (const std::exception& error) {
     qCWarning(alcedo::diag::editorLog, "EditorParameterCatalog: %s", error.what());
@@ -324,17 +328,34 @@ QVariantMap EditorParameterCatalogAdapter::constrainDisplayedCrop(
   }
 }
 
-QVariant EditorParameterCatalogAdapter::cropLockedAspectRatio(const QVariantMap& cropState,
-                                                              int                sourceWidth,
-                                                              int sourceHeight) const {
+QVariantMap EditorParameterCatalogAdapter::restoreCrop(const QVariantMap& entry, int sourceWidth,
+                                                       int sourceHeight) const {
+  try {
+    const auto  model = ToJson(entry);
+    std::string error;
+    auto        crop = EditorParameterCatalog::ToUiValue("crop_rotate", model, &error,
+                                                         ToSource(sourceWidth, sourceHeight));
+    if (!crop) {
+      qCWarning(alcedo::diag::editorLog, "EditorParameterCatalog: %s", error.c_str());
+      return {};
+    }
+    return ToVariantMap(EditorParameterCatalog::ProjectCropUi(
+        std::move(*crop),
+        ParseFrameOrientation(model.value("orientation", std::string{"identity"}))));
+  } catch (const std::exception& error) {
+    qCWarning(alcedo::diag::editorLog, "EditorParameterCatalog: %s", error.what());
+    return {};
+  }
+}
+
+QVariant EditorParameterCatalogAdapter::cropLockedAspectRatio(const QVariantMap& cropState) const {
   std::string error;
   const auto  state = ValidCropState(cropState, &error);
   if (!state.has_value()) {
     qCWarning(alcedo::diag::editorLog, "EditorParameterCatalog: %s", error.c_str());
     return {};
   }
-  const auto ratio =
-      EditorParameterCatalog::CropLockedAspectRatio(*state, ToSource(sourceWidth, sourceHeight));
+  const auto ratio = EditorParameterCatalog::CropLockedAspectRatio(*state);
   return ratio.has_value() ? QVariant(*ratio) : QVariant{};
 }
 

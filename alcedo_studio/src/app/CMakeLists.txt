@@ -587,6 +587,15 @@ def_library(EditorSupportModules
         "${ALCEDO_INCLUDE_ROOT}/ui/alcedo_main/editor_support/modules/hls_math.hpp"
 )
 
+# Focused crop-aspect calculations shared by the document writes and the panel catalog.
+def_library(EditorCropAspect
+    SOURCES
+        "${ALCEDO_APP_ROOT}/editor_crop_aspect.cpp"
+        "${ALCEDO_INCLUDE_ROOT}/app/editor_crop_aspect.hpp"
+    PUBLIC_DEPS EditGraph EditGeometry
+    PRIVATE_DEPS EditorSupportModules
+)
+
 # UI ranges, defaults, and UI-to-Model conversions of the editor fields. Qt-free; the QML value
 # models and the automation editor commands read the same table.
 def_library(EditorParameterCatalog
@@ -595,6 +604,7 @@ def_library(EditorParameterCatalog
         "${ALCEDO_INCLUDE_ROOT}/app/editor_parameter_catalog.hpp"
     PUBLIC_DEPS EditorAdjustmentPipeline EditorPanelProjection EditorSupportModules EditGeometry
                 EditGraph JSON
+    PRIVATE_DEPS EditorCropAspect
 )
 
 # Version name rules of the Versions panel and the automation Version commands. Qt-free.
@@ -619,7 +629,7 @@ def_library(EditorParameterWrite
         "${ALCEDO_APP_ROOT}/editor_parameter_write_parse.cpp"
         "${ALCEDO_INCLUDE_ROOT}/app/editor_parameter_write.hpp"
     PUBLIC_DEPS EditGraph JSON
-    PRIVATE_DEPS DcpCameraProfileBinding
+    PRIVATE_DEPS DcpCameraProfileBinding EditorCropAspect
 )
 
 def_library(EditorPipelineCommandService

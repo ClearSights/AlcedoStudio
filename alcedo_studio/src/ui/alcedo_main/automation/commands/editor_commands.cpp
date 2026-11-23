@@ -191,14 +191,14 @@ auto CurrentModelValue(const QVariantMap& values, std::string_view field) -> nlo
 }
 
 /// The UI value of @p entry in @p values; nothing when the image does not show the field.
-auto CurrentUiValue(const QVariantMap& values, const EditorParameterCatalogEntry& entry)
-    -> std::optional<QJsonValue> {
+auto CurrentUiValue(const QVariantMap& values, const EditorParameterCatalogEntry& entry,
+                    const EditorParameterSource& source = {}) -> std::optional<QJsonValue> {
   const auto model = CurrentModelValue(values, entry.field);
   if (model.is_null()) {
     return std::nullopt;
   }
   std::string error;
-  const auto  ui = EditorParameterCatalog::ToUiValue(entry.field, model, &error);
+  const auto  ui = EditorParameterCatalog::ToUiValue(entry.field, model, &error, source);
   if (!ui.has_value()) {
     return std::nullopt;
   }
@@ -536,11 +536,12 @@ class BatchApply final : public std::enable_shared_from_this<BatchApply> {
 
   void SendDone() {
     const QVariantMap current = CurrentPanelValues(*editor_);
+    const auto        source  = PresentedSource(*editor_);
     QJsonObject       values;
     for (const auto& change : changes_) {
       const QString field = change.toObject().value("field").toString();
       if (const auto* entry = EditorParameterCatalog::Find(field.toStdString())) {
-        if (const auto value = CurrentUiValue(current, *entry)) {
+        if (const auto value = CurrentUiValue(current, *entry, source)) {
           values.insert(field, *value);
         }
       }
@@ -578,7 +579,7 @@ void SendSetResult(const QPointer<AutomationCommandWait>& wait,
                    bool grain_written) {
   const QVariantMap current = CurrentPanelValues(editor);
   const auto*       entry   = EditorParameterCatalog::Find(field.toStdString());
-  const auto        value   = CurrentUiValue(current, *entry);
+  const auto        value   = CurrentUiValue(current, *entry, PresentedSource(editor));
   QJsonObject       values;
   if (value.has_value()) {
     values.insert(Text(entry->field), *value);
@@ -803,6 +804,7 @@ auto RegisterAutomationEditorCommands(AutomationCommandRegistry& registry,
       return;
     }
     const QVariantMap current = CurrentPanelValues(*editor);
+    const auto        source  = PresentedSource(*editor);
     QJsonObject       values;
     if (params.contains("fields")) {
       const QJsonArray fields = params.value("fields").toArray();
@@ -816,13 +818,13 @@ auto RegisterAutomationEditorCommands(AutomationCommandRegistry& registry,
                   .arg(field));
           return;
         }
-        if (const auto value = CurrentUiValue(current, *entry)) {
+        if (const auto value = CurrentUiValue(current, *entry, source)) {
           values.insert(field, *value);
         }
       }
     } else {
       for (const auto& entry : EditorParameterCatalog::Entries()) {
-        if (const auto value = CurrentUiValue(current, entry)) {
+        if (const auto value = CurrentUiValue(current, entry, source)) {
           values.insert(Text(entry.field), *value);
         }
       }
@@ -907,6 +909,40 @@ auto RegisterAutomationEditorCommands(AutomationCommandRegistry& registry,
                  });
                });
   };
+  AutomationCommandSpec swap_aspect;
+  swap_aspect.method      = QStringLiteral("geometry.swap_aspect");
+  swap_aspect.description = QStringLiteral(
+      "Swaps the crop aspect of the open image and waits for the settled edit and rendered frame.");
+  swap_aspect.params_schema = AutomationClosedParamsSchema(QJsonObject{{"note", NoteSchema()}});
+  swap_aspect.result_schema = set.result_schema;
+  swap_aspect.changes_state = true;
+  swap_aspect.handler       = [host](const QJsonObject& params, AutomationReply reply) {
+    auto* editor = OpenEditor(host, reply);
+    if (editor == nullptr) {
+      return;
+    }
+    const auto source = PresentedSource(*editor);
+    if (source.width == 0 || source.height == 0) {
+      SendAutomationOwnerError(reply, AutomationErrorCode::NotReady,
+                               QStringLiteral("Swap Aspect requires source dimensions."));
+      return;
+    }
+    PreparedWrite write{"crop_rotate", EditorSwapCropAspectWrite{{source.width, source.height}},
+                        FieldTarget(*editor, "crop_rotate")};
+    QPointer<AutomationCommandWait> wait = new AutomationCommandWait(std::move(reply), host);
+    ApplyWrite(editor, wait, std::move(write), AgentAttribution(params),
+               [wait, editor](std::optional<OperationFailure> failure) {
+                 if (wait == nullptr) {
+                   return;
+                 }
+                 if (failure) {
+                   SendOperationFailure(wait, editor, *failure);
+                   return;
+                 }
+                 SendSetResult(wait, *editor, QStringLiteral("crop_rotate"), false);
+               });
+  };
+  RegisterOrFail(registry, std::move(swap_aspect), &ok, error);
   RegisterOrFail(registry, std::move(set), &ok, error);
 
   AutomationCommandSpec batch;

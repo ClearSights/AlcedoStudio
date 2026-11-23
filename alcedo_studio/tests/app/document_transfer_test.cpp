@@ -202,10 +202,10 @@ TEST(DocumentTransferTest, PasteAppliesDevelopFieldsAndGeometryButKeepsTargetCam
   auto       source          = test::DocumentWithExposureEv(-0.5);
   source.Geometry().SetRotationDegrees(90.0f);
   source.Geometry().RotateImageQuarterTurn(QuarterTurnDirection::Left, {750, 500});
-  // The recorded aspect constraint travels with the geometry.
+  // The saved reciprocal of the fixed preset travels with the geometry.
   ImageGeometryUpdate source_aspect;
   source_aspect.aspect_preset = std::string("ratio_4_3_35mm");
-  source_aspect.aspect_ratio  = CropAspectRatio{4.0f, 3.0f};
+  source_aspect.aspect_ratio  = CropAspectRatio{3.0f, 4.0f};
   source.Geometry().ApplyUpdate(source_aspect);
   auto source_develop                   = source.Develop()->Params().Params();
   source_develop.highlights_reconstruct = true;
@@ -232,6 +232,8 @@ TEST(DocumentTransferTest, PasteAppliesDevelopFieldsAndGeometryButKeepsTargetCam
   }
   EXPECT_EQ(working.Geometry().ToJson().dump(), source.Geometry().ToJson().dump());
   EXPECT_EQ(working.Geometry().Orientation(), FrameOrientation::Rotate90Counterclockwise);
+  EXPECT_EQ(working.FormatVersion(), kEffectiveCropAspectDocumentFormatVersion);
+  EXPECT_EQ(working.Geometry().AspectRatio(), (CropAspectRatio{3.0f, 4.0f}));
   EXPECT_NE(working.Geometry().ToJson().dump(), geometry_before.dump());
   // The camera profile and as-shot white balance are target image data.
   EXPECT_EQ(pasted_develop.at("camera_profile").dump(), develop_before.at("camera_profile").dump());
@@ -667,10 +669,12 @@ TEST(DocumentTransferTest, TransferPackageCarriesOnlyOwnedDevelopKeysAndNoCaches
                                    "document_format_version", "drt_post", "fingerprint",
                                    "schema"}));
 
+  // The package-level key list excludes history Versions. The Color Wheels
+  // adjustment includes its own parameter revision.
   std::set<std::string> all_keys;
   JsonKeys(json, &all_keys);
   for (const char* banned : {"camera_profile", "as_shot_cct", "as_shot_tint", "cam_mul",
-                             "dng_profile_fingerprint", "history", "version", "root_id",
+                             "dng_profile_fingerprint", "history", "root_id",
                              "operators", "cache", "ui_state"}) {
     EXPECT_EQ(all_keys.count(banned), 0u) << banned;
   }

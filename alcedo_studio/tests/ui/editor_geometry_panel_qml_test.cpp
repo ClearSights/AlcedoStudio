@@ -483,6 +483,34 @@ TEST(EditorGeometryPanelQmlTest, SelectingLandscapePresetOrientsCropForPortraitI
   EXPECT_NEAR(rect.center().x(), 0.5, 1e-4);
 }
 
+TEST(EditorGeometryPanelQmlTest, AspectControlsSendOwnerCommandsAndRestoreWithoutAnEdit) {
+  GeometrySession session(MakeSnapshot(QStringLiteral("ratio_16_9"), 0.1, 0.2, 0.5, 0.3, 6.0));
+  FakeGeometryInteraction interaction;
+  interaction.presentSource(0, 0);
+  AdjustmentStackHarness harness(&session, &interaction);
+  ASSERT_NE(harness.root(), nullptr) << harness.errors().toStdString();
+  auto* swap = harness.findObject<QQuickItem>(QStringLiteral("geometrySwapAspectButton"));
+  auto* lock = harness.findObject<QObject>(QStringLiteral("geometryLockAspectCheckBox"));
+  ASSERT_NE(swap, nullptr);
+  ASSERT_NE(lock, nullptr);
+  EXPECT_FALSE(swap->isEnabled());
+  EXPECT_FALSE(lock->property("enabled").toBool());
+  EXPECT_TRUE(lock->property("checked").toBool());
+
+  interaction.presentSource(3000, 4000);
+  EXPECT_NEAR(interaction.aspectRatio(), 9.0 / 16.0, 1e-6);
+  EXPECT_TRUE(swap->isEnabled());
+  EXPECT_TRUE(swap->activeFocusOnTab());
+  EXPECT_EQ(swap->property("actionName").toString(), QStringLiteral("Swap Aspect"));
+  EXPECT_TRUE(lock->property("enabled").toBool());
+  EXPECT_TRUE(session.geometry_commands.isEmpty());
+  ASSERT_TRUE(QMetaObject::invokeMethod(swap, "clicked"));
+  ASSERT_TRUE(QMetaObject::invokeMethod(lock, "toggle"));
+  EXPECT_EQ(session.geometry_commands, (QStringList{QStringLiteral("geometry.swap_aspect"),
+                                                    QStringLiteral("geometry.unlock_aspect")}));
+  EXPECT_TRUE(session.calls.empty());
+}
+
 TEST(EditorGeometryPanelQmlTest, CropResetUsesOneOwnerCommandWithoutSubmittingCropValues) {
   GeometrySession session(MakeSnapshot(QStringLiteral("ratio_16_9"), 0.1, 0.2, 0.5, 0.3, 6.0));
   FakeGeometryInteraction interaction;

@@ -62,6 +62,9 @@ class PipelineDocument {
    */
   [[nodiscard]] auto Freeze() const -> std::shared_ptr<const PipelineDocument>;
 
+  /// Apply a focused geometry edit and its saved revision after validating the revision.
+  void               ApplyGeometryUpdate(ImageGeometryUpdate update);
+
   /// A legacy document requires the orientation revision only when it contains a turn or flip.
   [[nodiscard]] auto FormatVersion() const -> std::uint32_t {
     return format_version_ == kCropRotateDocumentFormatVersion &&

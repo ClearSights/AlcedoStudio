@@ -1969,6 +1969,12 @@ QString EditorSessionController::submitGeometryCommand(const QString& command) {
                           ? alcedo::ImageFlipAxis::Horizontal
                           : alcedo::ImageFlipAxis::Vertical;
     write           = alcedo::EditorFlipImageWrite{axis, source};
+  } else if (command == QStringLiteral("geometry.swap_aspect")) {
+    write = alcedo::EditorSwapCropAspectWrite{source};
+  } else if (command == QStringLiteral("geometry.lock_aspect") ||
+             command == QStringLiteral("geometry.unlock_aspect")) {
+    write = alcedo::EditorSetCropAspectLockWrite{source,
+                                                 command == QStringLiteral("geometry.lock_aspect")};
   } else if (command != QStringLiteral("geometry.reset_crop_rotate")) {
     return tr("Unknown geometry command.");
   }

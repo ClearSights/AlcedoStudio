@@ -1087,6 +1087,14 @@ Item {
         onActivated: root.comparison.close()
     }
 
+    RegisteredShortcut {
+        objectName: "geometrySwapAspectShortcut"
+        commandId: "geometry.swap_aspect"
+        activeScope: root.cropEditShortcutScope
+        commandEnabled: adjustmentStack.canSwapCropAspect
+        onActivated: adjustmentStack.swapCropAspect()
+    }
+
     // Geometry: Enter / numpad Enter leaves the panel for Tone. Lives on the
     // workspace so it still works when focus is on the right panel.
     Shortcut {
