@@ -600,6 +600,48 @@ TEST_F(AutomationEditorE2ETest, PreviewWithoutCompareWritesOnlyCurrentFileWithFi
   Stop();
 }
 
+TEST_F(AutomationEditorE2ETest, OriginalCropResetPersistsAcrossProjectReopen) {
+  const auto path = StartWithOnePhoto(QStringLiteral("original_crop_project"));
+  ASSERT_FALSE(path.isEmpty());
+  OpenPhoto();
+  const auto crop_state = [&] {
+    return Result(QStringLiteral("editor.get"), QJsonObject{{"fields", QJsonArray{"crop_rotate"}}})
+        .value("values")
+        .toObject()
+        .value("crop_rotate")
+        .toObject();
+  };
+  const auto set_crop = [&](QJsonObject value) {
+    return Result(QStringLiteral("editor.set"), QJsonObject{{"field", "crop_rotate"}, {"value", value}})
+        .value("value").toObject();
+  };
+  set_crop({{"width", 0.5}, {"height", 0.6}, {"angle_degrees", 12.0}});
+  const auto original = set_crop({{"aspect_preset", "original"}});
+  EXPECT_EQ(original.value("aspect_preset"), QJsonValue("original"));
+  EXPECT_EQ(original.value("angle_degrees"), QJsonValue(12.0));
+  EXPECT_LT(original.value("width").toDouble(), 1.0);
+  EXPECT_NEAR(original.value("width").toDouble(), original.value("height").toDouble(), 1e-6);
+  const auto resized = set_crop({{"width", 0.35}});
+  EXPECT_EQ(resized.value("aspect_preset"), QJsonValue("original"));
+  EXPECT_NEAR(resized.value("width").toDouble(), 0.35, 1e-6);
+  EXPECT_NEAR(resized.value("height").toDouble(), 0.35, 1e-6);
+  const auto count = CommitCount();
+  EXPECT_EQ(set_crop({{"aspect_preset", "original"}}), original);
+  EXPECT_EQ(CommitCount(), count + 1);
+  EXPECT_EQ(set_crop({{"aspect_preset", "original"}}), original);
+  EXPECT_EQ(CommitCount(), count + 1);
+  const auto head = Head();
+  EXPECT_TRUE(Result(QStringLiteral("editor.close")).value("closed").toBool());
+  Stop();
+
+  ASSERT_TRUE(StartWithProject(path));
+  OpenPhoto();
+  EXPECT_EQ(crop_state(), original);
+  EXPECT_EQ(Head(), head);
+  EXPECT_EQ(CommitCount(), count + 1);
+  Stop();
+}
+
 TEST_F(AutomationEditorE2ETest, CropRatioPresetGivesPresetAspectInPixels) {
   ASSERT_FALSE(StartWithOnePhoto(QStringLiteral("crop_ratio_project")).isEmpty());
   OpenPhoto();

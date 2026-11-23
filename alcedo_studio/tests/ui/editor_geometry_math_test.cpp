@@ -14,7 +14,7 @@
 
 namespace alcedo::ui::test {
 
-TEST(EditorGeometryMathTest, AspectMenuUsesReviewedLabelsAndOrderForExistingPresets) {
+TEST(EditorGeometryMathTest, AspectMenuPlacesOriginalAfterFreeAndCustom) {
   constexpr struct {
     const char* id;
     const char* label;
@@ -23,6 +23,7 @@ TEST(EditorGeometryMathTest, AspectMenuUsesReviewedLabelsAndOrderForExistingPres
   } expected[] = {
       {"free", "Free", 0.0f, 0.0f},
       {"custom", "Custom", 0.0f, 0.0f},
+      {"original", "Original", 0.0f, 0.0f},
       {"ratio_1_1", "1:1", 1.0f, 1.0f},
       {"ratio_1_5_1_native_vistavision", "3:2", 1.5f, 1.0f},
       {"ratio_4_3_35mm", "4:3", 4.0f, 3.0f},
@@ -56,6 +57,8 @@ TEST(EditorGeometryMathTest, PresetLookupResolvesRatioAndLockByIdentifier) {
   EXPECT_DOUBLE_EQ(ratio.at(1).toDouble(), 9.0);
   EXPECT_TRUE(math.hasLockedAspect(QStringLiteral("ratio_16_9"), 1.0, 1.0));
   EXPECT_FALSE(math.hasLockedAspect(QStringLiteral("free"), 1.0, 1.0));
+  EXPECT_TRUE(math.hasLockedAspect(QStringLiteral("original"), 3.0, 2.0));
+  EXPECT_TRUE(math.presetRatio(QStringLiteral("original")).isEmpty());
 }
 
 TEST(EditorGeometryMathTest, ClampAndAspectFitKeepNormalizedBounds) {

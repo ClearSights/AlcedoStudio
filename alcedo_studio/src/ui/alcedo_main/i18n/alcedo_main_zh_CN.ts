@@ -3687,6 +3687,10 @@ Original source files on disk will be kept.</source>
 <context>
     <name>EditorGeometryPanel</name>
     <message>
+        <source>Original</source>
+        <translation>原始比例</translation>
+    </message>
+    <message>
         <source>Swap Aspect</source>
         <translation>交换宽高比</translation>
     </message>

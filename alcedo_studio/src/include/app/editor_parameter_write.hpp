@@ -100,6 +100,11 @@ struct EditorFlipImageWrite {
   Extent2D      source;
 };
 
+/// Reset to the source proportions while preserving straightening and image orientation.
+struct EditorResetOriginalCropWrite {
+  Extent2D source;
+};
+
 /// Reset the Crop and Rotate section using the document owner's defaults.
 struct EditorResetCropRotateWrite {};
 
@@ -110,14 +115,13 @@ struct EditorResetCropRotateWrite {};
  * name plus argument map. Queue entries hold this value; JSON exists only at
  * history, project, WAL, and remaining QML collection boundaries.
  */
-using EditorParameterWrite =
-    std::variant<EditorScalarWrite, EditorEnumWrite, EditorToggleWrite, EditorCurveWrite,
-                 EditorLutWrite, HlsUpdate, ColorWheelUpdate, Cat02WhiteBalanceUpdate,
-                 SharpenUpdate, DevelopRawDecodeUpdate, DevelopColorTemperatureUpdate,
-                 DevelopLensCalibrationUpdate, DevelopInputProfileUpdate, DrtParameterUpdate,
-                 ImageGeometryUpdate, EditorRotateImageWrite, EditorFlipImageWrite,
-                 EditorSwapCropAspectWrite, EditorSetCropAspectLockWrite,
-                 EditorResetCropRotateWrite, DrtFilmFormatUpdate, DevelopCameraProfileFileUpdate>;
+using EditorParameterWrite = std::variant<
+    EditorScalarWrite, EditorEnumWrite, EditorToggleWrite, EditorCurveWrite, EditorLutWrite,
+    HlsUpdate, ColorWheelUpdate, Cat02WhiteBalanceUpdate, SharpenUpdate, DevelopRawDecodeUpdate,
+    DevelopColorTemperatureUpdate, DevelopLensCalibrationUpdate, DevelopInputProfileUpdate,
+    DrtParameterUpdate, ImageGeometryUpdate, EditorRotateImageWrite, EditorFlipImageWrite,
+    EditorSwapCropAspectWrite, EditorSetCropAspectLockWrite, EditorResetOriginalCropWrite,
+    EditorResetCropRotateWrite, DrtFilmFormatUpdate, DevelopCameraProfileFileUpdate>;
 
 /**
  * @brief Parse a field JSON object into the matching Model operation.

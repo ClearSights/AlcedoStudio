@@ -194,11 +194,11 @@ auto FilmGrainHistoryChainHash(const root_id_t& root_id, const std::vector<EditC
 }  // namespace
 
 TEST(PipelineHistoryFormatTable, PublishedConstantsIdentifyTheDocumentHistoryCutover) {
-  EXPECT_EQ(kProjectFileVersion, "0.13.0");
+  EXPECT_EQ(kProjectFileVersion, "0.14.0");
   EXPECT_EQ(kMinSupportedProjectFileVersion, "0.10.0");
   EXPECT_EQ(kMaxSupportedProjectFileVersion, kProjectFileVersion);
   EXPECT_EQ(kPackedProjectFormatVersion, 7u);
-  EXPECT_EQ(kPipelineDocumentFormatVersion, 9u);
+  EXPECT_EQ(kPipelineDocumentFormatVersion, 10u);
   EXPECT_EQ(kImageEditSchemaVersion, 5u);
   EXPECT_EQ(kCommitFormatVersion, 5u);
   EXPECT_EQ(kChainFormatVersion, 5u);
@@ -715,6 +715,26 @@ TEST(PipelineDocumentCheckpointFormat, EffectiveAspectRevisionRejectsInvalidRati
     EXPECT_THROW((void)PipelineDocument::FromJson(stored), std::runtime_error);
   }
   geometry.erase("aspect_ratio");
+  EXPECT_THROW((void)PipelineDocument::FromJson(stored), std::runtime_error);
+}
+
+TEST(PipelineDocumentCheckpointFormat, OriginalRequiresItsRevisionAndAValidStoredFrame) {
+  auto  stored              = CreateDefaultPipelineDocument().ToJson();
+  auto& geometry            = stored.at("geometry");
+  geometry["aspect_preset"] = "original";
+  geometry["aspect_ratio"]  = {1.5, 1.0};
+  const auto document       = PipelineDocument::FromJson(stored);
+  EXPECT_EQ(document.ToJson(), stored);
+
+  stored["format_version"] = kEffectiveCropAspectDocumentFormatVersion;
+  EXPECT_THROW((void)PipelineDocument::FromJson(stored), std::runtime_error);
+  stored["format_version"] = kOriginalCropDocumentFormatVersion;
+  geometry["crop_rect"]    = {0, 0, 0, 1};
+  EXPECT_THROW((void)PipelineDocument::FromJson(stored), std::invalid_argument);
+  geometry.erase("crop_rect");
+  EXPECT_THROW((void)PipelineDocument::FromJson(stored), std::invalid_argument);
+  geometry["crop_rect"]    = {0, 0, 1, 1};
+  geometry["aspect_ratio"] = {1, 0};
   EXPECT_THROW((void)PipelineDocument::FromJson(stored), std::runtime_error);
 }
 

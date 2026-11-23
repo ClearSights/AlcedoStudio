@@ -32,6 +32,18 @@ auto             CropRatioFromPixels(double width, double height) -> CropAspectR
   return {static_cast<float>(width * scale), static_cast<float>(height * scale)};
 }
 
+/// Check the corners after the clamp, which enforces minimum crop sizes.
+auto CropFitsRotatedSource(NormalizedRect crop, float rotation_degrees, Extent2D source) -> bool {
+  const auto      corners  = CropFrameCornersInReference(crop, rotation_degrees, source);
+  const auto      width    = static_cast<float>(source.width);
+  const auto      height   = static_cast<float>(source.height);
+  constexpr float roundoff = 8.0f * std::numeric_limits<float>::epsilon();
+  return std::ranges::all_of(corners, [&](const auto& corner) {
+    return corner.x >= -width * roundoff && corner.x <= width * (1.0f + roundoff) &&
+           corner.y >= -height * roundoff && corner.y <= height * (1.0f + roundoff);
+  });
+}
+
 }  // namespace
 
 /// Return the nominal dimensions in the source orientation used by the prior editor.
@@ -66,7 +78,24 @@ auto SetCropAspectLocked(const ImageGeometryModel& geometry, Extent2D source, bo
   update.aspect_ratio  = locked ? CropRatioFromPixels(frame.w * static_cast<double>(source.width),
                                                       frame.h * static_cast<double>(source.height))
                                 : CropAspectRatio{};
-  update.document_format_version = kEffectiveCropAspectDocumentFormatVersion;
+  update.document_format_version = kPipelineDocumentFormatVersion;
+  return update;
+}
+
+auto ResetOriginalCrop(float rotation_degrees, Extent2D source) -> ImageGeometryUpdate {
+  if (source.Empty()) {
+    throw std::invalid_argument("Original crop requires source dimensions");
+  }
+  const auto crop = ClampCropToRotatedSource(NormalizedRect{}, rotation_degrees, source);
+  if (std::abs(crop.w / crop.h - 1.0f) > kCropOrientationEps ||
+      !CropFitsRotatedSource(crop, rotation_degrees, source)) {
+    throw std::invalid_argument("Original crop cannot fit inside the rotated source");
+  }
+  ImageGeometryUpdate update;
+  update.crop_rect               = crop;
+  update.aspect_preset           = ImageGeometryModel::kOriginalAspectPreset;
+  update.aspect_ratio            = CropRatioFromPixels(source.width, source.height);
+  update.document_format_version = kOriginalCropDocumentFormatVersion;
   return update;
 }
 
@@ -97,6 +126,9 @@ auto SwapCropAspect(const ImageGeometryModel& geometry, Extent2D source,
     std::swap(ratio.width, ratio.height);
     desired_aspect      = static_cast<double>(ratio.width) / ratio.height;
     update.aspect_ratio = ratio;
+    if (geometry.AspectPreset() == ImageGeometryModel::kOriginalAspectPreset) {
+      update.aspect_preset = "custom";
+    }
   }
   double       height = frame.w * image_aspect;
   double       width  = height * desired_aspect / image_aspect;
@@ -114,20 +146,12 @@ auto SwapCropAspect(const ImageGeometryModel& geometry, Extent2D source,
                                 frame.y + (frame.h - crop_height) * 0.5f, crop_width, crop_height},
                                geometry.RotationDegrees(), source);
   const double accepted_aspect = accepted.w * image_aspect / accepted.h;
-  const auto   corners = CropFrameCornersInReference(accepted, geometry.RotationDegrees(), source);
-  const auto   source_width      = static_cast<float>(source.width);
-  const auto   source_height     = static_cast<float>(source.height);
-  constexpr float roundoff       = 8.0f * std::numeric_limits<float>::epsilon();
-  const auto      outside_source = [&](const auto& corner) {
-    return corner.x < -source_width * roundoff || corner.x > source_width * (1.0f + roundoff) ||
-           corner.y < -source_height * roundoff || corner.y > source_height * (1.0f + roundoff);
-  };
   if (std::abs(accepted_aspect / desired_aspect - 1.0) > kCropOrientationEps ||
-      std::ranges::any_of(corners, outside_source)) {
+      !CropFitsRotatedSource(accepted, geometry.RotationDegrees(), source)) {
     throw std::invalid_argument("Swapped crop aspect cannot fit inside the rotated source");
   }
   update.crop_rect               = accepted;
-  update.document_format_version = kEffectiveCropAspectDocumentFormatVersion;
+  update.document_format_version = kPipelineDocumentFormatVersion;
   return update;
 }
 

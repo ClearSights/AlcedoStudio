@@ -223,6 +223,9 @@ auto ApplyEditorParameterWrite(PipelineDocument& document, const EditorParameter
                                                                         lock->locked)) {
             document.ApplyGeometryUpdate(std::move(*update));
           }
+        } else if (const auto* original = std::get_if<EditorResetOriginalCropWrite>(&write)) {
+          document.ApplyGeometryUpdate(
+              ResetOriginalCrop(geometry.RotationDegrees(), original->source));
         } else if (std::holds_alternative<EditorResetCropRotateWrite>(write)) {
           geometry.ResetCropRotate();
         } else {

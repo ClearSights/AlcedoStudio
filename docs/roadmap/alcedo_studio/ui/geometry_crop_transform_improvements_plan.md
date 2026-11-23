@@ -2,11 +2,11 @@
 
 Date: 2026-11-14
 
-Revised: 2026-11-22
+Revised: 2026-11-23
 
 Status: UI layout approved from the standalone QML preview. A1 is complete and verified locally.
 O2 is implemented and passed its feature tests. Its regression results are in Section 7.
-O3 and A2 are implemented and verified in Windows Release.
+O3, A2, and A3 are implemented and verified in Windows Release.
 Manual visual verification is pending for O3 and A2.
 The remaining numerical and persistence design is an implementation proposal.
 
@@ -1312,7 +1312,85 @@ Saved state → version-aware reader → panel selection and accepted frame, wit
 Build `EditorGeometryMathTest`, `EditorParameterCatalogTest`, `EditorSessionEditControllerTest`,
 `EditorGeometryPanelQmlTest`, and the F1 compatibility targets. Discover and run focused cases
 with Section 8. Test the actual prior reader against a project that contains `original`.
-Completion record pending. Use Section 9.
+#### A3 completion record (2026-11-23)
+
+**Status** Complete and verified in Windows Release.
+
+The branch `feature/geometry-crop-transform-a3` starts at A2 `d62ea1ec` and incorporates
+the two A1 commits for the approved preset order and labels. The selector uses its existing
+activation event, including activation of the current item. The model projects the accepted crop
+once the document owner publishes the update.
+
+**Success and failure paths**
+
+```text
+Original activation -> AdjustmentCombo -> EditorGeometryPanel -> submitGeometryCommand
+  -> full reference extent from the interaction owner -> EditorResetOriginalCropWrite
+  -> ResetOriginalCrop -> rotated source coverage -> PipelineDocument::ApplyGeometryUpdate
+  -> ImageGeometryModel::ApplyUpdate -> settled history -> panel and frame publication
+
+editor.set crop_rotate with Original -> EditorParameterSource and catalog -> ResetOriginalCrop
+  -> ParseGeometryUpdate -> the same document and history owners
+
+saved revision 10 -> version-aware root, checkpoint, and transfer readers
+  -> stored frame and ratio -> displayed axes -> restore the Original selection
+
+missing source or insufficient coverage -> edit error -> accepted geometry and history stay intact
+activation on the accepted reset frame -> no new history entry
+```
+
+The reset uses the editor's full reference extent before document crop, straightening, and
+whole-image orientation. Both command paths use the same fit. A nonsquare Swap Aspect from
+Original selects Custom. A square swap produces no edit. Geometry stores the effective ratio
+and accepted frame with the existing fields.
+
+**Format verification**
+
+A3 writes project metadata `0.14.0` and document revision `10`. The packed header remains
+revision `7`. Supported earlier documents retain their declared revision when read. A3 imported
+a repository RAW sample, selected Original through the live editor, saved a packed project,
+and reopened it with the same selected preset and frame. The A2 executable from `d62ea1ec`
+rejected that same file at the metadata check with exit code 4 before replay.
+
+**Release verification**
+
+The application is at `build/release/alcedo_studio/src/alcedo_main.exe`.
+
+| Behavior | Executed evidence |
+| --- | --- |
+| All 13 entries in order and keyboard activation of Original, including reactivation | `AspectMenuPlacesOriginalAfterFreeAndCustom`, `KeyboardActivatesOriginalEvenWhenAlreadySelected` |
+| Landscape, portrait, and nonstandard sizes with orientation preserved | `OriginalFitsLandscapeAndPortraitSourcesWithoutChangingOrientation` |
+| Maximum framing at the source ratio with straightening preserved | `OriginalFitsSourceRatioWithStraighteningPreserved` |
+| A single settled reset after resizing, followed by an identical activation | `OriginalReactivationResetsResizedCropOnce` |
+| Missing extent or insufficient coverage leaves the frame and head intact | `OriginalWithMissingSourceExtentKeepsCropSelectionAndHistory` |
+| Original survives Undo, Redo, checkpoint, journal replay, transfer, and project reopen | `OriginalSelectionAndAcceptedCropSurviveUndoRedoAndReopen`, `OriginalCropTransferKeepsTheAcceptedFrameAndRatio`, `OriginalCropResetPersistsAcrossProjectReopen` |
+| Valid revision and frame; Swap Aspect with square and nonsquare frames | `OriginalRequiresItsRevisionAndAValidStoredFrame`, `SwapFromOriginalSelectsCustomExceptForSquareFrames` |
+
+CTest passed 410 of 414 selected cases. Three checkpoint fixture failures match the
+F1 Release results for historical HLS defaults and Film Print parameters. The Paste hash
+failure produced the values recorded in its existing report.
+[#553](https://github.com/zidage/AlcedoStudio/issues/553) ·
+[Film Grain fixture report](https://github.com/zidage/AlcedoStudio/issues/553#issuecomment-6753702569) ·
+[#555](https://github.com/zidage/AlcedoStudio/issues/555)
+
+```powershell
+$env:VCVARS_USER_VERSION = '14.44'
+$env:TEMP = (New-Item -ItemType Directory -Force -Path build/tmp/geometry-a3/t).FullName
+$env:TMP = $env:TEMP
+$env:PATH = "$((Resolve-Path vcpkg/installed/x64-windows/bin).Path);C:/Qt/6.12.0/msvc2022_64/bin;$env:PATH"
+cmd /c scripts\msvc_env.cmd --build --preset win_release --parallel 8 --target alcedo_main EditorGeometryMathTest EditorParameterCatalogTest EditorSessionEditControllerTest EditorGeometryPanelQmlTest ProjectCompatibilityTest PipelineDocumentCheckpointTest EditorMiniGitMaterializerTest DocumentTransferTest EditorSessionHistoryPortTest PipelineEditBatchTest CommitGraphTest AutomationEditorE2ETest
+$tests = '^(EditorGeometryMathTest|EditorParameterCatalogTest|EditorSessionEditControllerTest|EditorGeometryPanelQmlTest|ProjectCompatibilityTest|PipelineDocumentCheckpointTest|EditorMiniGitMaterializerTest|DocumentTransferTest|EditorSessionHistoryPortTest|PipelineEditBatchTest|CommitGraphTest)\.|^ProductionBinaryLoadsQuickQanavaModule$|^AutomationEditorE2ETest\.AutomationEditorE2ETest\.(OriginalCropResetPersistsAcrossProjectReopen|CropRatioPresetGivesPresetAspectInPixels)$'
+ctest --test-dir build/release -N -R $tests
+ctest --test-dir build/release -R $tests --output-on-failure --no-tests=error -j 1
+```
+
+**File size**
+
+The 158-line crop-aspect implementation owns the fit. The 2,244-line parameter catalog
+owns the conversion for the existing crop field. The 2,389-line session controller routes
+one typed command. The 1,999-line catalog test and 2,405-line history test use the existing
+fixtures for catalog constraints and settled history respectively. The 783-line automation
+test source exercises the saved project through the production command surfaces.
 
 ### G1. Selectable composition guides
 

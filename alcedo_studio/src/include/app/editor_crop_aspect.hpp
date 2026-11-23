@@ -24,6 +24,11 @@ inline constexpr double kCropAspectDimensionMax = 100.0;
 [[nodiscard]] auto SetCropAspectLocked(const ImageGeometryModel& geometry, Extent2D source,
                                        bool locked) -> std::optional<ImageGeometryUpdate>;
 
+/// Fit the largest centered frame at the source ratio with the current straightening.
+/// Reject an absent source or insufficient coverage before returning a document update.
+[[nodiscard]] auto ResetOriginalCrop(float rotation_degrees, Extent2D source)
+    -> ImageGeometryUpdate;
+
 /// Exchange pixel proportions about the current frame's center without rotating the image.
 /// Returns no update for a square frame. Throws if the frame cannot be fitted.
 [[nodiscard]] auto SwapCropAspect(const ImageGeometryModel& geometry, Extent2D source,

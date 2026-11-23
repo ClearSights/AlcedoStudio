@@ -6,6 +6,7 @@
 
 #include <array>
 #include <optional>
+#include <span>
 #include <string_view>
 
 namespace alcedo::ui::geometry {
@@ -28,6 +29,7 @@ enum class CropAspectPreset : int {
   Ratio4_3_35mm,
   Ratio1_5_NativeOrVistaVision,
   Ratio2_76_PanavisionUltra,
+  Original,
 };
 
 struct CropAspectPresetOption {
@@ -52,7 +54,7 @@ auto ClampCropRect(float x, float y, float w, float h) -> std::array<float, 4>;
 auto NormalizeCropAspect(float width, float height) -> std::optional<std::array<float, 2>>;
 auto HasLockedAspect(CropAspectPreset preset, float width, float height) -> bool;
 auto AspectRatioFromSize(float width, float height) -> std::optional<float>;
-auto CropAspectPresetOptions() -> const std::array<CropAspectPresetOption, 12>&;
+auto CropAspectPresetOptions() -> std::span<const CropAspectPresetOption>;
 auto CropAspectPresetToString(CropAspectPreset preset) -> std::string_view;
 auto ParseCropAspectPreset(std::string_view preset) -> std::optional<CropAspectPreset>;
 auto CropAspectPresetLabel(CropAspectPreset preset) -> const char*;

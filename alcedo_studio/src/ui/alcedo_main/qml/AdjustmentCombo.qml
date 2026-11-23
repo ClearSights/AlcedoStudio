@@ -13,6 +13,8 @@ Item {
     objectName: "adjustmentCombo"
 
     property var model: null
+    // An optional action takes an activation while the current value stays owned by the model.
+    property var handleActivation: null
     property bool showResetButton: true
     // Editor panels stay dense (28). Settings and other spacious surfaces can
     // raise this without changing the field chrome.
@@ -70,9 +72,13 @@ Item {
             Accessible.role: Accessible.ComboBox
             Accessible.name: root.model ? root.model.label : ""
             onActivated: function (index) {
-                if (root.model) {
-                    root.model.selectIndex(index)
+                if (!root.model)
+                    return
+                if (root.handleActivation && root.handleActivation(index)) {
+                    combo.currentIndex = root.model.currentIndex
+                    return
                 }
+                root.model.selectIndex(index)
             }
             Connections {
                 target: root.model

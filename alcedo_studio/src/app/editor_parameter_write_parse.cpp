@@ -678,6 +678,10 @@ auto ParseGeometryUpdate(const nlohmann::json& params, ParseForm form) -> ImageG
     update.aspect_ratio =
         ParseCropAspectRatio(object.at("aspect_ratio"), "crop_rotate.aspect_ratio");
   }
+  if (update.aspect_preset == ImageGeometryModel::kOriginalAspectPreset &&
+      (!update.crop_rect || !update.aspect_ratio)) {
+    throw std::invalid_argument("Original crop requires its frame and aspect ratio");
+  }
   if (const auto orientation = ReadOptionalString(object, {"orientation"}, "crop_rotate")) {
     update.orientation = ParseFrameOrientation(*orientation);
   } else if (form == ParseForm::Value) {

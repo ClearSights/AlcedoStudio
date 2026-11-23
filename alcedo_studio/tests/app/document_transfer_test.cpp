@@ -232,7 +232,7 @@ TEST(DocumentTransferTest, PasteAppliesDevelopFieldsAndGeometryButKeepsTargetCam
   }
   EXPECT_EQ(working.Geometry().ToJson().dump(), source.Geometry().ToJson().dump());
   EXPECT_EQ(working.Geometry().Orientation(), FrameOrientation::Rotate90Counterclockwise);
-  EXPECT_EQ(working.FormatVersion(), kEffectiveCropAspectDocumentFormatVersion);
+  EXPECT_EQ(working.FormatVersion(), kPipelineDocumentFormatVersion);
   EXPECT_EQ(working.Geometry().AspectRatio(), (CropAspectRatio{3.0f, 4.0f}));
   EXPECT_NE(working.Geometry().ToJson().dump(), geometry_before.dump());
   // The camera profile and as-shot white balance are target image data.
@@ -364,6 +364,29 @@ TEST(DocumentTransferTest, LegacyGeometryImportsAsIdentityAndRejectsAnOrientatio
   serialized["document_format_version"] = kOrientationDocumentFormatVersion;
   geometry["orientation"]               = "unknown_turn";
   EXPECT_THROW((void)ImportDocumentTransfer(serialized), std::runtime_error);
+}
+
+TEST(DocumentTransferTest, OriginalCropTransferKeepsTheAcceptedFrameAndRatio) {
+  auto source = CreateDefaultPipelineDocument();
+  source.ApplyGeometryUpdate({.crop_rect               = NormalizedRect{0.125f, 0.25f, 0.5f, 0.5f},
+                              .aspect_preset           = "original",
+                              .aspect_ratio            = CropAspectRatio{3.0f, 2.0f},
+                              .orientation             = FrameOrientation::Rotate90Clockwise,
+                              .document_format_version = kOriginalCropDocumentFormatVersion});
+  auto        json     = ExportDocumentTransfer(CaptureDocumentTransfer(source));
+  const auto  package  = ImportDocumentTransfer(json);
+  auto        target   = CreateDefaultPipelineDocument();
+  const auto  prepared = DocumentTransferPlanner::Plan(package, target, {});
+  std::string error;
+  ASSERT_TRUE(
+      ApplyPipelineEditBatch(target, prepared.batch, PipelineEditApplyDirection::Forward, &error))
+      << error;
+  EXPECT_EQ(target.Geometry().ToJson(), source.Geometry().ToJson());
+  EXPECT_EQ(target.FormatVersion(), kOriginalCropDocumentFormatVersion);
+
+  json.erase("fingerprint");
+  json["document_format_version"] = kEffectiveCropAspectDocumentFormatVersion;
+  EXPECT_THROW((void)ImportDocumentTransfer(json), std::runtime_error);
 }
 
 TEST(DocumentTransferTest, PasteRemapsEveryNodeAdjustmentAndMaskId) {

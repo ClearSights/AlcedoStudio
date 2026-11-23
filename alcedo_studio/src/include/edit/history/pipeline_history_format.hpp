@@ -29,11 +29,12 @@ namespace alcedo {
  * | --- | --- | --- |
  * Project metadata 0.12.0 and document revision 8 add whole-image orientation.
  * Project metadata 0.13.0 and document revision 9 store the effective fixed crop ratio.
+ * Project metadata 0.14.0 and document revision 10 add the Original crop preset.
  * Prior revisions retain their original serialized bytes.
  *
- * | Project metadata | @ref kProjectFileVersion | 0.13.0 |
+ * | Project metadata | @ref kProjectFileVersion | 0.14.0 |
  * | Packed project header | @ref kPackedProjectFormatVersion | 7 |
- * | Pipeline document JSON | @ref kPipelineDocumentFormatVersion | 9 |
+ * | Pipeline document JSON | @ref kPipelineDocumentFormatVersion | 10 |
  * | Image edit schema | @ref kImageEditSchemaVersion | 5 |
  * | Commit hash input | @ref kCommitFormatVersion | 5 |
  * | Chain-fold hash input | @ref kChainFormatVersion | 5 |
@@ -45,7 +46,7 @@ namespace alcedo {
  */
 
 /// Project metadata version written by SaveProject and required on open.
-inline constexpr std::string_view kProjectFileVersion                       = "0.13.0";
+inline constexpr std::string_view kProjectFileVersion                       = "0.14.0";
 /// Inclusive lower bound of accepted project metadata: 0.10.0 opens and gains the mark columns.
 inline constexpr std::string_view kMinSupportedProjectFileVersion = "0.10.0";
 /// Inclusive upper bound of accepted project metadata. Equals @ref kProjectFileVersion.
@@ -62,16 +63,19 @@ inline constexpr std::uint32_t    kOrientationDocumentFormatVersion = 8;
 /// Document revision that stores the effective ratio for a fixed crop preset.
 inline constexpr std::uint32_t    kEffectiveCropAspectDocumentFormatVersion = 9;
 
+/// Document revision that stores the source-dependent Original crop preset.
+inline constexpr std::uint32_t    kOriginalCropDocumentFormatVersion        = 10;
+
 /// `PipelineDocument` JSON `format_version` for newly created documents.
-inline constexpr std::uint32_t    kPipelineDocumentFormatVersion =
-    kEffectiveCropAspectDocumentFormatVersion;
+inline constexpr std::uint32_t kPipelineDocumentFormatVersion = kOriginalCropDocumentFormatVersion;
 
 /// True if the document reader supports the stored revision. Compare before narrowing from JSON.
 [[nodiscard]] constexpr auto      IsSupportedPipelineDocumentFormatVersion(std::uint64_t version)
     -> bool {
   return version == kCropRotateDocumentFormatVersion ||
          version == kOrientationDocumentFormatVersion ||
-         version == kEffectiveCropAspectDocumentFormatVersion;
+         version == kEffectiveCropAspectDocumentFormatVersion ||
+         version == kOriginalCropDocumentFormatVersion;
 }
 
 /// Per-image history schema stored on `ImageEditState.project_schema_version`.

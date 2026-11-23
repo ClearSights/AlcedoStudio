@@ -1975,6 +1975,8 @@ QString EditorSessionController::submitGeometryCommand(const QString& command) {
              command == QStringLiteral("geometry.unlock_aspect")) {
     write = alcedo::EditorSetCropAspectLockWrite{source,
                                                  command == QStringLiteral("geometry.lock_aspect")};
+  } else if (command == QStringLiteral("geometry.reset_original_crop")) {
+    write = alcedo::EditorResetOriginalCropWrite{source};
   } else if (command != QStringLiteral("geometry.reset_crop_rotate")) {
     return tr("Unknown geometry command.");
   }

@@ -100,6 +100,7 @@ auto ReadDocumentGeometry(const nlohmann::json& json, std::uint32_t format_versi
     case kCropRotateDocumentFormatVersion:
     case kOrientationDocumentFormatVersion:
     case kEffectiveCropAspectDocumentFormatVersion:
+    case kOriginalCropDocumentFormatVersion:
       return ImageGeometryModel::FromJson(json);
     default:
       throw std::runtime_error("Unsupported pipeline document geometry format_version");
@@ -111,6 +112,11 @@ void ValidateDocumentShape(const nlohmann::json& json, std::uint32_t format_vers
     throw std::runtime_error("Pipeline document is missing an object geometry");
   }
   const auto& geometry = json.at("geometry");
+  const auto  preset   = geometry.find("aspect_preset");
+  if (format_version < kOriginalCropDocumentFormatVersion && preset != geometry.end() &&
+      *preset == ImageGeometryModel::kOriginalAspectPreset) {
+    throw std::runtime_error("Original crop requires a newer pipeline document revision");
+  }
   if (format_version >= kEffectiveCropAspectDocumentFormatVersion) {
     const auto ratio = geometry.find("aspect_ratio");
     if (ratio == geometry.end() || !ratio->is_array() || ratio->size() != 2 ||
@@ -415,6 +421,11 @@ void PipelineDocument::ApplyGeometryUpdate(ImageGeometryUpdate update) {
        (*revision == kCropRotateDocumentFormatVersion &&
         update.orientation.value_or(geometry_.Orientation()) != FrameOrientation::Identity))) {
     throw std::invalid_argument("Invalid document revision for geometry update");
+  }
+  const auto& preset = update.aspect_preset ? *update.aspect_preset : geometry_.AspectPreset();
+  if (preset == ImageGeometryModel::kOriginalAspectPreset &&
+      revision.value_or(FormatVersion()) < kOriginalCropDocumentFormatVersion) {
+    throw std::invalid_argument("Original crop requires a newer pipeline document revision");
   }
   geometry_.ApplyUpdate(std::move(update));
   if (revision) {

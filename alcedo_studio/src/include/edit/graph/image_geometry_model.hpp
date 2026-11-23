@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include <cmath>
 #include <cstdint>
 #include <optional>
 #include <stdexcept>
@@ -54,6 +55,7 @@ struct ImageGeometryUpdate {
 class ImageGeometryModel {
  public:
   static constexpr const char* kFreeAspectPreset = "free";
+  static constexpr const char* kOriginalAspectPreset = "original";
 
   ImageGeometryModel() = default;
 
@@ -93,6 +95,11 @@ class ImageGeometryModel {
    * @brief Apply geometry fields together so a validated patch cannot expose partial state.
    */
   void ApplyUpdate(ImageGeometryUpdate update) {
+    const auto& preset = update.aspect_preset ? *update.aspect_preset : aspect_preset_;
+    if (preset == kOriginalAspectPreset) {
+      ValidateOriginalCrop(update.crop_rect.value_or(crop_rect_),
+                           update.aspect_ratio.value_or(aspect_ratio_));
+    }
     if (update.orientation) {
       static_cast<void>(FrameOrientationId(*update.orientation));
     }
@@ -155,10 +162,31 @@ class ImageGeometryModel {
       model.orientation_ =
           ParseFrameOrientation(json.at("orientation").get_ref<const std::string&>());
     }
+    if (model.aspect_preset_ == kOriginalAspectPreset) {
+      const auto rect  = json.find("crop_rect");
+      const auto ratio = json.find("aspect_ratio");
+      if (rect == json.end() || !rect->is_array() || rect->size() != 4 || ratio == json.end() ||
+          !ratio->is_array() || ratio->size() != 2) {
+        throw std::invalid_argument("Original crop requires its stored frame and aspect ratio");
+      }
+      ValidateOriginalCrop(model.crop_rect_, model.aspect_ratio_);
+    }
     return model;
   }
 
  private:
+  /// Verify the stored frame and ratio. Source coverage is checked when the frame is resolved.
+  static void ValidateOriginalCrop(NormalizedRect rect, CropAspectRatio ratio) {
+    const auto center_x = rect.x + 0.5f * rect.w;
+    const auto center_y = rect.y + 0.5f * rect.h;
+    if (!(rect.w >= kGeometryMinNormalizedSize && rect.w <= 1.0f &&
+          rect.h >= kGeometryMinNormalizedSize && rect.h <= 1.0f && center_x >= 0.0f &&
+          center_x <= 1.0f && center_y >= 0.0f && center_y <= 1.0f && std::isfinite(ratio.width) &&
+          ratio.width > 0.0f && std::isfinite(ratio.height) && ratio.height > 0.0f)) {
+      throw std::invalid_argument("Invalid Original crop frame or aspect ratio");
+    }
+  }
+
   NormalizedRect  crop_rect_{};
   float           rotation_degrees_ = 0.0f;
   std::string     aspect_preset_    = kFreeAspectPreset;

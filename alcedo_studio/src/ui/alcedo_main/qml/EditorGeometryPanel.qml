@@ -76,8 +76,11 @@ Item {
     function buildAspectEntries() {
         var result = []
         const presets = parameterCatalog.options("crop_rotate", "aspect_preset")
-        for (var i = 0; i < presets.length; ++i)
-            result.push({ value: String(presets[i].value), label: qsTr(String(presets[i].label)) })
+        for (var i = 0; i < presets.length; ++i) {
+            const preset = presets[i]
+            const label = preset.value === "original" ? qsTr("Original") : qsTr(String(preset.label))
+            result.push({ value: String(preset.value), label: label })
+        }
         return result
     }
 
@@ -579,8 +582,15 @@ Item {
                     }
                     AdjustmentCombo {
                         objectName: "geometryAspectCombo"
+                        controlObjectName: "geometryAspectControl"
                         Layout.fillWidth: true
                         model: aspectModel
+                        handleActivation: function(index) {
+                            if (aspectModel.entries[index].value !== "original")
+                                return false
+                            root.runCropCommand("geometry.reset_original_crop")
+                            return true
+                        }
                     }
                     ThemeCheckBox {
                         objectName: "geometryLockAspectCheckBox"

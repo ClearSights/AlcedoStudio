@@ -16,6 +16,7 @@
 #include <QQuickStyle>
 #include <QQuickWindow>
 #include <QRectF>
+#include <QTest>
 #include <QVariantMap>
 #include <cstdint>
 #include <exception>
@@ -54,6 +55,13 @@ class GeometrySession final : public QObject, public IEditorAdjustmentSubmitter 
 
   [[nodiscard]] auto adjustmentSnapshot() const -> QVariantMap { return snapshot_; }
   [[nodiscard]] auto snapshotRevision() const -> quint64 { return revision_; }
+
+  void               publishProjection(QVariantMap projection) {
+    snapshot_ = std::move(projection);
+    ++revision_;
+    emit adjustmentSnapshotChanged();
+  }
+
   [[nodiscard]] auto activeAdjustmentPanel() const -> QString { return active_panel_; }
   void               setActiveAdjustmentPanel(const QString& panel) {
     if (active_panel_ == panel) {
@@ -389,10 +397,10 @@ TEST(EditorGeometryPanelQmlTest, SavedPresetSelectionSurvivesLabelAndOrderChange
   auto* wrapper = harness.findObject<QObject>(QStringLiteral("geometryAspectCombo"));
   ASSERT_NE(aspect, nullptr);
   ASSERT_NE(wrapper, nullptr);
-  const auto* combo = wrapper->findChild<QObject*>(QStringLiteral("adjustmentCombo"));
+  const auto* combo = wrapper->findChild<QObject*>(QStringLiteral("geometryAspectControl"));
   ASSERT_NE(combo, nullptr);
   EXPECT_EQ(aspect->property("currentValue").toString(), preset_id);
-  EXPECT_EQ(combo->property("currentIndex").toInt(), 3);
+  EXPECT_EQ(combo->property("currentIndex").toInt(), 4);
   EXPECT_EQ(combo->property("currentText").toString(), QStringLiteral("3:2"));
   const QRectF frame = interaction.cropRectNormalized();
   EXPECT_NEAR(frame.x(), 0.1, 1e-6);
@@ -526,6 +534,51 @@ TEST(EditorGeometryPanelQmlTest, SelectingLandscapePresetOrientsCropForPortraitI
   const QRectF rect = RectOf(session.calls.back());
   EXPECT_NEAR((rect.width() * 3000.0) / (rect.height() * 4000.0), 2.0 / 3.0, 1e-4);
   EXPECT_NEAR(rect.center().x(), 0.5, 1e-4);
+}
+
+TEST(EditorGeometryPanelQmlTest, KeyboardActivatesOriginalEvenWhenAlreadySelected) {
+  GeometrySession         session(MakeSnapshot(QStringLiteral("free"), 0.1, 0.2, 0.4, 0.4, 6.0));
+  FakeGeometryInteraction interaction;
+  AdjustmentStackHarness  harness(&session, &interaction);
+  ASSERT_NE(harness.root(), nullptr) << harness.errors().toStdString();
+  auto* combo = harness.findObject<QQuickItem>(QStringLiteral("geometryAspectControl"));
+  auto* model = harness.findObject<QObject>(QStringLiteral("geometryAspectModel"));
+  ASSERT_NE(combo, nullptr);
+  ASSERT_NE(model, nullptr);
+  auto* window = combo->window();
+  ASSERT_NE(window, nullptr);
+  const int original = FindPresetIndex(*model, QStringLiteral("original"));
+  ASSERT_EQ(original, 2);
+  ASSERT_EQ(combo->property("currentIndex").toInt(), 0);
+
+  combo->forceActiveFocus();
+  QTest::keyClick(window, Qt::Key_Space);
+  QTest::keyClick(window, Qt::Key_Down);
+  QTest::keyClick(window, Qt::Key_Down);
+  ASSERT_EQ(combo->property("highlightedIndex").toInt(), original);
+  QTest::keyClick(window, Qt::Key_Return);
+  EXPECT_EQ(combo->property("currentIndex").toInt(), 0);
+  EXPECT_EQ(session.geometry_commands, QStringList{QStringLiteral("geometry.reset_original_crop")});
+
+  session.publishProjection(MakeSnapshot(QStringLiteral("original"), 0.1, 0.2, 0.4, 0.4, 6.0,
+                                         QStringLiteral("rotate_90_cw"), 1.5, 1.0));
+  ASSERT_EQ(combo->property("currentIndex").toInt(), original);
+  EXPECT_EQ(combo->property("currentText").toString(), QStringLiteral("Original"));
+  EXPECT_FLOAT_EQ(interaction.aspectRatio(), 1.5f);
+  EXPECT_TRUE(interaction.aspectLocked());
+  const auto frame = interaction.cropRectNormalized();
+  EXPECT_NEAR(frame.width(), 0.4, 1e-6);
+  EXPECT_NEAR(frame.height(), 0.4, 1e-6);
+  ASSERT_EQ(session.geometry_commands.size(), 1);
+
+  combo->forceActiveFocus();
+  QTest::keyClick(window, Qt::Key_Space);
+  QTest::keyClick(window, Qt::Key_Return);
+  EXPECT_EQ(combo->property("currentIndex").toInt(), original);
+  EXPECT_EQ(session.geometry_commands,
+            (QStringList{QStringLiteral("geometry.reset_original_crop"),
+                         QStringLiteral("geometry.reset_original_crop")}));
+  EXPECT_TRUE(session.calls.empty());
 }
 
 TEST(EditorGeometryPanelQmlTest, AspectControlsSendOwnerCommandsAndRestoreWithoutAnEdit) {

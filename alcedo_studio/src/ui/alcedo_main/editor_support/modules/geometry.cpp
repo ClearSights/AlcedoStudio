@@ -12,9 +12,10 @@ namespace {
 
 constexpr float                                  kAspectEpsilon           = 1e-4f;
 
-constexpr std::array<CropAspectPresetOption, 12> kCropAspectPresetOptions = {{
+constexpr std::array<CropAspectPresetOption, 13> kCropAspectPresetOptions = {{
     {CropAspectPreset::Free, "free", "Free", 0.0f, 0.0f},
     {CropAspectPreset::Custom, "custom", "Custom", 0.0f, 0.0f},
+    {CropAspectPreset::Original, "original", "Original", 0.0f, 0.0f},
     {CropAspectPreset::Ratio1_1, "ratio_1_1", "1:1", 1.0f, 1.0f},
     {CropAspectPreset::Ratio1_5_NativeOrVistaVision, "ratio_1_5_1_native_vistavision", "3:2", 1.5f,
      1.0f},
@@ -77,7 +78,7 @@ auto HasLockedAspect(CropAspectPreset preset, float width, float height) -> bool
   if (preset == CropAspectPreset::Free) {
     return false;
   }
-  if (preset != CropAspectPreset::Custom) {
+  if (preset != CropAspectPreset::Custom && preset != CropAspectPreset::Original) {
     return CropAspectPresetRatio(preset).has_value();
   }
   return NormalizeCropAspect(width, height).has_value();
@@ -91,7 +92,7 @@ auto AspectRatioFromSize(float width, float height) -> std::optional<float> {
   return normalized->at(0) / std::max(normalized->at(1), kCropAspectMinValue);
 }
 
-auto CropAspectPresetOptions() -> const std::array<CropAspectPresetOption, 12>& {
+auto CropAspectPresetOptions() -> std::span<const CropAspectPresetOption> {
   return kCropAspectPresetOptions;
 }
 

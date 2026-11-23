@@ -7,10 +7,12 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <exception>
 #include <span>
 #include <sstream>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "app/editor_adjustment_context.hpp"
 #include "app/editor_crop_aspect.hpp"
@@ -21,6 +23,7 @@
 #include "edit/graph/develop_raster_input.hpp"
 #include "edit/graph/film_format.hpp"
 #include "edit/graph/film_print_model.hpp"
+#include "edit/graph/image_geometry_model.hpp"
 #include "edit/history/pipeline_history_format.hpp"
 #include "edit/operators/models/cat02_white_balance_model.hpp"
 #include "edit/operators/models/color_wheel_tone.hpp"
@@ -338,12 +341,13 @@ constexpr double kCropSizeMin        = 1e-4;
 static_assert(static_cast<float>(kCropSizeMin) == ui::geometry::kCropRectMinSize &&
               static_cast<float>(kCropSizeMin) == ui::geometry::kCropAspectMinValue);
 
-auto CropAspectOptions() -> const std::array<EditorParameterOption, 12>& {
+auto CropAspectOptions() -> std::span<const EditorParameterOption> {
   static const auto options = [] {
-    std::array<EditorParameterOption, 12> result{};
-    const auto&                           presets = ui::geometry::CropAspectPresetOptions();
-    for (std::size_t i = 0; i < presets.size(); ++i) {
-      result[i] = EditorParameterOption{presets[i].id_, presets[i].label_};
+    const auto                         presets = ui::geometry::CropAspectPresetOptions();
+    std::vector<EditorParameterOption> result;
+    result.reserve(presets.size());
+    for (const auto& preset : presets) {
+      result.push_back({preset.id_, preset.label_});
     }
     return result;
   }();
@@ -422,7 +426,7 @@ auto CropModelToUi(const json& model_json, std::string* error) -> std::optional<
 
 auto CropUiToModel(const json& ui_value) -> json {
   return {{"crop_rotate",
-           {{"document_format_version", kEffectiveCropAspectDocumentFormatVersion},
+           {{"document_format_version", kPipelineDocumentFormatVersion},
             {"crop_rect",
              {{"x", ui_value.at("x")},
               {"y", ui_value.at("y")},
@@ -435,7 +439,8 @@ auto CropUiToModel(const json& ui_value) -> json {
 }
 
 auto IsFixedAspectPreset(std::string_view preset) -> bool {
-  return preset != "custom" && preset != "free";
+  return preset != "custom" && preset != "free" &&
+         preset != ImageGeometryModel::kOriginalAspectPreset;
 }
 
 /// The control that a partial crop write changed, in the priority of the panel: an aspect
@@ -480,15 +485,24 @@ auto CropConstrain(const json& merged_ui, const json& ui_change, const json& cur
     SetError(error, "crop_rotate.aspect_width and aspect_height need aspect_preset custom");
     return std::nullopt;
   }
-  const auto driver = CropDriverFromChange(changed);
+  const bool original = merged_ui.at("aspect_preset") == ImageGeometryModel::kOriginalAspectPreset;
+  const bool original_reactivation =
+      original && ui_change.size() == 1 && ui_change.contains("aspect_preset");
+  const auto driver =
+      original_reactivation ? EditorCropDriver::AspectPreset : CropDriverFromChange(changed);
   if (driver != EditorCropDriver::None && (source.width == 0 || source.height == 0) &&
       (changed.contains("aspect_preset") || changed.contains("aspect_width") ||
-       changed.contains("aspect_height") ||
+       changed.contains("aspect_height") || original ||
        IsFixedAspectPreset(merged_ui.at("aspect_preset").get_ref<const std::string&>()))) {
     SetError(error, "Crop aspect requires source dimensions");
     return std::nullopt;
   }
-  return EditorParameterCatalog::ConstrainCrop(merged_ui, driver, source);
+  try {
+    return EditorParameterCatalog::ConstrainCrop(merged_ui, driver, source);
+  } catch (const std::exception& exception) {
+    SetError(error, exception.what());
+    return std::nullopt;
+  }
 }
 
 /// Source width / height, or 1 when no frame is presented.
@@ -2085,6 +2099,17 @@ auto EditorParameterCatalog::ConstrainCrop(const json& crop_ui, EditorCropDriver
   json        ui    = CompleteObject(*entry, crop_ui);
   if (driver == EditorCropDriver::AspectPreset) {
     const auto& preset_id = ui.at("aspect_preset").get_ref<const std::string&>();
+    if (preset_id == ImageGeometryModel::kOriginalAspectPreset) {
+      const auto reset =
+          ResetOriginalCrop(CropNumber(ui, "angle_degrees"), {source.width, source.height});
+      ui["x"]             = reset.crop_rect->x;
+      ui["y"]             = reset.crop_rect->y;
+      ui["width"]         = reset.crop_rect->w;
+      ui["height"]        = reset.crop_rect->h;
+      ui["aspect_width"]  = reset.aspect_ratio->width;
+      ui["aspect_height"] = reset.aspect_ratio->height;
+      return ui;
+    }
     if (const auto ratio = SourceOrientedCropAspectPreset(preset_id, {source.width, source.height})) {
       ui["aspect_width"]  = ratio->width;
       ui["aspect_height"] = ratio->height;
