@@ -24,6 +24,7 @@
 #include <opencv2/imgproc.hpp>
 #include <stdexcept>
 #include <string>
+#include <variant>
 #include <vector>
 #if defined(ALCEDO_HAS_ULTRAHDR)
 #include <ultrahdr_api.h>
@@ -163,6 +164,10 @@ auto ReadFileBytes(const std::filesystem::path& path) -> std::vector<uint8_t> {
 
 class ExportServiceTests : public ::testing::Test {
  protected:
+  /// Write one orientation edit, reopen the packed project, and compare full-resolution pixels.
+  void VerifyOrientationRestoresOnReopenAndExport(const EditorParameterWrite& write,
+                                                  FrameOrientation            expected_orientation);
+
   /// The test closed its project after production writes; TearDown checks the stored rows
   /// (#805). A test that writes broken rows on purpose sets it to false.
   bool check_storage_invariants_ = true;
@@ -717,7 +722,9 @@ TEST_F(ExportServiceTests, ReexportedRasterUsesExportProfileNotSourceIcc) {
   AssertReadableNonEmptyImageFile(export_path);
 }
 
-TEST_F(ExportServiceTests, QuarterTurnsRestoreOnReopenAndExport) {
+void ExportServiceTests::VerifyOrientationRestoresOnReopenAndExport(
+    const EditorParameterWrite& write, FrameOrientation expected_orientation) {
+  const auto* flip = std::get_if<EditorFlipImageWrite>(&write);
   cv::Mat source(21, 35, CV_8UC3);
   for (int y = 0; y < source.rows; ++y) {
     for (int x = 0; x < source.cols; ++x) {
@@ -753,8 +760,8 @@ TEST_F(ExportServiceTests, QuarterTurnsRestoreOnReopenAndExport) {
     ASSERT_FALSE(result->empty());
   };
 
-  cv::Mat            identity;
-  head_commit_hash_t turned_head;
+  cv::Mat            baseline;
+  head_commit_hash_t oriented_head;
   {
     ProjectService    project(db_path_, meta_path_);
     auto              pipelines = std::make_shared<PipelineMgmtService>(project.GetStorage());
@@ -772,33 +779,39 @@ TEST_F(ExportServiceTests, QuarterTurnsRestoreOnReopenAndExport) {
     ASSERT_EQ(imported.created_.size(), 1u);
     element_id = imported.created_.front().element_id_;
     image_id   = imported.created_.front().image_id_;
-    export_image(project, pipelines, temp_dir_ / "identity.png", &identity);
-    ASSERT_FALSE(identity.empty());
-    EXPECT_EQ(identity.size(), source.size());
-
-    const auto            base  = pipelines->LoadHistorySnapshot(element_id);
-    auto                  graph = std::make_shared<CommitGraph>(*base.graph_);
-    MiniGitWorkingHistory history(graph, std::make_shared<MiniGitJournal>());
-    auto                  document = ClonePipelineDocument(base.root_->document);
-    std::string           error;
-    const auto target = CompleteCurrentPanelParameterTarget(document, "crop_rotate", &error);
-    ASSERT_TRUE(target.has_value()) << error;
-    nlohmann::json before;
-    nlohmann::json after;
-    ASSERT_TRUE(ReadEditorParameterJson(document, *target, &before, &error)) << error;
-    ASSERT_TRUE(ApplyEditorParameterWrite(
-        document, *target, EditorRotateImageWrite{QuarterTurnDirection::Right, {35, 21}}, &error))
-        << error;
-    ASSERT_TRUE(ReadEditorParameterJson(document, *target, &after, &error)) << error;
-    const auto prepared =
-        history.PrepareAppendEdit(MakeSetParameterBatch(*target, before, after, true, true, ""));
-    ASSERT_TRUE(prepared.ready) << prepared.error;
-    const auto committed = history.PublishPreparedEdit(prepared);
-    ASSERT_TRUE(committed.committed) << committed.error;
-    const auto snapshot = pipelines->PersistHistory(base, *graph);
-    ASSERT_NE(snapshot, nullptr);
-    turned_head = snapshot->Head();
-    ASSERT_TRUE(turned_head.has_value());
+    const auto commit = [&](const EditorParameterWrite& edit) {
+      const auto            base  = pipelines->LoadHistorySnapshot(element_id);
+      auto                  graph = std::make_shared<CommitGraph>(*base.graph_);
+      MiniGitWorkingHistory history(graph, std::make_shared<MiniGitJournal>());
+      const auto            working = pipelines->AcquireCommittedSnapshot(element_id);
+      ASSERT_NE(working, nullptr);
+      auto        document = ClonePipelineDocument(working->Document());
+      std::string error;
+      const auto  target = CompleteCurrentPanelParameterTarget(document, "crop_rotate", &error);
+      ASSERT_TRUE(target.has_value()) << error;
+      nlohmann::json before;
+      nlohmann::json after;
+      ASSERT_TRUE(ReadEditorParameterJson(document, *target, &before, &error)) << error;
+      ASSERT_TRUE(ApplyEditorParameterWrite(document, *target, edit, &error)) << error;
+      ASSERT_TRUE(ReadEditorParameterJson(document, *target, &after, &error)) << error;
+      const auto prepared =
+          history.PrepareAppendEdit(MakeSetParameterBatch(*target, before, after, true, true, ""));
+      ASSERT_TRUE(prepared.ready) << prepared.error;
+      const auto committed = history.PublishPreparedEdit(prepared);
+      ASSERT_TRUE(committed.committed) << committed.error;
+      const auto saved = pipelines->PersistHistory(base, *graph);
+      ASSERT_NE(saved, nullptr);
+      oriented_head = saved->Head();
+      ASSERT_TRUE(oriented_head.has_value());
+    };
+    if (flip != nullptr) {
+      ASSERT_NO_FATAL_FAILURE(
+          commit(ImageGeometryUpdate{.crop_rect = NormalizedRect{0.2f, 0.25f, 0.6f, 0.5f}}));
+    }
+    ASSERT_NO_FATAL_FAILURE(
+        export_image(project, pipelines, temp_dir_ / "baseline.png", &baseline));
+    EXPECT_EQ(baseline.size(), flip == nullptr ? source.size() : cv::Size(21, 11));
+    ASSERT_NO_FATAL_FAILURE(commit(write));
     project.SaveProject(meta_path_);
   }
 
@@ -807,8 +820,10 @@ TEST_F(ExportServiceTests, QuarterTurnsRestoreOnReopenAndExport) {
   ASSERT_TRUE(project_pack::WritePackedProject(packed, meta_path_, db_path_, &package_error))
       << package_error.toStdString();
   // Keep a copy only for a caller that will test this file with a previous application build.
-  if (const char* output = std::getenv("ALCEDO_TEST_ORIENTED_PROJECT_PATH")) {
-    std::filesystem::copy_file(packed, output, std::filesystem::copy_options::overwrite_existing);
+  if (flip == nullptr) {
+    if (const char* output = std::getenv("ALCEDO_TEST_ORIENTED_PROJECT_PATH")) {
+      std::filesystem::copy_file(packed, output, std::filesystem::copy_options::overwrite_existing);
+    }
   }
   std::filesystem::path reopened_db;
   std::filesystem::path reopened_meta;
@@ -820,17 +835,43 @@ TEST_F(ExportServiceTests, QuarterTurnsRestoreOnReopenAndExport) {
   auto           pipelines = std::make_shared<PipelineMgmtService>(reopened.GetStorage());
   const auto     snapshot  = pipelines->AcquireCommittedSnapshot(element_id);
   ASSERT_NE(snapshot, nullptr);
-  EXPECT_EQ(snapshot->Head(), turned_head);
-  EXPECT_EQ(snapshot->Document().Geometry().Orientation(), FrameOrientation::Rotate90Clockwise);
-  cv::Mat rotated;
-  export_image(reopened, pipelines, temp_dir_ / "rotated.png", &rotated);
-  ASSERT_FALSE(rotated.empty());
+  EXPECT_EQ(snapshot->Head(), oriented_head);
+  EXPECT_EQ(snapshot->Document().Geometry().Orientation(), expected_orientation);
+  cv::Mat actual;
+  ASSERT_NO_FATAL_FAILURE(export_image(reopened, pipelines, temp_dir_ / "oriented.png", &actual));
   cv::Mat expected;
-  cv::rotate(identity, expected, cv::ROTATE_90_CLOCKWISE);
-  ASSERT_EQ(rotated.size(), expected.size());
-  ASSERT_EQ(rotated.type(), expected.type());
-  EXPECT_EQ(cv::norm(rotated, expected, cv::NORM_INF), 0.0);
+  if (flip != nullptr) {
+    cv::flip(baseline, expected, flip->axis == ImageFlipAxis::Horizontal ? 1 : 0);
+  } else {
+    cv::rotate(baseline, expected, cv::ROTATE_90_CLOCKWISE);
+  }
+  ASSERT_EQ(actual.size(), expected.size());
+  ASSERT_EQ(actual.type(), expected.type());
+  EXPECT_EQ(cv::norm(actual, expected, cv::NORM_INF), 0.0);
 }
+
+TEST_F(ExportServiceTests, QuarterTurnsRestoreOnReopenAndExport) {
+  VerifyOrientationRestoresOnReopenAndExport(
+      EditorRotateImageWrite{QuarterTurnDirection::Right, {35, 21}},
+      FrameOrientation::Rotate90Clockwise);
+}
+
+class FlipExportServiceTests : public ExportServiceTests,
+                               public ::testing::WithParamInterface<ImageFlipAxis> {};
+
+TEST_P(FlipExportServiceTests, FlipPreservesCanvasAndRestoresAfterReopen) {
+  VerifyOrientationRestoresOnReopenAndExport(EditorFlipImageWrite{GetParam(), {35, 21}},
+                                             GetParam() == ImageFlipAxis::Horizontal
+                                                 ? FrameOrientation::FlipHorizontal
+                                                 : FrameOrientation::FlipVertical);
+}
+
+INSTANTIATE_TEST_SUITE_P(DisplayedAxes, FlipExportServiceTests,
+                         ::testing::Values(ImageFlipAxis::Horizontal, ImageFlipAxis::Vertical),
+                         [](const ::testing::TestParamInfo<ImageFlipAxis>& info) {
+                           return info.param == ImageFlipAxis::Horizontal ? "Horizontal"
+                                                                          : "Vertical";
+                         });
 
 TEST_F(ExportServiceTests, ExportPixelsAndIccUseTheSameRecipeColorConfiguration) {
   if (!std::filesystem::exists(std::filesystem::path(TEST_IMG_PATH) / "raw" / "linear_dng" /

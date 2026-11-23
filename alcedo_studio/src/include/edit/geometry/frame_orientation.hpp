@@ -13,6 +13,7 @@
 namespace alcedo {
 
 enum class QuarterTurnDirection { Left, Right };
+enum class ImageFlipAxis { Horizontal, Vertical };
 
 inline constexpr std::array<std::string_view, 8> kFrameOrientationIds{
     "identity",        "rotate_90_cw",  "rotate_180", "rotate_90_ccw",
@@ -83,6 +84,25 @@ inline constexpr std::array<std::string_view, 8> kFrameOrientationIds{
       return right.at(static_cast<unsigned int>(orientation));
   }
   throw std::invalid_argument("Unknown image rotation direction");
+}
+
+/// Mirror left to right or top to bottom after the existing orientation, in displayed axes.
+[[nodiscard]] constexpr auto FlipFrameOrientation(FrameOrientation orientation, ImageFlipAxis axis)
+    -> FrameOrientation {
+  using enum FrameOrientation;
+  constexpr std::array horizontal{
+      FlipHorizontal, Transpose, FlipVertical,      Transverse,
+      Identity,       Rotate180, Rotate90Clockwise, Rotate90Counterclockwise};
+  constexpr std::array vertical{
+      FlipVertical, Transverse, FlipHorizontal,           Transpose,
+      Rotate180,    Identity,   Rotate90Counterclockwise, Rotate90Clockwise};
+  switch (axis) {
+    case ImageFlipAxis::Horizontal:
+      return horizontal.at(static_cast<unsigned int>(orientation));
+    case ImageFlipAxis::Vertical:
+      return vertical.at(static_cast<unsigned int>(orientation));
+  }
+  throw std::invalid_argument("Unknown image flip axis");
 }
 
 }  // namespace alcedo

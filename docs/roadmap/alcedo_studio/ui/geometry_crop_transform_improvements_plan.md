@@ -6,6 +6,7 @@ Revised: 2026-11-22
 
 Status: UI layout approved from the standalone QML preview. A1 is complete and verified locally.
 O2 is implemented and passed its feature tests. Its regression results are in Section 7.
+O3 is implemented and verified in Windows Release. Manual visual verification is pending.
 The remaining numerical and persistence design is an implementation proposal.
 
 Parent: Standalone extension to the editor workspace roadmap.
@@ -1000,7 +1001,72 @@ Add `FlipAfterQuarterTurnUsesDisplayedAxes`,
 with an existing crop and through export. Build `GpuDagGeometryTest`,
 `EditorParameterCatalogTest`, `EditorGeometryPanelQmlTest`, and the O2 history and export targets
 that exercise flip writes. Confirm both accessible names and manual button order.
-Completion record pending. Use Section 9.
+
+#### O3 completion record (2026-11-22)
+
+**Status** Implemented on `feature/geometry-crop-transform-o3` from `0ed59af7`.
+The Windows Release build is ready for manual testing at
+`build/release/alcedo_studio/src/alcedo_main.exe`.
+
+**Implementation** Flip Horizontal and Flip Vertical follow Rotate Right in the compact Crop
+action row. The two user-approved Tabler icons use the shared button, localized names, and
+keyboard access. Each click sends one settled write. The geometry owner composes the reflection
+after the current orientation and preserves the frame and stored straightening. The saved
+orientation uses document revision 8 within projects that use metadata version 0.12.0.
+
+**Primary success chain**
+
+```text
+Crop button -> EditorSessionController::submitGeometryCommand -> settled input queue
+  -> EditorSessionEditController::HandlePendingSequence -> ImageGeometryModel::FlipImage
+  -> one Mini-Git commit -> GraphCompiler::BindFrameGeometry -> reflected preview and export
+
+Packed project -> verified history and checkpoint -> saved frame orientation -> full-resolution PNG
+```
+
+**Primary failure and restore chain**
+
+```text
+Unavailable image or source dimensions -> command refusal -> no history change
+Invalid flip axis -> rejected owner write -> unchanged crop, orientation, and history
+Render failure after an accepted edit -> existing render error -> edit available to Undo
+Undo or Redo -> history applies the saved crop_rotate value -> exact frame orientation restored
+```
+
+**Verification** Windows Release, MSVC 14.44, Qt 6.12.0, CUDA 12.8, and GeForce RTX 3080.
+
+| Required result | Observed result |
+| --- | --- |
+| Displayed axes and preserved frame | `FlipAfterQuarterTurnUsesDisplayedAxes` checks both axes for all eight orientations on the pixel centers of an asymmetric, straightened crop. `TwoMatchingFlipsRestoreExactOrientation` checks the original orientation after two equal flips. |
+| History and failure | `QueuedFlipsCommitSeparatelyAndUndoRedoRestoreOrientation` checks one commit per queued flip, exact Undo and Redo, and rejection of invalid input without a history change. |
+| Crop controls | `FlipButtonsExposeAccessibleNamesAndFollowTheRotationButtons` checks both accessible names, keyboard reachability, row order, command routing, and source availability. The catalog test verifies the reflected crop and displayed straightening. |
+| Reopen and export | Both axes in `FlipPreservesCanvasAndRestoresAfterReopen` preserve cropped canvas dimensions. The full-resolution PNG after packed-project reopen matches every pixel of the separately mirrored reference. The quarter-turn export and orientation checkpoint tests also passed. |
+| Backend mapping | The CUDA and OpenCL orientation tests compare the expected pixels for all eight states. Both passed. |
+
+```powershell
+$env:VCVARS_USER_VERSION = '14.44'
+$env:PATH = "$((Resolve-Path vcpkg/installed/x64-windows/bin).Path);$env:PATH"
+cmd /c scripts\msvc_env.cmd --build --preset win_release --parallel 6 --target alcedo_main GpuDagGeometryTest EditorParameterCatalogTest EditorGeometryPanelQmlTest EditorSessionHistoryPortTest ExportServiceTest PipelineDocumentCheckpointTest GpuDagCudaDevelopTest GpuDagOpenClDevelopTest
+$env:PATH = "C:/Qt/6.12.0/msvc2022_64/bin;$env:PATH"
+$testTemp = New-Item -ItemType Directory -Force -Path build/tmp/geometry_crop_transform/o3/test-temp
+$env:TEMP = $testTemp.FullName
+$env:TMP = $testTemp.FullName
+$tests = '^(GpuDagGeometryTest|EditorParameterCatalogTest|EditorGeometryPanelQmlTest)\.|^(EditorSessionHistoryPortTest|ExportServiceTest|PipelineDocumentCheckpointTest)\..*(Orientation|QuarterTurn|FlipPreservesCanvas)|^GpuDag(Cuda|OpenCl)DevelopTest\..*QuarterTurnSwapsCanvasAndPreservesEverySourcePixel$|^ProductionBinaryLoadsQuickQanavaModule$'
+ctest --test-dir build/release -R $tests --output-on-failure --no-tests=error -j 1
+```
+
+The build and final CTest run exited with code 0. CTest found and passed 108 cases, including
+all 12 Crop panel cases and both flip export cases. The first run needed Qt's DLL directory on
+`PATH` and a shorter test temporary path to stay within the Windows path limit. Working logs
+were kept under `build/tmp/geometry_crop_transform/o3/` during verification.
+
+**File size** The production changes follow the existing document owner, typed editor write,
+session routing, and QML panel boundaries. The larger catalog and history test files keep the
+checks with their existing fixtures.
+
+**Manual verification** Visual review on a photograph, including the button order and wrapping,
+is pending. Metal was outside the Windows Release run. Related work is tracked under
+[#459](https://github.com/zidage/AlcedoStudio/issues/459).
 
 ### A1. Crop preset order and labels
 

@@ -5,6 +5,7 @@
 #pragma once
 
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <utility>
 
@@ -68,6 +69,15 @@ class ImageGeometryModel {
       throw std::invalid_argument("Image rotation requires source dimensions");
     }
     orientation_ = TurnFrameOrientation(orientation_, direction);
+  }
+
+  /// Mirror the framed image in displayed axes. Reject a missing source extent or invalid axis
+  /// before changing the orientation. Preserve the stored crop and straightening.
+  void FlipImage(ImageFlipAxis axis, Extent2D source) {
+    if (source.Empty()) {
+      throw std::invalid_argument("Image flip requires source dimensions");
+    }
+    orientation_ = FlipFrameOrientation(orientation_, axis);
   }
 
   /// Reset all Crop and Rotate fields together. Other document settings remain intact.

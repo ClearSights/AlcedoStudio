@@ -1366,8 +1366,9 @@ icon requires a documented reason that no suitable Tabler symbol exists.
 Non-Tabler assets are preserved for established Alcedo-specific actions
 (adjustments, aperture, etc.) and for the history operation set.
 
-  In Geometry > Crop and Rotate, use compact `IconActionButton`s for Rotate Left
-  and Rotate Right. The buttons use Tabler `rotate-2` and `rotate-clockwise-2`
+  In Geometry > Crop and Rotate, use compact `IconActionButton`s for Rotate Left,
+  Rotate Right, Flip Horizontal, and Flip Vertical in that order. The buttons use
+  Tabler `rotate-2`, `rotate-clockwise-2`, `flip-horizontal`, and `flip-vertical`
   (user-approved 2026-11-22), with white strokes at 1.5 px. Keep the actions
   in a wrapping row and give each button its own accessible name.
 

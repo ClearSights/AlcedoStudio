@@ -3695,6 +3695,14 @@ Original source files on disk will be kept.</source>
         <translation>向右旋转</translation>
     </message>
     <message>
+        <source>Flip Horizontal</source>
+        <translation>水平翻转</translation>
+    </message>
+    <message>
+        <source>Flip Vertical</source>
+        <translation>垂直翻转</translation>
+    </message>
+    <message>
         <source>Rotate 90° left</source>
         <translation>向左旋转 90°</translation>
     </message>

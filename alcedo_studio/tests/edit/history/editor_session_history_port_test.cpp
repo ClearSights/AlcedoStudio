@@ -23,6 +23,7 @@
 #include "app/editor_adjustment_pipeline.hpp"
 #include "app/editor_history_types.hpp"
 #include "app/editor_mini_git_materializer.hpp"
+#include "app/editor_pending_input.hpp"
 #include "app/editor_pipeline_command_service.hpp"
 #include "app/editor_session_edit_controller.hpp"
 #include "app/pipeline_document_history.hpp"
@@ -363,6 +364,81 @@ TEST_F(EditorSessionHistoryPortTest,
   EXPECT_EQ(Graph()->CommitCount(), 3u);
   ASSERT_TRUE(history_.Undo(handle, &error)) << error;
   EXPECT_EQ(Head(), rotated_head);
+}
+
+TEST_F(EditorSessionHistoryPortTest, QueuedFlipsCommitSeparatelyAndUndoRedoRestoreOrientation) {
+  std::string error;
+  const auto  handle = history_.Acquire(42, &error);
+  ASSERT_TRUE(handle.valid) << error;
+  auto history =
+      std::shared_ptr<alcedo::IEditorHistoryPort>(&history_, [](alcedo::IEditorHistoryPort*) {});
+  alcedo::EditorSessionEditController edit({history});
+  const alcedo::EditorSessionIdentity identity{.element_id = 42, .image_id = 1};
+
+  alcedo::EditorAdjustmentPatch       patch;
+  patch.field_key         = "crop_rotate";
+  patch.target.field_key  = patch.field_key;
+  patch.target.owner_kind = alcedo::EditorParameterOwnerKind::Document;
+  patch.settled           = true;
+  alcedo::EditorPendingInputQueue pending;
+  const auto                      enqueue = [&](const alcedo::EditorParameterWrite& write) {
+    patch.write         = write;
+    const auto admitted = pending.AdmitFieldChange(identity, patch);
+    ASSERT_TRUE(admitted.accepted) << admitted.error;
+  };
+  const auto apply = [&] {
+    const auto sequence = pending.TakeReadyBatch();
+    return edit.HandlePendingSequence(sequence.value(), handle, identity);
+  };
+  ASSERT_NO_FATAL_FAILURE(enqueue(
+      alcedo::ImageGeometryUpdate{.crop_rect = alcedo::NormalizedRect{0.1f, 0.2f, 0.6f, 0.4f},
+                                  .rotation_degrees = 7.0f,
+                                  .aspect_preset    = "custom",
+                                  .aspect_ratio     = alcedo::CropAspectRatio{2.0f, 1.0f},
+                                  .orientation = alcedo::FrameOrientation::Rotate90Clockwise}));
+  ASSERT_EQ(apply().kind, alcedo::EditorEditOutcome::Kind::RenderRouted);
+  const auto crop_head = Head();
+  const auto crop      = Working()->Document().Geometry().ToJson(false);
+
+  using alcedo::FrameOrientation;
+  using alcedo::ImageFlipAxis;
+  constexpr alcedo::Extent2D source{750, 500};
+  for (const auto invalid_write :
+       {alcedo::EditorFlipImageWrite{ImageFlipAxis::Horizontal, {}},
+        alcedo::EditorFlipImageWrite{static_cast<ImageFlipAxis>(-1), source}}) {
+    ASSERT_NO_FATAL_FAILURE(enqueue(invalid_write));
+    EXPECT_EQ(apply().kind, alcedo::EditorEditOutcome::Kind::Rejected);
+    EXPECT_EQ(Head(), crop_head);
+    EXPECT_EQ(Graph()->CommitCount(), 1u);
+    EXPECT_EQ(Working()->Document().Geometry().Orientation(), FrameOrientation::Rotate90Clockwise);
+    EXPECT_EQ(Working()->Document().Geometry().ToJson(false), crop);
+  }
+
+  const alcedo::EditorFlipImageWrite flip{ImageFlipAxis::Horizontal, source};
+  ASSERT_NO_FATAL_FAILURE(enqueue(flip));
+  ASSERT_NO_FATAL_FAILURE(enqueue(flip));
+  ASSERT_EQ(apply().kind, alcedo::EditorEditOutcome::Kind::RenderRouted);
+  const auto flipped_head = Head();
+  EXPECT_NE(flipped_head, crop_head);
+  EXPECT_EQ(Graph()->CommitCount(), 2u);
+  EXPECT_EQ(Working()->Document().Geometry().Orientation(), FrameOrientation::Transpose);
+  EXPECT_EQ(Working()->Document().Geometry().ToJson(false), crop);
+
+  ASSERT_EQ(apply().kind, alcedo::EditorEditOutcome::Kind::RenderRouted);
+  const auto restored_head = Head();
+  EXPECT_TRUE(pending.empty());
+  EXPECT_EQ(Graph()->CommitCount(), 3u);
+  EXPECT_EQ(Working()->Document().Geometry().Orientation(), FrameOrientation::Rotate90Clockwise);
+  EXPECT_EQ(Working()->Document().Geometry().ToJson(false), crop);
+
+  ASSERT_TRUE(history_.Undo(handle, &error)) << error;
+  EXPECT_EQ(Head(), flipped_head);
+  EXPECT_EQ(Working()->Document().Geometry().Orientation(), FrameOrientation::Transpose);
+  EXPECT_EQ(Working()->Document().Geometry().ToJson(false), crop);
+  ASSERT_TRUE(history_.Redo(handle, &error)) << error;
+  EXPECT_EQ(Head(), restored_head);
+  EXPECT_EQ(Working()->Document().Geometry().Orientation(), FrameOrientation::Rotate90Clockwise);
+  EXPECT_EQ(Working()->Document().Geometry().ToJson(false), crop);
 }
 
 /// The Default document with the RAW import look before #891 (contrast 15, identity curve): the

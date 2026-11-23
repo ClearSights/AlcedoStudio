@@ -659,6 +659,12 @@ TEST(EditorParameterCatalogTest, CropProjectionMapsDisplayedAxesAndInvertsReflec
       EditorParameterCatalog::ProjectCropUi(clockwise, FrameOrientation::Rotate90Counterclockwise),
       stored);
   const auto reflected = EditorParameterCatalog::ProjectCropUi(stored, FrameOrientation::Transpose);
+  EXPECT_EQ(reflected.at("x"), 0.25);
+  EXPECT_EQ(reflected.at("y"), 0.125);
+  EXPECT_EQ(reflected.at("width"), 0.125);
+  EXPECT_EQ(reflected.at("height"), 0.5);
+  EXPECT_EQ(reflected.at("aspect_width"), 3.0);
+  EXPECT_EQ(reflected.at("aspect_height"), 4.0);
   EXPECT_EQ(reflected.at("angle_degrees"), -7.0);
   EXPECT_EQ(EditorParameterCatalog::ProjectCropUi(reflected, FrameOrientation::Transpose), stored);
 }

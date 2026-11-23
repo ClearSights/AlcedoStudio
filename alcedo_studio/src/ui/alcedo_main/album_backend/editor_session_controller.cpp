@@ -1954,16 +1954,21 @@ QString EditorSessionController::submitGeometryCommand(const QString& command) {
       interaction->sourceImageHeight() <= 0) {
     return tr("Image geometry requires source dimensions.");
   }
+  const alcedo::Extent2D       source{static_cast<std::uint32_t>(interaction->sourceImageWidth()),
+                                      static_cast<std::uint32_t>(interaction->sourceImageHeight())};
   alcedo::EditorParameterWrite write = alcedo::EditorResetCropRotateWrite{};
   if (command == QStringLiteral("geometry.rotate_left") ||
       command == QStringLiteral("geometry.rotate_right")) {
     const auto direction = command == QStringLiteral("geometry.rotate_left")
                                ? alcedo::QuarterTurnDirection::Left
                                : alcedo::QuarterTurnDirection::Right;
-    write                = alcedo::EditorRotateImageWrite{
-        direction,
-        {static_cast<std::uint32_t>(interaction->sourceImageWidth()),
-         static_cast<std::uint32_t>(interaction->sourceImageHeight())}};
+    write                = alcedo::EditorRotateImageWrite{direction, source};
+  } else if (command == QStringLiteral("geometry.flip_horizontal") ||
+             command == QStringLiteral("geometry.flip_vertical")) {
+    const auto axis = command == QStringLiteral("geometry.flip_horizontal")
+                          ? alcedo::ImageFlipAxis::Horizontal
+                          : alcedo::ImageFlipAxis::Vertical;
+    write           = alcedo::EditorFlipImageWrite{axis, source};
   } else if (command != QStringLiteral("geometry.reset_crop_rotate")) {
     return tr("Unknown geometry command.");
   }

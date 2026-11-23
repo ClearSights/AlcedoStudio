@@ -210,6 +210,8 @@ auto ApplyEditorParameterWrite(PipelineDocument& document, const EditorParameter
         auto& geometry = document.Geometry();
         if (const auto* turn = std::get_if<EditorRotateImageWrite>(&write)) {
           geometry.RotateImageQuarterTurn(turn->direction, turn->source);
+        } else if (const auto* flip = std::get_if<EditorFlipImageWrite>(&write)) {
+          geometry.FlipImage(flip->axis, flip->source);
         } else if (std::holds_alternative<EditorResetCropRotateWrite>(write)) {
           geometry.ResetCropRotate();
         } else {

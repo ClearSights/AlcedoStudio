@@ -83,6 +83,12 @@ struct EditorRotateImageWrite {
   Extent2D             source;
 };
 
+/// Mirror in the displayed axes at apply time. The viewport supplies the source extent.
+struct EditorFlipImageWrite {
+  ImageFlipAxis axis;
+  Extent2D      source;
+};
+
 /// Reset the Crop and Rotate section using the document owner's defaults.
 struct EditorResetCropRotateWrite {};
 
@@ -98,8 +104,8 @@ using EditorParameterWrite =
                  EditorLutWrite, HlsUpdate, ColorWheelUpdate, Cat02WhiteBalanceUpdate,
                  SharpenUpdate, DevelopRawDecodeUpdate, DevelopColorTemperatureUpdate,
                  DevelopLensCalibrationUpdate, DevelopInputProfileUpdate, DrtParameterUpdate,
-                 ImageGeometryUpdate, EditorRotateImageWrite, EditorResetCropRotateWrite,
-                 DrtFilmFormatUpdate, DevelopCameraProfileFileUpdate>;
+                 ImageGeometryUpdate, EditorRotateImageWrite, EditorFlipImageWrite,
+                 EditorResetCropRotateWrite, DrtFilmFormatUpdate, DevelopCameraProfileFileUpdate>;
 
 /**
  * @brief Parse a field JSON object into the matching Model operation.

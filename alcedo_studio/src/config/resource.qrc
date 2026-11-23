@@ -42,6 +42,8 @@
     <file>panel_icons/reset.svg</file>
     <file>panel_icons/rotate-left.svg</file>
     <file>panel_icons/rotate-right.svg</file>
+    <file>panel_icons/flip-horizontal.svg</file>
+    <file>panel_icons/flip-vertical.svg</file>
     <file>panel_icons/info.svg</file>
     <file>panel_icons/color-filter.svg</file>
     <file>panel_icons/crop.svg</file>

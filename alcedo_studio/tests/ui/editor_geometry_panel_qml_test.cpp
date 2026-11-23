@@ -4,6 +4,7 @@
 
 #include <gtest/gtest.h>
 
+#include <QAccessible>
 #include <QApplication>
 #include <QCoreApplication>
 #include <QEventLoop>
@@ -523,6 +524,47 @@ TEST(EditorGeometryPanelQmlTest, RotationButtonsWorkOnFullFrameAndRequireSourceS
   ASSERT_TRUE(QMetaObject::invokeMethod(right, "clicked"));
   EXPECT_EQ(session.geometry_commands, (QStringList{QStringLiteral("geometry.rotate_left"),
                                                     QStringLiteral("geometry.rotate_right")}));
+  EXPECT_TRUE(session.calls.empty());
+}
+
+TEST(EditorGeometryPanelQmlTest, FlipButtonsExposeAccessibleNamesAndFollowTheRotationButtons) {
+  GeometrySession         session;
+  FakeGeometryInteraction interaction;
+  interaction.presentSource(0, 0);
+  AdjustmentStackHarness harness(&session, &interaction);
+  ASSERT_NE(harness.root(), nullptr) << harness.errors().toStdString();
+  auto* right      = harness.findObject<QQuickItem>(QStringLiteral("geometryRotateRightButton"));
+  auto* horizontal = harness.findObject<QQuickItem>(QStringLiteral("geometryFlipHorizontalButton"));
+  auto* vertical   = harness.findObject<QQuickItem>(QStringLiteral("geometryFlipVerticalButton"));
+  ASSERT_NE(right, nullptr);
+  ASSERT_NE(horizontal, nullptr);
+  ASSERT_NE(vertical, nullptr);
+  ASSERT_EQ(horizontal->parentItem(), right->parentItem());
+  ASSERT_EQ(vertical->parentItem(), right->parentItem());
+  const auto actions = right->parentItem()->childItems();
+  EXPECT_LT(actions.indexOf(right), actions.indexOf(horizontal));
+  EXPECT_LT(actions.indexOf(horizontal), actions.indexOf(vertical));
+  for (auto* button : {horizontal, vertical}) {
+    EXPECT_FALSE(button->isEnabled());
+    EXPECT_TRUE(button->activeFocusOnTab());
+    ASSERT_TRUE(QMetaObject::invokeMethod(button, "clicked"));
+  }
+  EXPECT_TRUE(session.geometry_commands.empty());
+
+  interaction.presentSource(750, 500);
+  EXPECT_EQ(interaction.cropRectNormalized(), QRectF(0.0, 0.0, 1.0, 1.0));
+  ASSERT_TRUE(horizontal->isEnabled());
+  ASSERT_TRUE(vertical->isEnabled());
+  const auto* horizontal_accessible = QAccessible::queryAccessibleInterface(horizontal);
+  const auto* vertical_accessible   = QAccessible::queryAccessibleInterface(vertical);
+  ASSERT_NE(horizontal_accessible, nullptr);
+  ASSERT_NE(vertical_accessible, nullptr);
+  EXPECT_EQ(horizontal_accessible->text(QAccessible::Name), QStringLiteral("Flip Horizontal"));
+  EXPECT_EQ(vertical_accessible->text(QAccessible::Name), QStringLiteral("Flip Vertical"));
+  ASSERT_TRUE(QMetaObject::invokeMethod(horizontal, "clicked"));
+  ASSERT_TRUE(QMetaObject::invokeMethod(vertical, "clicked"));
+  EXPECT_EQ(session.geometry_commands, (QStringList{QStringLiteral("geometry.flip_horizontal"),
+                                                    QStringLiteral("geometry.flip_vertical")}));
   EXPECT_TRUE(session.calls.empty());
 }
 

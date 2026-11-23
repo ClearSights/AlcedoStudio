@@ -5,6 +5,8 @@
 #include "edit/geometry/render_geometry_resolver.hpp"
 
 #include "edit/geometry/crop_frame.hpp"
+#include "edit/geometry/frame_orientation.hpp"
+#include "edit/graph/image_geometry_model.hpp"
 
 #include <gtest/gtest.h>
 
@@ -129,6 +131,63 @@ TEST(GpuDagGeometry, OrientationAppliesAfterCropAndStraighteningBeforeViewCrop) 
                                        {0, static_cast<float>(oriented.edit_extent.height) * 0.5f});
   EXPECT_NEAR(actual.x, expected.x, kPxEps);
   EXPECT_NEAR(actual.y, expected.y, kPxEps);
+}
+
+TEST(GpuDagGeometry, FlipAfterQuarterTurnUsesDisplayedAxes) {
+  constexpr Extent2D       extent{45, 31};
+  const auto               source = MakeSourceGeometry(extent, extent);
+  constexpr NormalizedRect crop{0.2f, 0.15f, 0.55f, 0.5f};
+  constexpr float          angle = 12.0f;
+  using enum FrameOrientation;
+  for (const auto orientation : {Identity, Rotate90Clockwise, Rotate180, Rotate90Counterclockwise,
+                                 FlipHorizontal, FlipVertical, Transpose, Transverse}) {
+    SCOPED_TRACE(FrameOrientationId(orientation));
+    ImageGeometryParams image{
+        .crop_rect = crop, .rotation_degrees = angle, .orientation = orientation};
+    const auto before = ResolveSimple(source, image);
+    ASSERT_NE(before.edit_extent.width, before.edit_extent.height);
+    for (const auto axis : {ImageFlipAxis::Horizontal, ImageFlipAxis::Vertical}) {
+      SCOPED_TRACE(static_cast<int>(axis));
+      ImageGeometryModel model;
+      model.ApplyUpdate({.crop_rect = crop, .rotation_degrees = angle, .orientation = orientation});
+      model.FlipImage(axis, extent);
+      const auto stored_crop = model.CropRect();
+      EXPECT_FLOAT_EQ(stored_crop.x, crop.x);
+      EXPECT_FLOAT_EQ(stored_crop.y, crop.y);
+      EXPECT_FLOAT_EQ(stored_crop.w, crop.w);
+      EXPECT_FLOAT_EQ(stored_crop.h, crop.h);
+      EXPECT_EQ(model.RotationDegrees(), angle);
+      image.orientation = model.Orientation();
+      const auto after  = ResolveSimple(source, image);
+      ASSERT_EQ(after.edit_extent, before.edit_extent);
+      ASSERT_EQ(after.render_extent, before.render_extent);
+      const auto [width, height] = after.render_extent;
+      for (std::uint32_t y = 0; y < height; ++y) {
+        for (std::uint32_t x = 0; x < width; ++x) {
+          const auto mirror   = axis == ImageFlipAxis::Horizontal ? PixelCenter(width - 1 - x, y)
+                                                                  : PixelCenter(x, height - 1 - y);
+          const auto expected = TransformPoint(before.render_to_reference, mirror);
+          const auto actual   = TransformPoint(after.render_to_reference, PixelCenter(x, y));
+          EXPECT_NEAR(actual.x, expected.x, kPxEps);
+          EXPECT_NEAR(actual.y, expected.y, kPxEps);
+        }
+      }
+    }
+  }
+}
+
+TEST(GpuDagGeometry, TwoMatchingFlipsRestoreExactOrientation) {
+  using enum FrameOrientation;
+  for (const auto orientation : {Identity, Rotate90Clockwise, Rotate180, Rotate90Counterclockwise,
+                                 FlipHorizontal, FlipVertical, Transpose, Transverse}) {
+    SCOPED_TRACE(FrameOrientationId(orientation));
+    for (const auto axis : {ImageFlipAxis::Horizontal, ImageFlipAxis::Vertical}) {
+      SCOPED_TRACE(static_cast<int>(axis));
+      const auto flipped = FlipFrameOrientation(orientation, axis);
+      EXPECT_NE(flipped, orientation);
+      EXPECT_EQ(FlipFrameOrientation(flipped, axis), orientation);
+    }
+  }
 }
 
 TEST(GpuDagGeometry, ResolveRenderGeometryRejectsUnknownFrameOrientation) {

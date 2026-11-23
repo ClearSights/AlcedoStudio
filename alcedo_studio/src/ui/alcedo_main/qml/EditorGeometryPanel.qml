@@ -540,6 +540,22 @@ Item {
                             toolTipText: qsTr("Rotate 90° right")
                             onClicked: root.runCropCommand("geometry.rotate_right")
                         }
+                        IconActionButton {
+                            objectName: "geometryFlipHorizontalButton"
+                            compact: true
+                            enabled: root.canRunCropCommand
+                            iconSrc: "qrc:/panel_icons/flip-horizontal.svg"
+                            actionName: qsTr("Flip Horizontal")
+                            onClicked: root.runCropCommand("geometry.flip_horizontal")
+                        }
+                        IconActionButton {
+                            objectName: "geometryFlipVerticalButton"
+                            compact: true
+                            enabled: root.canRunCropCommand
+                            iconSrc: "qrc:/panel_icons/flip-vertical.svg"
+                            actionName: qsTr("Flip Vertical")
+                            onClicked: root.runCropCommand("geometry.flip_vertical")
+                        }
                     }
                     Label {
                         Layout.fillWidth: true
