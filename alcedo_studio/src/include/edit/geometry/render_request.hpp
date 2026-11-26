@@ -14,20 +14,32 @@ namespace alcedo {
  * @brief Which rectangle of the rotated source becomes the edit space.
  */
 enum class GeometryOutputFrame : std::uint8_t {
-  /// Product output: the crop frame, constrained so every corner lies inside the source.
+  /// Product output: the requested crop frame, optionally constrained to source coverage.
   CropFrame,
   /// Geometry panel preview: the bounding box of the whole rotated source. Its corners outside
   /// the source show the border color. Used only with a full-frame crop.
   RotatedSourceBounds,
+  /// Internal editing view: the whole source with manual transforms, without straightening.
+  TransformedSourceBounds,
 };
 
 /**
- * @brief Document crop and rotation. Viewport and dynamic resolution are not stored here.
+ * @brief Geometry inputs in pre-orientation reference axes. Manual fields use UI units.
+ *
+ * The manual controls and crop constraint are internal render inputs until the document and
+ * sampling paths support them. Viewport and dynamic resolution are separate requests.
  */
 struct ImageGeometryParams {
   NormalizedRect      crop_rect{};
   float               rotation_degrees = 0.0f;
   GeometryOutputFrame output_frame     = GeometryOutputFrame::CropFrame;
+  double              horizontal       = 0.0;
+  double              vertical         = 0.0;
+  double              aspect           = 0.0;
+  double              scale            = 100.0;
+  double              offset_x         = 0.0;
+  double              offset_y         = 0.0;
+  bool                constrain_crop   = true;
 };
 
 /**
