@@ -23,6 +23,7 @@ def_library(PipelineHistory
 def_library(EditGeometry
     SOURCES
         ${ALCEDO_SRC_ROOT}/edit/geometry/crop_frame.cpp
+        ${ALCEDO_SRC_ROOT}/edit/geometry/projective_transform.cpp
         ${ALCEDO_SRC_ROOT}/edit/geometry/render_geometry_resolver.cpp
         ${ALCEDO_SRC_ROOT}/edit/geometry/texture_sampling_plan.cpp
 )
