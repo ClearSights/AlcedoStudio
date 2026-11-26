@@ -90,7 +90,8 @@ using EditorParameterWrite =
                  EditorLutWrite, HlsUpdate, ColorWheelUpdate, Cat02WhiteBalanceUpdate,
                  SharpenUpdate, DevelopRawDecodeUpdate, DevelopColorTemperatureUpdate,
                  DevelopLensCalibrationUpdate, DevelopInputProfileUpdate, DrtParameterUpdate,
-                 ImageGeometryUpdate, DrtFilmFormatUpdate, DevelopCameraProfileFileUpdate>;
+                 ImageGeometryUpdate, DrtFilmFormatUpdate, DevelopCameraProfileFileUpdate,
+                 GeometryResetScope>;
 
 /**
  * @brief Parse a field JSON object into the matching Model operation.
@@ -137,10 +138,13 @@ using EditorParameterWrite =
  * @param target Explicit node/adjustment identity; no missing identity is inferred.
  * @param write Operation produced by a control or by ParseEditorParameterWrite.
  * @param error Optional failure detail.
+ * @param source_extent Full source dimensions for geometry validation.
+ * @param requested_transform_crop Requested frame for an ongoing manual-transform edit.
  * @return false for an invalid target, type mismatch, or Model rejection.
  */
-auto ApplyEditorParameterWrite(PipelineDocument& document, const EditorParameterTarget& target,
-                               const EditorParameterWrite& write, std::string* error,
-                               Extent2D source_extent = {}) -> bool;
+auto ApplyEditorParameterWrite(
+    PipelineDocument& document, const EditorParameterTarget& target,
+    const EditorParameterWrite& write, std::string* error, Extent2D source_extent = {},
+    std::optional<NormalizedRect> requested_transform_crop = std::nullopt) -> bool;
 
 }  // namespace alcedo

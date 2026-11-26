@@ -229,6 +229,18 @@ class EditorSessionHistoryPortTest : public ::testing::Test {
   auto Working() -> std::shared_ptr<const alcedo::PipelineGraphSnapshot> {
     return EditorWorkingPreview(*pipeline_, 42);
   }
+  /// Apply a transform control input through the production parser and history owner.
+  auto TransformPatch(const EditorHistoryGuardHandle& handle, const nlohmann::json& params,
+                      bool settled, std::string* error) -> bool {
+    EditorAdjustmentPatch patch;
+    patch.field_key = "geometry_transform";
+    patch.target = {.owner_kind = EditorParameterOwnerKind::Document, .field_key = patch.field_key};
+    patch.write  = ParseEditorParameterWrite(patch.field_key, params, error);
+    patch.settled       = settled;
+    patch.source_extent = {1200, 800};
+    return patch.write && history_.CaptureAdjustmentBeforePreview(handle, patch, error) &&
+           (!settled || history_.CommitAdjustment(handle, patch, error));
+  }
 
   std::filesystem::path                      journal_path_;
   /// History and documents that the next Acquire of image 42 takes (as a copy).
@@ -319,6 +331,130 @@ TEST_F(EditorSessionHistoryPortTest, TransformJournalFailureRetainsPublishedCrop
   EXPECT_FALSE(history_.CommitAdjustment(handle, patch, &error));
   EXPECT_FALSE(error.empty());
   EXPECT_FALSE(Head().has_value());
+  EXPECT_EQ(Working()->Document().ToJson(), before);
+}
+
+TEST_F(EditorSessionHistoryPortTest, TransformDragCreatesOneSettledHistoryEntry) {
+  std::string error;
+  const auto  handle = history_.Acquire(42, &error);
+  ASSERT_TRUE(handle.valid) << error;
+  const auto before = Working()->Document().Geometry().ToJson();
+  ASSERT_TRUE(TransformPatch(handle, {{"scale", 60.0}}, false, &error)) << error;
+  EXPECT_DOUBLE_EQ(Working()->Document().Geometry().RenderParams().scale, 60.0);
+  EXPECT_LT(Working()->Document().Geometry().CropRect().w, 0.65f);
+  EXPECT_FALSE(Head().has_value());
+
+  ASSERT_TRUE(TransformPatch(handle, {{"scale", 80.0}}, true, &error)) << error;
+  const auto& accepted = Working()->Document().Geometry();
+  EXPECT_DOUBLE_EQ(accepted.RenderParams().scale, 80.0);
+  EXPECT_NEAR(accepted.CropRect().w, 0.8f, 1e-5f);
+  const auto capture = history_.CaptureSaveCheckpoint(handle, &error);
+  ASSERT_NE(capture, nullptr) << error;
+  EXPECT_EQ(capture->journal_records.size(), 1u);
+  ASSERT_TRUE(history_.Undo(handle, &error)) << error;
+  EXPECT_EQ(Working()->Document().Geometry().ToJson(), before);
+}
+
+TEST_F(EditorSessionHistoryPortTest, ResetTransformPreservesCropAndRotation) {
+  lease_.document_->Geometry().ApplyUpdate({
+      .crop_rect        = NormalizedRect{0.2f, 0.25f, 0.5f, 0.5f},
+      .rotation_degrees = 7.0f,
+      .aspect_preset    = "custom",
+      .aspect_ratio     = CropAspectRatio{3.0f, 2.0f},
+      .vertical         = -24.0,
+      .scale            = 130.0,
+      .offset_y         = 5.0,
+      .constrain_crop   = false,
+  });
+  std::string error;
+  const auto  handle = history_.Acquire(42, &error);
+  ASSERT_TRUE(handle.valid) << error;
+  const auto before = Working()->Document().Geometry().ToJson();
+
+  ASSERT_TRUE(TransformPatch(handle, {{"reset", "transform"}}, true, &error)) << error;
+  auto expected = ImageGeometryModel{}.ToJson();
+  for (const auto* key : {"crop_rect", "rotation_degrees", "aspect_preset", "aspect_ratio"}) {
+    expected[key] = before.at(key);
+  }
+  EXPECT_EQ(Working()->Document().Geometry().ToJson(), expected);
+  const auto head = Head();
+  ASSERT_TRUE(head.has_value());
+  ASSERT_TRUE(TransformPatch(handle, {{"reset", "transform"}}, true, &error)) << error;
+  EXPECT_EQ(Head(), head);
+  const auto capture = history_.CaptureSaveCheckpoint(handle, &error);
+  ASSERT_NE(capture, nullptr) << error;
+  EXPECT_EQ(capture->journal_records.size(), 1u);
+  ASSERT_TRUE(history_.Undo(handle, &error)) << error;
+  EXPECT_EQ(Working()->Document().Geometry().ToJson(), before);
+}
+
+TEST_F(EditorSessionHistoryPortTest, ResetCropWithManualTransformsKeepsConstrainedCoverage) {
+  lease_.document_->Geometry().ApplyUpdate({
+      .crop_rect        = NormalizedRect{0.4f, 0.3f, 0.3f, 0.45f},
+      .rotation_degrees = 10.0f,
+      .aspect_preset    = "custom",
+      .scale            = 80.0,
+  });
+  std::string error;
+  const auto  handle = history_.Acquire(42, &error);
+  ASSERT_TRUE(handle.valid) << error;
+  const auto before = Working()->Document().Geometry().ToJson();
+
+  ASSERT_TRUE(TransformPatch(handle, {{"reset", "crop_and_rotate"}}, true, &error)) << error;
+  const auto accepted = Working()->Document().Geometry().ToJson();
+  EXPECT_EQ(accepted.at("aspect_preset"), "free");
+  EXPECT_EQ(accepted.at("aspect_ratio"), nlohmann::json::array({1.0, 1.0}));
+  EXPECT_EQ(accepted.at("rotation_degrees"), 0.0);
+  EXPECT_EQ(accepted.at("scale"), 80.0);
+  EXPECT_EQ(accepted.at("constrain_crop"), true);
+  const auto& crop = accepted.at("crop_rect");
+  for (const auto index : {0, 1}) EXPECT_NEAR(crop.at(index).get<double>(), 0.1, 1e-5);
+  for (const auto index : {2, 3}) EXPECT_NEAR(crop.at(index).get<double>(), 0.8, 1e-5);
+  const auto head = Head();
+  ASSERT_TRUE(head.has_value());
+  ASSERT_TRUE(TransformPatch(handle, {{"reset", "crop_and_rotate"}}, true, &error)) << error;
+  EXPECT_EQ(Head(), head);
+  ASSERT_TRUE(history_.Undo(handle, &error)) << error;
+  EXPECT_EQ(Working()->Document().Geometry().ToJson(), before);
+  ASSERT_TRUE(history_.Redo(handle, &error)) << error;
+  EXPECT_EQ(Working()->Document().Geometry().ToJson(), accepted);
+  ASSERT_TRUE(TransformPatch(handle, {{"constrain_crop", false}}, true, &error)) << error;
+  ASSERT_TRUE(TransformPatch(handle, {{"reset", "crop_and_rotate"}}, true, &error)) << error;
+  const auto& uncovered = Working()->Document().Geometry();
+  EXPECT_TRUE(uncovered.CropRect().IsFullFrame());
+  EXPECT_DOUBLE_EQ(uncovered.RenderParams().scale, 80.0);
+  EXPECT_FALSE(uncovered.RenderParams().constrain_crop);
+}
+
+TEST_F(EditorSessionHistoryPortTest, GeometryResetPreservesImportLookAndGradeVisibility) {
+  ASSERT_TRUE(AddCleanColorGrade(*lease_.document_, NodeId{"drt"}, NodeId{"grade.sky"}).empty());
+  auto* sky =
+      dynamic_cast<ColorGradeNodeModel*>(lease_.document_->Graph().FindNode(NodeId{"grade.sky"}));
+  ASSERT_NE(sky, nullptr);
+  sky->SetEnabled(false);
+  lease_.document_->Geometry().ApplyUpdate({
+      .crop_rect        = NormalizedRect{0.15f, 0.1f, 0.6f, 0.7f},
+      .rotation_degrees = -9.0f,
+      .horizontal       = 4.0,
+      .constrain_crop   = false,
+  });
+  std::string error;
+  const auto  handle = history_.Acquire(42, &error);
+  ASSERT_TRUE(handle.valid) << error;
+  const auto before    = Working()->Document().ToJson();
+  auto       expected  = before;
+  expected["geometry"] = ImageGeometryModel{}.ToJson();
+
+  ASSERT_TRUE(TransformPatch(handle, {{"reset", "all"}}, true, &error)) << error;
+  EXPECT_EQ(Working()->Document().ToJson(), expected);
+  const auto head = Head();
+  ASSERT_TRUE(head.has_value());
+  ASSERT_TRUE(TransformPatch(handle, {{"reset", "all"}}, true, &error)) << error;
+  EXPECT_EQ(Head(), head);
+  const auto capture = history_.CaptureSaveCheckpoint(handle, &error);
+  ASSERT_NE(capture, nullptr) << error;
+  EXPECT_EQ(capture->journal_records.size(), 1u);
+  ASSERT_TRUE(history_.Undo(handle, &error)) << error;
   EXPECT_EQ(Working()->Document().ToJson(), before);
 }
 

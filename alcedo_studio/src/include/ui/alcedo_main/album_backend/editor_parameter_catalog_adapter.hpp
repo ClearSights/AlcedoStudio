@@ -83,7 +83,7 @@ class EditorParameterCatalogAdapter : public QObject {
   Q_INVOKABLE QVariantMap  uiValue(const QString& field, const QVariant& snapshotEntry) const;
 
   /**
-   * @brief Parameter JSON of one write of object field @p field from the complete panel state.
+   * @brief Parameter JSON from the panel state, or from the changed manual geometry fields.
    *
    * @return The compact JSON for submitPatch, or an empty string when the state is not valid.
    *         The failure detail goes to the warning log; submitPatch rejects the empty string.

@@ -4,11 +4,13 @@
 
 #include "edit/graph/image_geometry_model.hpp"
 
+#include <algorithm>
 #include <array>
 #include <optional>
 #include <stdexcept>
 #include <string>
 
+#include "edit/geometry/crop_frame.hpp"
 #include "edit/geometry/projective_transform.hpp"
 #include "edit/geometry/render_geometry_resolver.hpp"
 #include "edit/geometry/source_geometry.hpp"
@@ -34,6 +36,20 @@ constexpr std::array kManualTransformNumbers{
     ManualTransformNumber{"offset_y", &ImageGeometryParams::offset_y,
                           &ImageGeometryUpdate::offset_y},
 };
+
+/// Check the stored crop directly so a valid affine frame needs no float round trip.
+auto FitsStraightenedSource(NormalizedRect crop, float degrees, Extent2D source) -> bool {
+  if (!(crop.w >= kGeometryMinNormalizedSize && crop.w <= 1.0f &&
+        crop.h >= kGeometryMinNormalizedSize && crop.h <= 1.0f)) {
+    return false;
+  }
+  const auto corners = CropFrameCornersInReference(crop, degrees, source);
+  const auto width   = static_cast<float>(source.width);
+  const auto height  = static_cast<float>(source.height);
+  return std::ranges::all_of(corners, [&](const auto& point) {
+    return point.x >= 0.0f && point.y >= 0.0f && point.x <= width && point.y <= height;
+  });
+}
 
 }  // namespace
 
@@ -72,8 +88,12 @@ void ImageGeometryModel::ApplyUpdate(const ImageGeometryUpdate& update) {
   StoreUpdate(update, params);
 }
 
-void ImageGeometryModel::ApplyResolvedUpdate(const ImageGeometryUpdate& update, Extent2D source) {
+void ImageGeometryModel::ApplyResolvedUpdate(const ImageGeometryUpdate& update, Extent2D source,
+                                             std::optional<NormalizedRect> requested_crop) {
   auto params = RenderParamsForUpdate(update);
+  if (requested_crop) {
+    params.crop_rect = *requested_crop;
+  }
   (void)ResolveCropPlaneTransform(params);
   // Keep the legacy crop write path for identity transforms, including old crops whose
   // stored rectangle the affine renderer constrains at render time.
@@ -84,12 +104,39 @@ void ImageGeometryModel::ApplyResolvedUpdate(const ImageGeometryUpdate& update, 
     }
     const auto decoded = MakeSourceGeometry(source, source);
     const auto editing = ResolveGeometryEditingView(decoded, params, {}, {}, {});
-    if (params.constrain_crop) {
+    if (params.constrain_crop &&
+        !(HasIdentityManualTransform(params) &&
+          FitsStraightenedSource(params.crop_rect, params.rotation_degrees, source))) {
       params.crop_rect = ResolveEditingCropRect(editing, params.crop_rect, params.rotation_degrees);
     }
     (void)ResolveRenderGeometry(decoded, params, {}, {}, {});
   }
   StoreUpdate(update, params);
+}
+
+void ImageGeometryModel::Reset(GeometryResetScope scope, Extent2D source) {
+  if (source.Empty()) {
+    throw std::invalid_argument("Geometry reset requires the source image dimensions");
+  }
+  if (scope != GeometryResetScope::Transform && scope != GeometryResetScope::CropAndRotate &&
+      scope != GeometryResetScope::All) {
+    throw std::invalid_argument("Unsupported geometry reset scope");
+  }
+  const ImageGeometryParams defaults;
+  ImageGeometryUpdate       update;
+  if (scope != GeometryResetScope::Transform) {
+    update.crop_rect        = defaults.crop_rect;
+    update.rotation_degrees = defaults.rotation_degrees;
+    update.aspect_preset    = kFreeAspectPreset;
+    update.aspect_ratio     = CropAspectRatio{};
+  }
+  if (scope != GeometryResetScope::CropAndRotate) {
+    for (const auto& field : kManualTransformNumbers) {
+      update.*field.update = defaults.*field.value;
+    }
+    update.constrain_crop = defaults.constrain_crop;
+  }
+  ApplyResolvedUpdate(update, source);
 }
 
 auto ImageGeometryModel::ToJson(bool include_manual_transforms) const -> nlohmann::json {

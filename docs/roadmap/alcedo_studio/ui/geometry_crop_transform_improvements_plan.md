@@ -4,7 +4,7 @@ Date: 2026-11-14
 
 Revised: 2026-11-22
 
-Status: The standalone QML layout is approved. A1 and T5 have local verification records below.
+Status: The standalone QML layout is approved. A1, T5, and T6 have local verification records below.
 
 Parent: Standalone extension to the editor workspace roadmap.
 
@@ -1388,7 +1388,101 @@ Add `TransformPanelRestoreDoesNotSubmitEdits`,
 `EditorGeometryOverlayPipelineTest`. Verify the combined acceptance criteria in Section 8
 with landscape, portrait, and architectural images. Include displayed axes after rotate and flip,
 Swap Aspect with nondefault transforms, guide visibility, focus, narrow layout, and export.
-Completion record pending. Use Section 9.
+
+#### T6 completion record (2026-11-26)
+
+T6 is implemented and verified on Windows on `feature/geometry-crop-transform-t6`
+from T5 commit `87e67b860`.
+Transform appears above Crop and Rotate. The six numeric controls use the shared slider and
+the catalog limits. Constrain Crop and the three reset actions submit one focused operation
+each. The panel loads the accepted values without submitting an edit.
+
+The transform drag uses the requested frame at the start of the edit. The history owner already
+records that frame for Undo. Each preview sample uses it to calculate the current crop.
+A wider final transform can recover frame area lost in an earlier preview.
+Reset Transform keeps an already-valid straightened frame at its exact stored coordinates.
+The numeric input reserves both Enter keys while it has focus. Slider accessibility reads the
+current value and the range. A disabled checkbox uses the inherited Qt Quick enable state.
+
+Primary success path
+
+```text
+Manual slider, Constrain Crop, or section reset
+  -> EditorParameterCatalog / ParseEditorParameterWrite -> EditorSessionEditController
+  -> EditorSessionHistoryPort -> ImageGeometryModel::ApplyResolvedUpdate or Reset
+  -> resolve the crop -> journal one settled change -> publish the accepted panel values
+  -> render the new editing view and crop overlay
+```
+
+Primary failure and restore paths
+
+```text
+Invalid edit or journal failure -> keep or restore the before-values and history head
+  -> geometry adjustment rejection -> reload the accepted values and show the reason
+Accepted edit followed by a render error -> show the existing session render error
+Undo or Redo -> restore the recorded crop and transform values -> reload the controls
+```
+
+The Release MSVC build used `VCVARS_USER_VERSION=14.44.35207` and the existing Qt 6.9.3
+installation. The target command was `cmd /c scripts\msvc_env.cmd --build --preset win_release
+--target alcedo_main EditorGeometryPanelQmlTest EditorCropInteractionTest
+EditorGeometryOverlayPipelineTest EditorSessionHistoryPortTest EditorOverlayInteractionTest
+OverlayCursorTest EditorSessionRenderSchedulerPortTest ExportServiceTest
+EditorParameterCatalogTest GpuDagGeometryTest EditorMultiSliderQuickTest --parallel 4`.
+CTest used `ctest --test-dir build/release -R <selection> --no-tests=error --output-on-failure -j 1`
+with the Qt and vcpkg runtime directories on `PATH`.
+
+The final focused run passed 322 of 326 discovered cases with zero failures in 110.43 seconds.
+Three export cases were already disabled. The export color-configuration case skipped because
+its linear DNG sample was unavailable.
+
+| Requirement | Executed evidence |
+| --- | --- |
+| Restore, input, and accessibility | `EditorGeometryPanelQmlTest` passed all 13 cases. It covers both drag surfaces, the 260 px panel, the Enter keys, accepted values, and error display. |
+| One history edit and reset scope | `EditorSessionHistoryPortTest` verifies frame recovery during a drag, reset and no-op counts, Undo/Redo, preserved straightening, and preserved Grade visibility. |
+| Frame, crop input, and presentation | `GpuDagGeometryTest`, `EditorGeometryOverlayPipelineTest`, `EditorCropInteractionTest`, `EditorOverlayInteractionTest`, and `OverlayCursorTest` passed. The renderer produced the same CUDA frame after the last of two GPU release holders ended. |
+| Input conversion and export | `EditorParameterCatalogTest` and the six runnable `ExportServiceTest` cases passed. |
+
+In the built app, a generated portrait at Fit zoom restored its saved values. Return committed
+Vertical 35.0 with Geometry still open. Windows UI Automation reported Vertical 35 and Scale
+100. Reset Transform and Reset All returned the controls to their accepted defaults. The narrow
+layout test used the production QML. All app edits and exports used the temporary synthetic project.
+
+The CUDA headless host imported only generated inputs. Full-resolution PNG export retained the
+accepted geometry after close and reopen. An unconstrained full-frame export had black corner
+pixels and kept the source dimensions.
+
+| Synthetic input | Constrained PNG | Unconstrained PNG |
+| --- | --- | --- |
+| Architectural facade | 736 × 883 | 1000 × 1200 |
+| Landscape pattern | 906 × 604 | 1200 × 800 |
+| Portrait pattern | 589 × 883 | 800 × 1200 |
+
+The existing shared slider handoff check had eight passes and one failure. Its first production
+submit case reported zero submits with both the T5 and updated slider QML in the offscreen
+harness. See [#701](https://github.com/zidage/AlcedoStudio/issues/701) and
+[#702](https://github.com/zidage/AlcedoStudio/issues/702).
+
+The working branch has identity orientation and the existing crop controls. Rotate, flip,
+Swap Aspect, and selectable guide combinations require their separate feature branches.
+This run covered the Windows CUDA renderer. OpenCL, Metal, and additional display pixel ratios
+were outside the run.
+
+Issues found and fixed in this change
+
+- Preview-dependent crop size [#3](https://github.com/ClearSights/AlcedoStudio/issues/3)
+- Disabled checkbox state [#4](https://github.com/ClearSights/AlcedoStudio/issues/4)
+- Numeric Enter priority [#5](https://github.com/ClearSights/AlcedoStudio/issues/5)
+- Accessible slider value [#6](https://github.com/ClearSights/AlcedoStudio/issues/6)
+
+The four fork issues have the Bug type and the development label. The GitHub token lacks the
+project scope required to set roadmap status.
+
+The panel and each of its new tests stay in their existing QML, history, and render owners.
+The small result and history changes in existing files above 1,000 lines use their current
+dispatch and publication paths. An unrelated owner split would add review scope.
+Temporary test inputs, projects, exports, and logs were stored under
+`build/tmp/geometry_crop_transform_controls/` and removed after verification.
 
 ## 8. Verification and engineering limits
 

@@ -74,6 +74,8 @@ struct EditorSessionResult {
   /// Background task id for SaveStarted / SaveFinished pairing.
   std::uint64_t           task_id           = 0;
   std::string             message;
+  /// Field of a rejected single-field adjustment input, if known.
+  std::string             adjustment_field;
 };
 
 /// Stage of a user-initiated history / Version operation as it crosses the

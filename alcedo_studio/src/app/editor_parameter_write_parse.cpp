@@ -685,9 +685,17 @@ auto ParseGeometryUpdate(const nlohmann::json& params) -> ImageGeometryUpdate {
 
 /// Read a partial transform write or a complete accepted geometry value from history.
 auto ParseGeometryTransformUpdate(const nlohmann::json& params, ParseForm form)
-    -> ImageGeometryUpdate {
+    -> EditorParameterWrite {
   constexpr std::string_view field  = "geometry_transform";
   const auto&                object = UnwrapObject(params, {field}, field);
+  if (form == ParseForm::Write && object.contains("reset")) {
+    RejectUnknownKeys(object, {"reset"}, field);
+    const auto scope = ReadString(object.at("reset"), "geometry_transform.reset");
+    if (scope == "transform") return GeometryResetScope::Transform;
+    if (scope == "crop_and_rotate") return GeometryResetScope::CropAndRotate;
+    if (scope == "all") return GeometryResetScope::All;
+    throw std::invalid_argument("Unknown geometry reset scope: " + scope);
+  }
   if (form == ParseForm::Value) {
     RejectUnknownKeys(
         object,

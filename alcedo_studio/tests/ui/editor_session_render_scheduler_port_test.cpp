@@ -21,11 +21,13 @@
 #include <mutex>
 #include <opencv2/core.hpp>
 #include <optional>
+#include <span>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include "../support/editor_lease_test_support.hpp"
+#include "../support/test_temp_directory.hpp"
 #include "app/editor_comparison_inputs.hpp"
 #include "app/editor_comparison_types.hpp"
 #include "app/editor_image_render_port.hpp"
@@ -59,6 +61,7 @@
 #include "image/image.hpp"
 #include "image/image_buffer.hpp"
 #include "image/metadata_extractor.hpp"
+#include "image/raster_color_description.hpp"
 #include "renderer/pipeline_scheduler.hpp"
 #include "renderer/pipeline_task.hpp"
 #include "ui/alcedo_main/album_backend/editor_session_mask_asset_port.hpp"
@@ -1401,6 +1404,94 @@ TEST_F(EditorSessionRenderSchedulerPortGpuTest,
   std::printf(
       "editor executor GPU bytes: retained=%zu released=%zu during-export=%zu resumed=%zu\n",
       retained_bytes, release->device_bytes_after, export_bytes, resumed_bytes);
+#endif
+}
+
+TEST(EditorSessionRenderSchedulerPortTest, GeometryPresentationResumesAfterLastGpuReleaseHolder) {
+#ifdef HAVE_CUDA
+  try {
+    (void)alcedo::ResolveAcceleratorBackend(alcedo::AcceleratorBackendPreference::CUDA);
+  } catch (const std::exception& ex) {
+    GTEST_SKIP() << "No CUDA device available: " << ex.what();
+  }
+  const auto png = std::filesystem::path(TEST_IMG_PATH).parent_path() / "raster" / "srgb_chunk.png";
+  std::ifstream stream(png, std::ios::binary);
+  ASSERT_TRUE(stream.is_open());
+  std::vector<std::uint8_t> bytes{std::istreambuf_iterator<char>(stream),
+                                  std::istreambuf_iterator<char>()};
+  ASSERT_FALSE(bytes.empty());
+  const auto source_color =
+      alcedo::ResolveRasterColorDescription(std::as_bytes(std::span(bytes)),
+                                            alcedo::RasterFileKind::Png);
+
+  alcedo::test::TestTempDirectory temp_dir;
+  alcedo::ProjectService project(temp_dir / "project.db", temp_dir / "project.json");
+  auto service = std::make_shared<alcedo::PipelineMgmtService>(
+      project.GetStorage(), alcedo::AcceleratorBackendPreference::CUDA);
+  auto held = HoldImage(
+      22, EditorSessionPipelineMappers{
+              [service] { return service; },
+              [&source_color](sl_element_id_t id) {
+                return alcedo::test::MakeInMemoryEditorLease(
+                    id, alcedo::CreateDefaultRasterPipelineDocument(source_color));
+              }});
+  ASSERT_TRUE(held.lease.has_value()) << held.error;
+  auto& working  = *held.lease->document_;
+  auto& geometry = working.Document().Geometry();
+  geometry.ApplyUpdate({.rotation_degrees = 6.0f, .vertical = 35.0, .scale = 85.0});
+  (void)working.PublishPreview();
+  HostPixelFrameSink sink;
+  auto               scheduler = std::make_shared<EditorSessionRenderSchedulerPort>();
+  scheduler->SetPipelinePort(held.pipeline_port);
+  scheduler->SetSinkResolver([&sink] { return static_cast<alcedo::IFrameSink*>(&sink); });
+  constexpr std::uint64_t epoch   = 54;
+  auto                    context = MakeReadyContext(epoch, 22, 11);
+  context.image->image_path_ = png;
+  context.image->image_type_ = alcedo::ImageType::PNG;
+  context.input = std::make_shared<alcedo::ImageBuffer>(std::move(bytes));
+  scheduler->InstallSessionContext(std::move(context));
+  auto request                         = MakeRequest(723, epoch);
+  request.intent.geometry_overlay_only = true;
+  const auto initial                   = ScheduleAndWait(*scheduler, request);
+  ASSERT_TRUE(initial && initial->success) << (initial ? initial->message : "rejected");
+  const auto initial_pixels = sink.pixels.clone();
+  ASSERT_FALSE(initial_pixels.empty());
+  const auto executor = scheduler->interactive_executor();
+  ASSERT_NE(executor, nullptr);
+  auto* renderer = executor->DebugCudaRenderer();
+  ASSERT_NE(renderer, nullptr);
+  ASSERT_TRUE(renderer->PresentedFrameGeometry().has_value());
+  const auto initial_map = renderer->PresentedFrameGeometry()->ReferenceToRenderMap();
+  EXPECT_NE(initial_map.m[7], 0.0);
+  const auto device    = renderer->DebugDeviceIdentity();
+  const auto presented = sink.ready_count();
+
+  const auto exported  = ReleaseForExportAndWait(*scheduler);
+  ASSERT_TRUE(exported && exported->success);
+  const auto semantic =
+      ReleaseForHolderAndWait(*scheduler, EditorGpuReleaseHolder::SemanticGeneration);
+  ASSERT_TRUE(semantic && semantic->success);
+  EXPECT_FALSE(scheduler->EndGpuResourceRelease(EditorGpuReleaseHolder::Export));
+  ++request.request_id;
+  const auto blocked = ScheduleAndWait(*scheduler, request);
+  ASSERT_TRUE(blocked.has_value());
+  EXPECT_FALSE(blocked->success);
+  EXPECT_TRUE(alcedo::IsPresentationSuspendedMessage(blocked->message)) << blocked->message;
+  EXPECT_EQ(sink.ready_count(), presented);
+
+  EXPECT_TRUE(scheduler->EndGpuResourceRelease(EditorGpuReleaseHolder::SemanticGeneration));
+  ++request.request_id;
+  const auto resumed = ScheduleAndWait(*scheduler, request);
+  ASSERT_TRUE(resumed && resumed->success) << (resumed ? resumed->message : "rejected");
+  EXPECT_EQ(sink.ready_count(), presented + 1);
+  ASSERT_EQ(sink.pixels.size(), initial_pixels.size());
+  EXPECT_LT(cv::norm(sink.pixels, initial_pixels, cv::NORM_INF), 2e-5);
+  ASSERT_EQ(executor->DebugCudaRenderer(), renderer);
+  EXPECT_EQ(renderer->DebugDeviceIdentity(), device);
+  ASSERT_TRUE(renderer->PresentedFrameGeometry().has_value());
+  EXPECT_EQ(renderer->PresentedFrameGeometry()->ReferenceToRenderMap().m, initial_map.m);
+#else
+  GTEST_SKIP() << "CUDA backend is not compiled";
 #endif
 }
 

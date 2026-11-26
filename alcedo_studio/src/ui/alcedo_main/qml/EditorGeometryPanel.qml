@@ -3,14 +3,9 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import Alcedo.Main 1.0
 
-// Geometry panel: crop and rotation of the whole image.
-//
-// The output is the crop frame: an axis-aligned rectangle through which the
-// source is seen rotated about the frame center. No frame corner may leave the
-// source, so the frame shrinks when a rotation needs it
-// (EditorParameterCatalog::ConstrainCrop, the same constraint the overlay and
-// the render apply). The ranges, the aspect presets, and the parameter object
-// come from EditorParameterCatalog.
+// Geometry panel: manual transforms, crop and straightening of the whole image.
+// The catalog supplies the control ranges. The document owner resolves any
+// crop adjustment required by the accepted transform.
 //
 // Edits follow the path every adjustment uses: slider drags submit interactive
 // patches and a settled patch on release; keyboard and field edits submit
@@ -31,6 +26,7 @@ Item {
     property bool useProjectiveCrop: false
     property bool overlayInputActive: false
     property var aspectEntries: []
+    property string geometryError: ""
 
     readonly property color colText: theme ? theme.colText : appTheme.textColor
     readonly property color colMuted: theme ? theme.colTextMuted : appTheme.textMutedColor
@@ -46,8 +42,31 @@ Item {
     readonly property double imageAspect: root.hasSourceSize
                                           ? root.sourceImageWidth / root.sourceImageHeight : 1.0
     readonly property var cropDefaults: parameterCatalog.uiDefault("crop_rotate")
-    readonly property var cropSpecs: root.buildCropSpecs()
+    readonly property var cropSpecs: root.propertySpecs("crop_rotate")
+    readonly property var transformDefaults: parameterCatalog.uiDefault("geometry_transform")
+    readonly property var transformSpecs: root.propertySpecs("geometry_transform")
+    readonly property bool canEditGeometry: root.canUseGeometry && root.hasSourceSize
+                                            && !!root.editorSession && root.editorSession.canEdit
+    readonly property int geometryImageId: root.editorSession
+                                           ? Number(root.editorSession.imageId || 0) : 0
+    readonly property bool transformDragActive: {
+        for (let i = 0; i < transformSliders.count; ++i) {
+            const slider = transformSliders.itemAt(i)
+            if (slider && slider.model.dragActive)
+                return true
+        }
+        return false
+    }
+    readonly property string transformInputError: {
+        for (let i = 0; i < transformSliders.count; ++i) {
+            const slider = transformSliders.itemAt(i)
+            if (slider && !slider.model.valid)
+                return slider.model.errorMessage
+        }
+        return ""
+    }
     readonly property bool inputActive: root.overlayInputActive
+                                      || root.transformDragActive
                                       || cropXModel.dragActive
                                       || cropYModel.dragActive
                                       || cropWidthModel.dragActive
@@ -61,13 +80,49 @@ Item {
         objectName: "geometryParameterCatalog"
     }
 
-    /// Catalog property specs of the crop field by name: ui_min, ui_max, ui_step, ui_decimals.
-    function buildCropSpecs() {
+    /// Read the named property specs for a catalog object field.
+    function propertySpecs(field) {
         var result = {}
-        const properties = parameterCatalog.entry("crop_rotate").properties || []
+        const properties = parameterCatalog.entry(field).properties || []
         for (var i = 0; i < properties.length; ++i)
             result[String(properties[i].name)] = properties[i]
         return result
+    }
+
+    /// Close any keyboard edit from a different slider before submitting a new action.
+    function prepareGeometryEdit(except) {
+        const cropModels = [cropXModel, cropYModel, cropWidthModel, cropHeightModel,
+                            rotationModel, aspectWidthModel, aspectHeightModel]
+        for (const model of cropModels) {
+            if (model !== except)
+                model.commitImmediately()
+        }
+        for (let i = 0; i < transformSliders.count; ++i) {
+            const slider = transformSliders.itemAt(i)
+            if (slider && slider.model !== except)
+                slider.model.commitImmediately()
+        }
+        root.geometryError = ""
+    }
+
+    /// Build a write for the one changed transform field through the catalog.
+    function transformParams(key, value) {
+        const change = {}
+        change[key] = value
+        return parameterCatalog.modelParamsJson("geometry_transform", change)
+    }
+
+    /// Restore the projected values without submitting a change.
+    function loadTransformSnapshot(snapshot) {
+        const entry = snapshot ? snapshot["geometry_transform"] : undefined
+        const values = entry ? parameterCatalog.uiValue("geometry_transform", entry)
+                             : root.transformDefaults
+        for (let i = 0; i < transformSliders.count; ++i) {
+            const slider = transformSliders.itemAt(i)
+            if (slider && !slider.model.hasPendingSettled())
+                slider.model.value = values[slider.transformKey]
+        }
+        constrainCrop.checked = values.constrain_crop
     }
 
     function buildAspectEntries() {
@@ -195,12 +250,16 @@ Item {
         root.restoring = false
     }
 
-    /// Reset button: one settled edit back to a full-frame, unrotated, free crop.
+    /// Submit one scoped reset and wait for the owner's accepted projection.
+    function resetSection(scope) {
+        if (!root.canEditGeometry)
+            return
+        root.prepareGeometryEdit(null)
+        root.editorSession.submitPatch("geometry_transform", JSON.stringify({reset: scope}), true)
+    }
+
     function resetGeometry() {
-        root.resetModelsToDefaults()
-        root.wireEnabled()
-        root.syncOverlay()
-        root.submitGeometry(true)
+        root.resetSection("crop_and_rotate")
     }
 
     function loadCropSnapshot(snapshot) {
@@ -238,6 +297,7 @@ Item {
             aspectModel.entries = root.aspectEntries
         }
         root.loadCropSnapshot(snapshot)
+        root.loadTransformSnapshot(snapshot)
         root.wireEnabled()
         if (root.panelActive)
             root.syncOverlay()
@@ -260,7 +320,7 @@ Item {
     }
 
     function wireEnabled() {
-        const enabled = root.controlsEnabled
+        const enabled = root.canEditGeometry
         cropXModel.enabled = enabled
         cropYModel.enabled = enabled
         cropWidthModel.enabled = enabled
@@ -285,8 +345,20 @@ Item {
             root.leaveGeometryTool()
     }
     onInteractionChanged: root.enterGeometryTool()
+    onCanEditGeometryChanged: root.wireEnabled()
+    onGeometryImageIdChanged: root.geometryError = ""
     onEditorSessionChanged: {
+        root.geometryError = ""
         root.loadFromSnapshot(root.editorSession ? root.editorSession.adjustmentSnapshot : null)
+    }
+
+    Connections {
+        target: root.editorSession
+        ignoreUnknownSignals: true
+        function onGeometryAdjustmentRejected(message) {
+            root.geometryError = message
+            root.loadFromSnapshot(root.editorSession.adjustmentSnapshot)
+        }
     }
 
     EditorAdjustmentValueModel {
@@ -399,8 +471,10 @@ Item {
         ignoreUnknownSignals: true
         // Overlay drag: interactive patches while moving, one settled patch on release.
         function onCropFrameEdited(rect, degrees, isFinal) {
-            if (!root.panelActive || root.restoring)
+            if (!root.panelActive || root.restoring || !root.canEditGeometry)
                 return
+            if (!root.overlayInputActive)
+                root.prepareGeometryEdit(null)
             root.overlayInputActive = !isFinal
             root.setRectModels(rect)
             const wasRestoring = root.restoring
@@ -462,12 +536,24 @@ Item {
             width: root.width
             spacing: appTheme.spaceSm
 
-            Label {
+            RowLayout {
                 Layout.fillWidth: true
-                text: qsTr("Geometry")
-                color: root.colText
-                font.pixelSize: appTheme.fontSizeTitle
-                font.weight: appTheme.fontWeightHeading
+                spacing: appTheme.spaceSm
+                Label {
+                    Layout.fillWidth: true
+                    text: qsTr("Geometry")
+                    color: root.colText
+                    font.pixelSize: appTheme.fontSizeTitle
+                    font.weight: appTheme.fontWeightHeading
+                }
+                IconActionButton {
+                    objectName: "geometryResetAllButton"
+                    compact: true
+                    enabled: root.canEditGeometry
+                    iconSrc: "qrc:/panel_icons/reset.svg"
+                    actionName: qsTr("Reset All Geometry")
+                    onClicked: root.resetSection("all")
+                }
             }
 
             Label {
@@ -492,13 +578,106 @@ Item {
                 wrapMode: Text.Wrap
             }
 
+            AlertBadge {
+                objectName: "geometryError"
+                text: root.geometryError || root.transformInputError
+                    || (root.editorSession ? (root.editorSession.lastError || "") : "")
+            }
+
+            CollapsibleSection {
+                objectName: "editorAdjustmentGroupShell_geometry_transform"
+                title: qsTr("Transform")
+                controlsEnabled: root.canEditGeometry
+                bodyContentHeight: transformControls.implicitHeight
+                headerActions: Component {
+                    IconActionButton {
+                        objectName: "geometryResetTransformButton"
+                        compact: true
+                        enabled: root.canEditGeometry
+                        iconSrc: "qrc:/panel_icons/reset.svg"
+                        actionName: qsTr("Reset Transform")
+                        onClicked: root.resetSection("transform")
+                    }
+                }
+
+                ColumnLayout {
+                    id: transformControls
+                    width: parent.width
+                    spacing: appTheme.spaceSm
+
+                    Repeater {
+                        id: transformSliders
+                        model: [
+                            { key: "vertical", title: qsTr("Vertical"),
+                                hint: qsTr("Adjust vertical perspective. Positive values widen the bottom.") },
+                            { key: "horizontal", title: qsTr("Horizontal"),
+                                hint: qsTr("Adjust horizontal perspective. Positive values widen the right.") },
+                            { key: "aspect", title: qsTr("Aspect"),
+                                hint: qsTr("Stretch image content. Crop Aspect Ratio sets the frame shape.") },
+                            { key: "scale", title: qsTr("Scale"),
+                                hint: qsTr("Scale the image about its center independently of viewport zoom.") },
+                            { key: "offset_x", title: qsTr("X Offset"),
+                                hint: qsTr("Move image content horizontally. Crop X moves the crop frame.") },
+                            { key: "offset_y", title: qsTr("Y Offset"),
+                                hint: qsTr("Move image content vertically. Crop Y moves the crop frame.") }
+                        ]
+
+                        delegate: AdjustmentSlider {
+                            id: transformSlider
+                            required property var modelData
+                            readonly property string transformKey: modelData.key
+                            readonly property var spec: root.transformSpecs[transformKey]
+                            objectName: "geometryTransformSlider_" + transformKey
+                            partName: objectName
+                            flickable: scroller
+                            infoText: modelData.hint
+                            onEditStarting: function (model) { root.prepareGeometryEdit(model) }
+                            model: EditorAdjustmentValueModel {
+                                fieldKey: "geometry_transform"
+                                label: transformSlider.modelData.title
+                                minimum: transformSlider.spec.ui_min
+                                maximum: transformSlider.spec.ui_max
+                                railMinimum: minimum
+                                railMaximum: maximum
+                                step: transformSlider.spec.ui_step
+                                precision: transformSlider.spec.ui_decimals
+                                defaultValue: root.transformDefaults[transformSlider.transformKey]
+                                suffix: transformSlider.transformKey === "scale" ? "%" : ""
+                                enabled: root.canEditGeometry
+                                submitter: root.editorSession
+                                paramsBuilder: function (value) {
+                                    return root.transformParams(transformSlider.transformKey, value)
+                                }
+                            }
+                        }
+                    }
+
+                    ThemeCheckBox {
+                        id: constrainCrop
+                        objectName: "geometryConstrainCrop"
+                        text: qsTr("Constrain Crop")
+                        enabled: root.canEditGeometry
+                        Accessible.description: qsTr("Keep the crop inside the transformed image.")
+                        ToolTip.visible: constrainHover.hovered
+                        ToolTip.text: Accessible.description
+                        HoverHandler { id: constrainHover }
+                        onToggled: function (checked) {
+                            root.prepareGeometryEdit(null)
+                            root.editorSession.submitPatch("geometry_transform",
+                                                          root.transformParams("constrain_crop", checked),
+                                                          true)
+                        }
+                    }
+                }
+            }
+
             CollapsibleSection {
                 id: cropSection
                 objectName: "editorAdjustmentGroupShell_geometry_crop"
                 Layout.fillWidth: true
                 title: qsTr("Crop and Rotate")
                 expanded: true
-                controlsEnabled: root.controlsEnabled
+                controlsEnabled: root.canEditGeometry
                 surfaceColor: root.colCardSurface
                 disabledSurfaceColor: root.colCardSurface
                 borderColor: root.colCardBorder
@@ -506,77 +685,81 @@ Item {
                 mutedColor: root.colMuted
                 hoverColor: root.colHover
                 accentColor: root.colAccent
-                bodyContentHeight: cropControls.implicitHeight + appTheme.spaceSm
+                bodyContentHeight: cropControls.implicitHeight
+                headerActions: Component {
+                    IconActionButton {
+                        objectName: "geometryResetButton"
+                        compact: true
+                        enabled: root.canEditGeometry
+                        iconSrc: "qrc:/panel_icons/reset.svg"
+                        actionName: qsTr("Reset crop and rotation")
+                        onClicked: root.resetGeometry()
+                    }
+                }
 
                 ColumnLayout {
                     id: cropControls
                     anchors.left: parent.left
                     anchors.right: parent.right
                     anchors.top: parent.top
-                    anchors.margins: appTheme.spaceXs
                     spacing: appTheme.spaceSm
 
                     AdjustmentCombo {
                         objectName: "geometryAspectCombo"
                         Layout.fillWidth: true
                         model: aspectModel
+                        infoText: qsTr("Set the shape of the output frame.")
                     }
                     AdjustmentSlider {
+                        flickable: scroller
+                        onEditStarting: function (model) { root.prepareGeometryEdit(model) }
                         objectName: "geometryAspectWidthSlider"
                         Layout.fillWidth: true
                         visible: aspectModel.currentValue === "custom"
                         model: aspectWidthModel
-                        flickable: scroller
                     }
                     AdjustmentSlider {
+                        flickable: scroller
+                        onEditStarting: function (model) { root.prepareGeometryEdit(model) }
                         objectName: "geometryAspectHeightSlider"
                         Layout.fillWidth: true
                         visible: aspectModel.currentValue === "custom"
                         model: aspectHeightModel
-                        flickable: scroller
                     }
                     AdjustmentSlider {
+                        flickable: scroller
+                        onEditStarting: function (model) { root.prepareGeometryEdit(model) }
                         objectName: "geometryCropXSlider"
                         Layout.fillWidth: true
                         model: cropXModel
-                        flickable: scroller
                     }
                     AdjustmentSlider {
+                        flickable: scroller
+                        onEditStarting: function (model) { root.prepareGeometryEdit(model) }
                         objectName: "geometryCropYSlider"
                         Layout.fillWidth: true
                         model: cropYModel
-                        flickable: scroller
                     }
                     AdjustmentSlider {
+                        flickable: scroller
+                        onEditStarting: function (model) { root.prepareGeometryEdit(model) }
                         objectName: "geometryCropWidthSlider"
                         Layout.fillWidth: true
                         model: cropWidthModel
-                        flickable: scroller
                     }
                     AdjustmentSlider {
+                        flickable: scroller
+                        onEditStarting: function (model) { root.prepareGeometryEdit(model) }
                         objectName: "geometryCropHeightSlider"
                         Layout.fillWidth: true
                         model: cropHeightModel
-                        flickable: scroller
                     }
                     AdjustmentSlider {
+                        flickable: scroller
+                        onEditStarting: function (model) { root.prepareGeometryEdit(model) }
                         objectName: "geometryRotationSlider"
                         Layout.fillWidth: true
                         model: rotationModel
-                        flickable: scroller
-                    }
-                    RowLayout {
-                        Layout.fillWidth: true
-                        spacing: appTheme.spaceSm
-                        Item { Layout.fillWidth: true }
-                        IconActionButton {
-                            objectName: "geometryResetButton"
-                            compact: true
-                            enabled: root.canUseGeometry
-                            iconSrc: "qrc:/panel_icons/reset.svg"
-                            actionName: qsTr("Reset crop and rotation")
-                            onClicked: root.resetGeometry()
-                        }
                     }
                 }
             }
@@ -591,6 +774,7 @@ Item {
         root.aspectEntries = root.buildAspectEntries()
         aspectModel.entries = root.aspectEntries
         root.resetModelsToDefaults()
+        root.loadTransformSnapshot(null)
         root.wireEnabled()
         root.loadFromSnapshot(root.editorSession ? root.editorSession.adjustmentSnapshot : null)
         root.enterGeometryTool()

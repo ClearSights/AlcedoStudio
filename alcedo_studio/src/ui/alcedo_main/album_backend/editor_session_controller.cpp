@@ -1240,6 +1240,14 @@ void EditorSessionController::OnBackendSessionResult(const alcedo::EditorSession
     emit StateChanged();
   }
   emit SessionResultObserved(result);
+  if (failed && session_backend_ &&
+      (result.adjustment_field == "geometry_transform" ||
+       result.adjustment_field == "crop_rotate") &&
+      result.identity.element_id == session_backend_->identity().element_id &&
+      result.identity.image_id == session_backend_->identity().image_id) {
+    OnBackendChanged();
+    emit GeometryAdjustmentRejected(QString::fromStdString(result.message));
+  }
   auto published = history_ops_.CorrelateObservedResult(result);
   if (!published.has_value()) {
     return;
@@ -1906,12 +1914,17 @@ auto EditorSessionController::can_discard_current_commit() const -> bool {
 
 bool EditorSessionController::submitWrite(QString fieldKey, alcedo::EditorParameterWrite write,
                                           bool settled) {
-  if (const QString refusal = UserStateChangeRefusalText(); !refusal.isEmpty()) {
-    return !alcedo::EditorSessionResultIsFailure(
-        EnqueueAdjustmentPatch(std::nullopt, settled, refusal.toStdString()).kind);
+  const bool geometry =
+      fieldKey == QLatin1String("geometry_transform") || fieldKey == QLatin1String("crop_rotate");
+  const QString refusal = UserStateChangeRefusalText();
+  const auto    result = refusal.isEmpty()
+                             ? EnqueueFieldWrite(std::move(fieldKey), std::move(write), settled)
+                             : EnqueueAdjustmentPatch(std::nullopt, settled, refusal.toStdString());
+  const bool    accepted = !alcedo::EditorSessionResultIsFailure(result.kind);
+  if (!accepted && geometry) {
+    emit GeometryAdjustmentRejected(QString::fromStdString(result.message));
   }
-  return !alcedo::EditorSessionResultIsFailure(
-      EnqueueFieldWrite(std::move(fieldKey), std::move(write), settled).kind);
+  return accepted;
 }
 
 auto EditorSessionController::EnqueueFieldWrite(
@@ -2010,7 +2023,8 @@ auto EditorSessionController::EnqueueAdjustmentPatch(
     }
     return rejected;
   }
-  if (patch->target.owner_kind == alcedo::EditorParameterOwnerKind::Document) {
+  if (patch->target.owner_kind == alcedo::EditorParameterOwnerKind::Document ||
+      patch->field_key == "geometry_transform" || patch->field_key == "crop_rotate") {
     patch->source_extent = PresentedSourceExtent();
   }
   if (viewport) {
@@ -2042,6 +2056,10 @@ bool EditorSessionController::submitPatch(QString fieldKey, QString paramsJson, 
   std::string error;
   auto        write = alcedo::ParseEditorParameterWrite(fieldKey.toStdString(), parsed, &error);
   if (!write.has_value()) {
+    if (fieldKey == QLatin1String("geometry_transform") ||
+        fieldKey == QLatin1String("crop_rotate")) {
+      emit GeometryAdjustmentRejected(QString::fromStdString(error));
+    }
     return false;
   }
   return submitWrite(std::move(fieldKey), std::move(*write), settled);

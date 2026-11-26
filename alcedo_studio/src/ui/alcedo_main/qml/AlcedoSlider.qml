@@ -258,6 +258,12 @@ Item {
         }
         Accessible.role: Accessible.Slider
         Accessible.name: root.label
+        readonly property real value: root.value
+        readonly property real from: root.from
+        readonly property real to: root.to
+        readonly property real stepSize: root.stepSize
+        Accessible.onIncreaseAction: root.edit(root.value + root.stepSize)
+        Accessible.onDecreaseAction: root.edit(root.value - root.stepSize)
 
         Keys.onPressed: function (event) {
             var direction = 0
@@ -474,7 +480,8 @@ Item {
         TextInput {
             id: valueInput
             objectName: root.partName + "ValueInput"
-            visible: root.editing
+            // The input must remain focusable before a click or Tab starts editing.
+            opacity: root.editing ? 1 : 0
             anchors.fill: parent
             anchors.leftMargin: 6
             anchors.rightMargin: 6
@@ -489,6 +496,8 @@ Item {
             selectByMouse: true
             clip: true
             activeFocusOnTab: true
+            Accessible.role: Accessible.EditableText
+            Accessible.name: root.label
 
             onActiveFocusChanged: {
                 if (activeFocus) {
@@ -500,6 +509,11 @@ Item {
                 }
             }
             onAccepted: rail.forceActiveFocus(Qt.OtherFocusReason)
+            Keys.onShortcutOverride: function (event) {
+                // Finish typing before a workspace shortcut can use either Enter key.
+                if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter)
+                    event.accepted = true
+            }
             Keys.onEscapePressed: function (event) {
                 root._cancelEdit = true
                 rail.forceActiveFocus(Qt.OtherFocusReason)

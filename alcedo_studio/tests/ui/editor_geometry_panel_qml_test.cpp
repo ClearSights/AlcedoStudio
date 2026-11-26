@@ -4,9 +4,11 @@
 
 #include <gtest/gtest.h>
 
+#include <QAccessible>
 #include <QApplication>
 #include <QCoreApplication>
 #include <QEventLoop>
+#include <QKeyEvent>
 #include <QQmlComponent>
 #include <QQmlContext>
 #include <QQmlEngine>
@@ -15,11 +17,13 @@
 #include <QQuickStyle>
 #include <QQuickWindow>
 #include <QRectF>
+#include <QTest>
 #include <QVariantMap>
 #include <cstdint>
 #include <exception>
 #include <filesystem>
 #include <memory>
+#include <utility>
 #include <variant>
 #include <vector>
 
@@ -39,6 +43,7 @@ class GeometrySession final : public QObject, public IEditorAdjustmentSubmitter 
   Q_PROPERTY(QString activeAdjustmentPanel READ activeAdjustmentPanel WRITE setActiveAdjustmentPanel
                  NOTIFY activeAdjustmentPanelChanged)
   Q_PROPERTY(bool canEdit READ canEdit NOTIFY canEditChanged)
+  Q_PROPERTY(QString lastError READ lastError NOTIFY lastErrorChanged)
 
  public:
   struct Call {
@@ -52,6 +57,16 @@ class GeometrySession final : public QObject, public IEditorAdjustmentSubmitter 
       : snapshot_(std::move(snapshot)), revision_(revision) {}
 
   [[nodiscard]] auto adjustmentSnapshot() const -> QVariantMap { return snapshot_; }
+  void               present(QVariantMap snapshot) {
+    snapshot_ = std::move(snapshot);
+    ++revision_;
+    emit adjustmentSnapshotChanged();
+  }
+  [[nodiscard]] auto lastError() const -> QString { return last_error_; }
+  void               reportRenderError(QString message) {
+    last_error_ = std::move(message);
+    emit lastErrorChanged();
+  }
   [[nodiscard]] auto snapshotRevision() const -> quint64 { return revision_; }
   [[nodiscard]] auto activeAdjustmentPanel() const -> QString { return active_panel_; }
   void               setActiveAdjustmentPanel(const QString& panel) {
@@ -98,11 +113,14 @@ class GeometrySession final : public QObject, public IEditorAdjustmentSubmitter 
   void adjustmentSnapshotChanged();
   void activeAdjustmentPanelChanged();
   void canEditChanged();
+  void lastErrorChanged();
+  void geometryAdjustmentRejected(const QString& message);
 
  private:
   QVariantMap snapshot_;
   quint64     revision_     = 0;
   QString     active_panel_ = QStringLiteral("geometry");
+  QString     last_error_;
   bool        can_edit_     = true;
 };
 
@@ -214,9 +232,25 @@ auto MakeSnapshot(const QString& preset, double x, double y, double width, doubl
   return snapshot;
 }
 
+/// Put the transform fields in the same nested map as the production projection.
+auto WithTransform(QVariantMap snapshot, const QVariantMap& values) -> QVariantMap {
+  snapshot.insert(QStringLiteral("geometry_transform"),
+                  QVariantMap{{QStringLiteral("geometry_transform"), values}});
+  return snapshot;
+}
+
+auto FindVisualItem(QQuickItem* item, const QString& name) -> QQuickItem* {
+  if (!item || item->objectName() == name) return item;
+  for (auto* child : item->childItems()) {
+    if (auto* match = FindVisualItem(child, name)) return match;
+  }
+  return nullptr;
+}
+
 class AdjustmentStackHarness {
  public:
-  AdjustmentStackHarness(GeometrySession* session, FakeGeometryInteraction* interaction) {
+  AdjustmentStackHarness(GeometrySession* session, FakeGeometryInteraction* interaction,
+                         int width = 400, int height = 700) {
     static bool registered = false;
     if (!registered) {
       RegisterEditorAdjustmentQmlTypes();
@@ -248,15 +282,19 @@ class AdjustmentStackHarness {
       errors_ = component.errors();
       return;
     }
-    root_->setWidth(400);
-    root_->setHeight(700);
+    root_->setWidth(width);
+    root_->setHeight(height);
     root_->setParentItem(window_.contentItem());
-    window_.resize(400, 700);
+    window_.resize(width, height);
     window_.show();
     QCoreApplication::processEvents(QEventLoop::AllEvents, 200);
   }
 
   [[nodiscard]] auto root() const -> QQuickItem* { return root_.get(); }
+  [[nodiscard]] auto window() -> QQuickWindow* { return &window_; }
+  [[nodiscard]] auto findVisual(const QString& name) const -> QQuickItem* {
+    return FindVisualItem(root_.get(), name);
+  }
   [[nodiscard]] auto errors() const -> QString {
     QStringList text;
     for (const auto& error : errors_) {
@@ -474,27 +512,222 @@ TEST(EditorGeometryPanelQmlTest, SelectingLandscapePresetOrientsCropForPortraitI
   EXPECT_NEAR(rect.center().x(), 0.5, 1e-4);
 }
 
-TEST(EditorGeometryPanelQmlTest, ResetSubmitsOneSettledFullFrameUnrotatedFreeCrop) {
+TEST(EditorGeometryPanelQmlTest, SectionResetsPreserveExpansionAndSubmitOneSettledCommand) {
   GeometrySession session(MakeSnapshot(QStringLiteral("ratio_16_9"), 0.1, 0.2, 0.5, 0.3, 6.0));
   FakeGeometryInteraction interaction;
   AdjustmentStackHarness  harness(&session, &interaction);
   ASSERT_NE(harness.root(), nullptr) << harness.errors().toStdString();
 
-  auto* geometryPanel =
-      harness.findObject<QObject>(QStringLiteral("editorAdjustmentPanel_geometry"));
-  ASSERT_NE(geometryPanel, nullptr);
-  ASSERT_TRUE(QMetaObject::invokeMethod(geometryPanel, "resetGeometry"));
+  auto* transform =
+      harness.findVisual(QStringLiteral("editorAdjustmentGroupShell_geometry_transform"));
+  auto* crop = harness.findVisual(QStringLiteral("editorAdjustmentGroupShell_geometry_crop"));
+  ASSERT_NE(transform, nullptr);
+  ASSERT_NE(crop, nullptr);
+  ASSERT_TRUE(transform->property("expanded").toBool());
+  ASSERT_TRUE(crop->property("expanded").toBool());
+  EXPECT_LT(transform->y(), crop->y());
+  transform->setProperty("expanded", false);
+  const std::pair<const char*, GeometryResetScope> resets[] = {
+      {"geometryResetTransformButton", GeometryResetScope::Transform},
+      {"geometryResetButton", GeometryResetScope::CropAndRotate},
+      {"geometryResetAllButton", GeometryResetScope::All},
+  };
+  for (const auto& [name, scope] : resets) {
+    SCOPED_TRACE(name);
+    auto* button = harness.findVisual(QString::fromLatin1(name));
+    ASSERT_NE(button, nullptr);
+    const auto calls_before = session.calls.size();
+    ASSERT_TRUE(QMetaObject::invokeMethod(button, "clicked"));
+    ASSERT_EQ(session.calls.size(), calls_before + 1);
+    const auto& call = session.calls.back();
+    EXPECT_EQ(call.field_key, QStringLiteral("geometry_transform"));
+    EXPECT_TRUE(call.settled);
+    const auto* reset = std::get_if<GeometryResetScope>(&call.write);
+    ASSERT_NE(reset, nullptr);
+    EXPECT_EQ(*reset, scope);
+    EXPECT_FALSE(transform->property("expanded").toBool());
+    EXPECT_TRUE(crop->property("expanded").toBool());
+    EXPECT_TRUE(interaction.aspectLocked());  // The owner has yet to publish the reset.
+  }
+}
 
-  ASSERT_EQ(session.calls.size(), 1u);
+TEST(EditorGeometryPanelQmlTest, TransformPanelRestoreDoesNotSubmitEdits) {
+  auto                    snapshot = WithTransform({}, {{QStringLiteral("vertical"), -21.5},
+                                                        {QStringLiteral("scale"), 112.3},
+                                                        {QStringLiteral("constrain_crop"), false}});
+  GeometrySession         session(snapshot);
+  FakeGeometryInteraction interaction;
+  AdjustmentStackHarness  harness(&session, &interaction);
+  ASSERT_NE(harness.root(), nullptr) << harness.errors().toStdString();
+
+  auto* vertical  = harness.findVisual(QStringLiteral("geometryTransformSlider_vertical"));
+  auto* rail      = harness.findVisual(QStringLiteral("geometryTransformSlider_verticalRail"));
+  auto* scale     = harness.findVisual(QStringLiteral("geometryTransformSlider_scale"));
+  auto* constrain = harness.findVisual(QStringLiteral("geometryConstrainCrop"));
+  ASSERT_NE(vertical, nullptr);
+  ASSERT_NE(rail, nullptr);
+  ASSERT_NE(scale, nullptr);
+  ASSERT_NE(constrain, nullptr);
+  EXPECT_DOUBLE_EQ(vertical->property("value").toDouble(), -21.5);
+  auto* accessible = QAccessible::queryAccessibleInterface(rail);
+  ASSERT_NE(accessible, nullptr);
+  EXPECT_EQ(accessible->text(QAccessible::Name), QStringLiteral("Vertical"));
+  const auto* range = accessible->valueInterface();
+  ASSERT_NE(range, nullptr);
+  EXPECT_DOUBLE_EQ(range->currentValue().toDouble(), -21.5);
+  EXPECT_DOUBLE_EQ(range->minimumValue().toDouble(), -100.0);
+  EXPECT_DOUBLE_EQ(range->maximumValue().toDouble(), 100.0);
+  EXPECT_DOUBLE_EQ(range->minimumStepSize().toDouble(), 0.1);
+  EXPECT_DOUBLE_EQ(scale->property("value").toDouble(), 112.3);
+  EXPECT_FALSE(constrain->property("checked").toBool());
+  EXPECT_DOUBLE_EQ(vertical->property("from").toDouble(), -100.0);
+  EXPECT_DOUBLE_EQ(vertical->property("softFrom").toDouble(), -100.0);
+  EXPECT_DOUBLE_EQ(scale->property("to").toDouble(), 150.0);
+  EXPECT_DOUBLE_EQ(scale->property("softTo").toDouble(), 150.0);
+  EXPECT_DOUBLE_EQ(scale->property("stepSize").toDouble(), 0.1);
+  EXPECT_EQ(scale->property("precision").toInt(), 1);
+  EXPECT_TRUE(session.calls.empty());
+
+  interaction.presentSource(0, 0);
+  EXPECT_FALSE(scale->isEnabled());
+  EXPECT_FALSE(constrain->isEnabled());
+  session.present({});
+  QCoreApplication::processEvents();
+  EXPECT_DOUBLE_EQ(vertical->property("value").toDouble(), 0.0);
+  EXPECT_DOUBLE_EQ(scale->property("value").toDouble(), 100.0);
+  EXPECT_TRUE(constrain->property("checked").toBool());
+  EXPECT_TRUE(session.calls.empty());
+}
+
+TEST(EditorGeometryPanelQmlTest, TransformDragCreatesOneSettledHistoryEntry) {
+  for (const auto* part : {"RailInput", "ValueInputArea"}) {
+    SCOPED_TRACE(part);
+    GeometrySession         session;
+    FakeGeometryInteraction interaction;
+    AdjustmentStackHarness  harness(&session, &interaction);
+    ASSERT_NE(harness.root(), nullptr) << harness.errors().toStdString();
+    auto* input = harness.findVisual(QStringLiteral("geometryTransformSlider_vertical") +
+                                     QString::fromLatin1(part));
+    auto* panel = harness.findVisual(QStringLiteral("editorAdjustmentPanel_geometry"));
+    ASSERT_NE(input, nullptr);
+    ASSERT_NE(panel, nullptr);
+    ASSERT_TRUE(input->isVisible());
+    const QPoint start = input->mapToScene({input->width() / 2, input->height() / 2}).toPoint();
+    QTest::mousePress(harness.window(), Qt::LeftButton, Qt::NoModifier, start);
+    QTest::mouseMove(harness.window(), start + QPoint(8, 0));
+    EXPECT_TRUE(panel->property("inputActive").toBool());
+    QTest::mouseMove(harness.window(), start + QPoint(15, 0));
+    QTest::mouseRelease(harness.window(), Qt::LeftButton, Qt::NoModifier, start + QPoint(15, 0));
+    EXPECT_FALSE(panel->property("inputActive").toBool());
+
+    ASSERT_EQ(session.calls.size(), 3u);
+    EXPECT_FALSE(session.calls[0].settled);
+    EXPECT_FALSE(session.calls[1].settled);
+    EXPECT_TRUE(session.calls[2].settled);
+    for (const auto& call : session.calls) {
+      EXPECT_EQ(call.field_key, QStringLiteral("geometry_transform"));
+      const auto update = GeometryOf(call);
+      ASSERT_TRUE(update.vertical.has_value());
+      EXPECT_GT(*update.vertical, 0.0);
+      EXPECT_FALSE(update.horizontal.has_value());
+      EXPECT_FALSE(update.scale.has_value());
+      EXPECT_FALSE(update.constrain_crop.has_value());
+    }
+    EXPECT_EQ(GeometryOf(session.calls[2]).vertical, GeometryOf(session.calls[1]).vertical);
+  }
+}
+
+TEST(EditorGeometryPanelQmlTest, NarrowTransformPanelScrollsAndAcceptsTypedValues) {
+  GeometrySession         session;
+  FakeGeometryInteraction interaction;
+  AdjustmentStackHarness  harness(&session, &interaction, 260, 430);
+  ASSERT_NE(harness.root(), nullptr) << harness.errors().toStdString();
+  auto* scroll = harness.findVisual(QStringLiteral("editorGeometryPanelScroll"));
+  auto* value =
+      harness.findVisual(QStringLiteral("geometryTransformSlider_verticalValueInputArea"));
+  auto* input = harness.findVisual(QStringLiteral("geometryTransformSlider_verticalValueInput"));
+  auto* error = harness.findVisual(QStringLiteral("geometryError"));
+  auto* constrain = harness.findVisual(QStringLiteral("geometryConstrainCrop"));
+  ASSERT_NE(scroll, nullptr);
+  ASSERT_NE(value, nullptr);
+  ASSERT_NE(input, nullptr);
+  ASSERT_NE(error, nullptr);
+  ASSERT_NE(constrain, nullptr);
+  EXPECT_GT(scroll->property("contentHeight").toDouble(), scroll->height());
+  EXPECT_LE(value->mapToScene({value->width(), 0.0}).x(), harness.root()->width());
+
+  const auto focus_value = [&] {
+    input->forceActiveFocus(Qt::TabFocusReason);
+    QCoreApplication::processEvents();
+  };
+  focus_value();
+  ASSERT_TRUE(input->hasActiveFocus());
+  for (const auto key : {Qt::Key_Return, Qt::Key_Enter}) {
+    QKeyEvent override_event(QEvent::ShortcutOverride, key, Qt::NoModifier);
+    override_event.ignore();
+    QCoreApplication::sendEvent(harness.window(), &override_event);
+    EXPECT_TRUE(override_event.isAccepted()) << key;
+  }
+  input->setProperty("text", QStringLiteral("invalid value"));
+  QTest::keyClick(harness.window(), Qt::Key_Return);
+  EXPECT_TRUE(session.calls.empty());
+  EXPECT_EQ(error->property("text").toString(), QStringLiteral("Invalid number"));
+
+  focus_value();
+  ASSERT_TRUE(input->hasActiveFocus());
+  input->setProperty("text", QStringLiteral("-5.2"));
+  QTest::keyClick(harness.window(), Qt::Key_Return);
+  ASSERT_EQ(session.calls.size(), 2u);
+  EXPECT_FALSE(session.calls.front().settled);
   EXPECT_TRUE(session.calls.back().settled);
-  const QRectF rect = RectOf(session.calls.back());
-  EXPECT_DOUBLE_EQ(rect.x(), 0.0);
-  EXPECT_DOUBLE_EQ(rect.y(), 0.0);
-  EXPECT_DOUBLE_EQ(rect.width(), 1.0);
-  EXPECT_DOUBLE_EQ(rect.height(), 1.0);
-  EXPECT_DOUBLE_EQ(AngleOf(session.calls.back()), 0.0);
-  EXPECT_EQ(PresetOf(session.calls.back()), QStringLiteral("free"));
-  EXPECT_FALSE(interaction.aspectLocked());
+  const auto typed_value = GeometryOf(session.calls.back()).vertical;
+  ASSERT_TRUE(typed_value.has_value());
+  EXPECT_NEAR(*typed_value, -5.2, 1e-10);
+  EXPECT_TRUE(error->property("text").toString().isEmpty());
+
+  ASSERT_TRUE(QMetaObject::invokeMethod(constrain, "toggle"));
+  ASSERT_EQ(session.calls.size(), 3u);
+  EXPECT_TRUE(session.calls.back().settled);
+  EXPECT_EQ(GeometryOf(session.calls.back()).constrain_crop, false);
+  EXPECT_FALSE(GeometryOf(session.calls.back()).vertical.has_value());
+  EXPECT_TRUE(constrain->property("checked").toBool());
+  session.present(WithTransform({}, {{QStringLiteral("constrain_crop"), false}}));
+  QCoreApplication::processEvents();
+  EXPECT_FALSE(constrain->property("checked").toBool());
+  EXPECT_EQ(session.calls.size(), 3u);
+}
+
+TEST(EditorGeometryPanelQmlTest, TransformRejectionRestoresAcceptedValueAndShowsError) {
+  auto                    snapshot = WithTransform({}, {{QStringLiteral("horizontal"), 16.0}});
+  GeometrySession         session(snapshot);
+  FakeGeometryInteraction interaction;
+  AdjustmentStackHarness  harness(&session, &interaction);
+  ASSERT_NE(harness.root(), nullptr) << harness.errors().toStdString();
+  auto* slider = harness.findVisual(QStringLiteral("geometryTransformSlider_horizontal"));
+  auto* error  = harness.findVisual(QStringLiteral("geometryError"));
+  ASSERT_NE(slider, nullptr);
+  ASSERT_NE(error, nullptr);
+  auto* model =
+      qobject_cast<EditorAdjustmentValueModel*>(slider->property("model").value<QObject*>());
+  ASSERT_NE(model, nullptr);
+  model->editValue(60.0);
+  model->commitImmediately();
+  EXPECT_DOUBLE_EQ(model->value(), 60.0);
+
+  const auto validation = QStringLiteral("The transformed image has no valid crop");
+  emit       session.geometryAdjustmentRejected(validation);
+  EXPECT_DOUBLE_EQ(model->value(), 16.0);
+  EXPECT_EQ(error->property("text").toString(), validation);
+  ASSERT_EQ(session.calls.size(), 2u);
+
+  session.present(WithTransform({}, {{QStringLiteral("horizontal"), -10.0}}));
+  QCoreApplication::processEvents();
+  EXPECT_DOUBLE_EQ(model->value(), -10.0);
+  ASSERT_TRUE(QMetaObject::invokeMethod(slider, "valueEntered", Q_ARG(double, -12.0)));
+  const auto render_error = QStringLiteral("CUDA could not present the geometry frame");
+  session.reportRenderError(render_error);
+  EXPECT_EQ(error->property("text").toString(), render_error);
+  EXPECT_DOUBLE_EQ(model->value(), -12.0);
 }
 
 TEST(EditorGeometryPanelQmlTest, LeavingGeometryHidesTheOverlayWithoutSubmitting) {

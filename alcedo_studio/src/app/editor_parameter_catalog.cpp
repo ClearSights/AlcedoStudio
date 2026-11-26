@@ -1990,7 +1990,8 @@ auto EditorParameterCatalog::UiStateToModelJson(std::string_view field_key, cons
     SetError(error, "Unknown editor parameter field: " + std::string{field_key});
     return std::nullopt;
   }
-  if (entry->kind == EditorParameterValueKind::Model) {
+  if (entry->kind == EditorParameterValueKind::Model ||
+      entry->adjustment == EditorAdjustmentField::GeometryTransform) {
     return ToModelJson(field_key, ui_value, json{}, error);
   }
   if (entry->kind != EditorParameterValueKind::Object) {

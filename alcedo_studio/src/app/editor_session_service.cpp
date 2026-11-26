@@ -2072,6 +2072,9 @@ auto EditorSessionService::ConsumeTakenSequence(const EditorPendingSequence& seq
     result.state    = lifecycle_.state();
     result.identity = ident;
     result.message  = outcome.message;
+    if (sequence.fields.size() == 1) {
+      result.adjustment_field = sequence.fields.front().target.field_key;
+    }
     return result;
   }
   const bool commit = sequence.seal == EditorPendingInputBoundaryKind::Release ||

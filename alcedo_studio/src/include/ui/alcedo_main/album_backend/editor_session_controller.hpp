@@ -541,6 +541,8 @@ class EditorSessionController final : public QObject, public IEditorAdjustmentSu
   /// Every result the session publishes, on the controller thread, before the change
   /// notification that the same publication queues.
   void SessionResultObserved(const alcedo::EditorSessionResult& result);
+  /// The Geometry panel can reload its accepted fields and display this rejection.
+  void GeometryAdjustmentRejected(const QString& message);
 
  private:
   void                     LoadFilmstripUiPrefs();

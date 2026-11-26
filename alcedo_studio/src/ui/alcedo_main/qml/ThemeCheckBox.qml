@@ -20,7 +20,6 @@ Item {
     property string valueText: ""
     // Accessible name override; falls back to text when empty.
     property string accessibleText: ""
-    property bool enabled: true
     /// When true, label stays textColor even while unchecked (static captions).
     property bool alwaysPrimaryText: false
 

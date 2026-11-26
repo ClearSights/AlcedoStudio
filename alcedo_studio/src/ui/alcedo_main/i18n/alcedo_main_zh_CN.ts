@@ -4288,6 +4288,78 @@ Original source files on disk will be kept.</source>
         <source>Source size is available after the image is shown.</source>
         <translation>显示图像后可查看原图尺寸。</translation>
     </message>
+    <message>
+        <source>Reset All Geometry</source>
+        <translation>重置全部几何调整</translation>
+    </message>
+    <message>
+        <source>Transform</source>
+        <translation>变换</translation>
+    </message>
+    <message>
+        <source>Reset Transform</source>
+        <translation>重置变换</translation>
+    </message>
+    <message>
+        <source>Vertical</source>
+        <translation>垂直</translation>
+    </message>
+    <message>
+        <source>Horizontal</source>
+        <translation>水平</translation>
+    </message>
+    <message>
+        <source>Aspect</source>
+        <translation>比例</translation>
+    </message>
+    <message>
+        <source>Scale</source>
+        <translation>缩放</translation>
+    </message>
+    <message>
+        <source>X Offset</source>
+        <translation>X 偏移</translation>
+    </message>
+    <message>
+        <source>Y Offset</source>
+        <translation>Y 偏移</translation>
+    </message>
+    <message>
+        <source>Constrain Crop</source>
+        <translation>限制裁剪范围</translation>
+    </message>
+    <message>
+        <source>Keep the crop inside the transformed image.</source>
+        <translation>将裁剪范围限制在变换后的图像内。</translation>
+    </message>
+    <message>
+        <source>Set the shape of the output frame.</source>
+        <translation>设置输出画面的形状。</translation>
+    </message>
+    <message>
+        <source>Adjust vertical perspective. Positive values widen the bottom.</source>
+        <translation>调整垂直透视。正值加宽底部。</translation>
+    </message>
+    <message>
+        <source>Adjust horizontal perspective. Positive values widen the right.</source>
+        <translation>调整水平透视。正值加宽右侧。</translation>
+    </message>
+    <message>
+        <source>Stretch image content. Crop Aspect Ratio sets the frame shape.</source>
+        <translation>拉伸图像内容。裁剪宽高比用于设置画面形状。</translation>
+    </message>
+    <message>
+        <source>Scale the image about its center independently of viewport zoom.</source>
+        <translation>以图像中心为基准缩放图像，独立于视图缩放。</translation>
+    </message>
+    <message>
+        <source>Move image content horizontally. Crop X moves the crop frame.</source>
+        <translation>水平移动图像内容。裁剪 X 用于移动裁剪框。</translation>
+    </message>
+    <message>
+        <source>Move image content vertically. Crop Y moves the crop frame.</source>
+        <translation>垂直移动图像内容。裁剪 Y 用于移动裁剪框。</translation>
+    </message>
 </context>
 <context>
     <name>EditorHistoryTransactionEntry</name>

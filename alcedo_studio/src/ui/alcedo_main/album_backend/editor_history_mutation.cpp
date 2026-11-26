@@ -9,23 +9,24 @@
 #include <mutex>
 #include <optional>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include "app/editor_adjustment_context.hpp"
-#include "app/editor_session_ports.hpp"
 #include "app/editor_adjustment_pipeline.hpp"
 #include "app/editor_panel_projection.hpp"
-#include "app/editor_pipeline_command_service.hpp"
 #include "app/editor_parameter_write.hpp"
+#include "app/editor_pipeline_command_service.hpp"
+#include "app/editor_session_ports.hpp"
 #include "app/pipeline_document_history.hpp"
 #include "app/pipeline_history_applier.hpp"
 #include "app/pipeline_service.hpp"
-#include "edit/pipeline/pipeline_executor.hpp"
 #include "edit/graph/color_grade_node_model.hpp"
 #include "edit/graph/pipeline_document.hpp"
 #include "edit/history/commit_graph.hpp"
 #include "edit/history/mini_git_working_history.hpp"
 #include "edit/mask/mask_model.hpp"
+#include "edit/pipeline/pipeline_executor.hpp"
 #include "ui/alcedo_main/album_backend/editor_history_shared_helpers.hpp"
 #include "ui/alcedo_main/album_backend/editor_history_state_detail.hpp"
 
@@ -344,19 +345,19 @@ auto EditorHistoryMutation::CaptureAdjustmentBeforePreview(
   }
 
   const auto sequence    = state->pending_document_sequence.find(patch.field_key);
-  HistoryWorkingState::DocumentFieldEdit edit;
+  HistoryWorkingState::DocumentFieldEdit new_edit;
   if (sequence == state->pending_document_sequence.end()) {
     if (patch.target.owner_kind == alcedo::EditorParameterOwnerKind::Unspecified) {
       if (!state->panel_projection_node_id.Empty()) {
         auto filled = alcedo::CompleteSelectedNodeParameterTarget(
             state->document->Document(), state->panel_projection_node_id, patch.field_key, error);
         if (!filled.has_value()) return false;
-        edit.target = std::move(*filled);
+        new_edit.target = std::move(*filled);
       } else {
         auto filled = alcedo::CompleteCurrentPanelParameterTarget(state->document->Document(),
                                                                   patch.field_key, error);
         if (!filled.has_value()) return false;
-        edit.target = std::move(*filled);
+        new_edit.target = std::move(*filled);
       }
     } else {
       const auto target_error =
@@ -365,17 +366,26 @@ auto EditorHistoryMutation::CaptureAdjustmentBeforePreview(
         if (error) *error = target_error;
         return false;
       }
-      edit.target = patch.target;
+      new_edit.target = patch.target;
     }
-    if (!ReadEditorParameterJson(state->document->Document(), edit.target, &edit.before_model_json,
-                                 error))
+    if (!ReadEditorParameterJson(state->document->Document(), new_edit.target,
+                                 &new_edit.before_model_json, error))
       return false;
-  } else {
-    edit = sequence->second;
+  }
+  const auto& edit = sequence == state->pending_document_sequence.end() ? new_edit : sequence->second;
+  std::optional<NormalizedRect> requested_transform_crop;
+  if (sequence != state->pending_document_sequence.end() &&
+      patch.field_key == "geometry_transform" &&
+      std::holds_alternative<ImageGeometryUpdate>(*patch.write)) {
+    // Refit the original requested frame on every sample. A narrow intermediate preview
+    // must not keep the final crop narrow if the accepted transform can cover more.
+    const auto& crop         = edit.before_model_json.at("crop_rect");
+    requested_transform_crop = NormalizedRect{crop[0].get<float>(), crop[1].get<float>(),
+                                              crop[2].get<float>(), crop[3].get<float>()};
   }
   // The document is the only parameter store. A rejected write leaves it unchanged.
   if (!ApplyEditorParameterWrite(state->document->Document(), edit.target, *patch.write, error,
-                                 patch.source_extent)) {
+                                 patch.source_extent, requested_transform_crop)) {
     return false;
   }
   if (!patch.settled || patch.field_key != "geometry_transform") {
@@ -383,7 +393,7 @@ auto EditorHistoryMutation::CaptureAdjustmentBeforePreview(
   }
   // Only the first successful patch locks a target. Rejected input does not capture state.
   if (sequence == state->pending_document_sequence.end()) {
-    state->pending_document_sequence.emplace(patch.field_key, std::move(edit));
+    state->pending_document_sequence.emplace(patch.field_key, std::move(new_edit));
   }
   return true;
 }

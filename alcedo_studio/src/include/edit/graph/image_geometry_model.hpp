@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include <cstdint>
 #include <optional>
 #include <string>
 
@@ -39,6 +40,9 @@ struct ImageGeometryUpdate {
   std::optional<double>          offset_y;
   std::optional<bool>            constrain_crop;
 };
+
+/// The image-geometry fields that a single reset operation restores.
+enum class GeometryResetScope : std::uint8_t { Transform, CropAndRotate, All };
 
 /**
  * @brief Document-level crop, straightening, and manual transforms in source reference axes.
@@ -77,8 +81,14 @@ class ImageGeometryModel {
 
   /// Validate a live change against the source and store the accepted crop with it.
   /// The source extent is required for a transform change or a crop with active transforms.
+  /// During a transform drag, @p requested_crop is the framing at the start of the edit.
   /// Throws on invalid geometry before changing any field.
-  void ApplyResolvedUpdate(const ImageGeometryUpdate& update, Extent2D source);
+  void ApplyResolvedUpdate(const ImageGeometryUpdate& update, Extent2D source,
+                           std::optional<NormalizedRect> requested_crop = std::nullopt);
+
+  /// Restore the selected fields and resolve any required crop adjustment before publication.
+  /// Requires the source extent. Throws on invalid geometry without changing the Model.
+  void Reset(GeometryResetScope scope, Extent2D source);
 
   /// Encode either the current geometry or the crop-only revision's canonical fields.
   [[nodiscard]] auto ToJson(bool include_manual_transforms = true) const -> nlohmann::json;

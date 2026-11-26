@@ -18,6 +18,8 @@ AlcedoSlider {
     partName: "adjustmentSlider"
 
     property var model: null
+    // Lets a panel settle its previous control before this control submits.
+    signal editStarting(var model)
 
     layout: "stacked"
     infoObjectName: "adjustmentSliderInfoHint"
@@ -37,16 +39,20 @@ AlcedoSlider {
     valueValid: root.model ? root.model.valid : true
 
     onDragStarted: {
-        if (root.model)
+        if (root.model) {
+            root.editStarting(root.model)
             root.model.beginDrag()
+        }
     }
     onValueEdited: function (v) {
         if (!root.model)
             return
         if (root.dragging)
             root.model.updateDrag(v)
-        else
+        else {
+            root.editStarting(root.model)
             root.model.editValue(v)
+        }
     }
     onDragFinished: {
         if (root.model)
@@ -55,6 +61,7 @@ AlcedoSlider {
     onValueEntered: function (v) {
         if (!root.model)
             return
+        root.editStarting(root.model)
         root.model.editValue(v)
         root.model.commitImmediately()
     }
@@ -63,7 +70,9 @@ AlcedoSlider {
             root.model.setInvalid(qsTr("Invalid number"))
     }
     onResetRequested: {
-        if (root.model && root.model.enabled)
+        if (root.model && root.model.enabled) {
+            root.editStarting(root.model)
             root.model.reset()
+        }
     }
 }

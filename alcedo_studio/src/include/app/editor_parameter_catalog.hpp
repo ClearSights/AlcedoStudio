@@ -234,7 +234,7 @@ class EditorParameterCatalog {
    * @brief Convert a complete object UI value to Model JSON without a merge or a constraint.
    *
    * The panels use it after they applied the constraint to their own values. Missing
-   * properties take the field default.
+   * properties take the field default. Manual geometry writes keep their omitted fields.
    */
   [[nodiscard]] static auto UiStateToModelJson(std::string_view      field_key,
                                                const nlohmann::json& ui_value, std::string* error)
