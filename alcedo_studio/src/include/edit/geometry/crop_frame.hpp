@@ -6,6 +6,7 @@
 
 #include <array>
 
+#include "edit/geometry/projective_transform.hpp"
 #include "edit/geometry/types.hpp"
 
 namespace alcedo {
@@ -39,5 +40,18 @@ namespace alcedo {
  */
 [[nodiscard]] auto CropFrameCornersInReference(NormalizedRect crop, float rotation_degrees,
                                                Extent2D source) -> std::array<Vector2, 4>;
+
+/**
+ * @brief Fits a crop of fixed ratio to clockwise convex coverage in the reference plane.
+ *
+ * The closest center must admit at least @p minimum_scale of the requested size. Moving the
+ * center also moves the straightening pivot. @p coverage_dx and @p coverage_dy are the coverage
+ * translations per unit change of the center along X and Y. Coverage starts at the requested
+ * center. Throws when no frame of the requested ratio fits.
+ */
+[[nodiscard]] auto ConstrainCropToTransformedSource(Rectangle2d                   requested,
+                                                    const std::array<Point2d, 4>& coverage,
+                                                    double minimum_scale, Point2d coverage_dx,
+                                                    Point2d coverage_dy) -> Rectangle2d;
 
 }  // namespace alcedo

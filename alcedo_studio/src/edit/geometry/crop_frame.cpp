@@ -5,13 +5,77 @@
 #include "edit/geometry/crop_frame.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
+#include <limits>
 #include <stdexcept>
 
 namespace alcedo {
 namespace {
 
 constexpr float kPi = 3.14159265358979323846f;
+
+struct CropCoverageEdge {
+  Point2d normal;
+  double  center_distance;
+  double  frame_reach;
+};
+
+auto Dot(Point2d a, Point2d b) -> double { return a.x * b.x + a.y * b.y; }
+
+/// Finds the closest point to zero in the intersection of the four inset half-planes.
+auto NearestCropCenterOffset(const std::array<CropCoverageEdge, 4>& edges, double minimum_scale)
+    -> Point2d {
+  constexpr double kDistanceTolerance = 1e-12;
+  const auto       limit              = [minimum_scale](const CropCoverageEdge& edge) {
+    return edge.frame_reach * minimum_scale - edge.center_distance;
+  };
+  const auto feasible = [&](Point2d point) {
+    return std::isfinite(point.x) && std::isfinite(point.y) &&
+           std::ranges::all_of(edges, [&](const auto& edge) {
+             return Dot(point, edge.normal) >= limit(edge) - kDistanceTolerance;
+           });
+  };
+  if (feasible({})) {
+    return {};
+  }
+
+  Point2d    best{};
+  double     distance = std::numeric_limits<double>::infinity();
+  const auto consider = [&](Point2d point) {
+    if (!feasible(point)) {
+      return;
+    }
+    const double candidate = std::hypot(point.x, point.y);
+    if (candidate < distance ||
+        (candidate == distance && (point.y < best.y || (point.y == best.y && point.x < best.x)))) {
+      best     = point;
+      distance = candidate;
+    }
+  };
+
+  // The nearest feasible point lies on one edge or at the intersection of two edges.
+  for (std::size_t i = 0; i < edges.size(); ++i) {
+    const auto&  a              = edges[i];
+    const double normal_squared = Dot(a.normal, a.normal);
+    if (normal_squared > 0.0) {
+      const double projection = limit(a) / normal_squared;
+      consider({a.normal.x * projection, a.normal.y * projection});
+    }
+    for (std::size_t j = 0; j < i; ++j) {
+      const auto&  b   = edges[j];
+      const double det = a.normal.x * b.normal.y - a.normal.y * b.normal.x;
+      if (det != 0.0) {
+        consider({(limit(a) * b.normal.y - a.normal.y * limit(b)) / det,
+                  (a.normal.x * limit(b) - limit(a) * b.normal.x) / det});
+      }
+    }
+  }
+  if (!std::isfinite(distance)) {
+    throw std::runtime_error("ResolveRenderGeometry: empty constrained crop frame");
+  }
+  return best;
+}
 
 }  // namespace
 
@@ -92,6 +156,41 @@ auto CropFrameCornersInReference(NormalizedRect crop, float rotation_degrees, Ex
           TransformPoint(output_to_reference, Vector2{half_w, -half_h}),
           TransformPoint(output_to_reference, Vector2{half_w, half_h}),
           TransformPoint(output_to_reference, Vector2{-half_w, half_h})};
+}
+
+auto ConstrainCropToTransformedSource(Rectangle2d requested, const std::array<Point2d, 4>& coverage,
+                                      double minimum_scale, Point2d coverage_dx,
+                                      Point2d coverage_dy) -> Rectangle2d {
+  const Point2d center{requested.x + 0.5 * requested.width, requested.y + 0.5 * requested.height};
+  std::array<CropCoverageEdge, 4> edges;
+  for (std::size_t i = 0; i < coverage.size(); ++i) {
+    const auto   a      = coverage[i];
+    const auto   b      = coverage[(i + 1) % coverage.size()];
+    const double length = std::hypot(b.x - a.x, b.y - a.y);
+    if (!(length > 0.0) || !std::isfinite(length)) {
+      throw std::runtime_error("ResolveRenderGeometry: empty transformed source coverage");
+    }
+    const Point2d inward{(a.y - b.y) / length, (b.x - a.x) / length};
+    edges[i] = {
+        {inward.x - Dot(inward, coverage_dx), inward.y - Dot(inward, coverage_dy)},
+        Dot(inward, {center.x - a.x, center.y - a.y}),
+        0.5 * (std::abs(inward.x) * requested.width + std::abs(inward.y) * requested.height)};
+  }
+
+  const auto offset = NearestCropCenterOffset(edges, minimum_scale);
+  double     scale  = 1.0;
+  for (const auto& edge : edges) {
+    scale = std::min(scale, (edge.center_distance + Dot(edge.normal, offset)) / edge.frame_reach);
+  }
+  if (!(scale > 0.0)) {
+    throw std::runtime_error("ResolveRenderGeometry: empty constrained crop frame");
+  }
+  if (scale == 1.0 && offset.x == 0.0 && offset.y == 0.0) {
+    return requested;
+  }
+  const double width  = requested.width * scale;
+  const double height = requested.height * scale;
+  return {center.x + offset.x - 0.5 * width, center.y + offset.y - 0.5 * height, width, height};
 }
 
 }  // namespace alcedo

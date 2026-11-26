@@ -7,7 +7,9 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <optional>
 
+#include "edit/geometry/projective_transform.hpp"
 #include "edit/geometry/types.hpp"
 
 namespace alcedo {
@@ -23,6 +25,15 @@ struct GpuRenderGeometry {
   std::uint32_t render_height        = 0;
   float         border_rgba[4]       = {0.0f, 0.0f, 0.0f, 1.0f};
   std::uint32_t filter               = 0;
+};
+
+/** @brief Host-only mappings in pixel coordinates, including the accepted pre-rounding frame. */
+struct ProjectiveRenderGeometry {
+  ProjectiveTransform reference_to_edit;
+  ProjectiveTransform reference_to_render;
+  ProjectiveTransform render_to_reference;
+  ProjectiveTransform render_to_decoded;
+  Rectangle2d         frame_in_reference_plane;
 };
 
 /**
@@ -48,6 +59,10 @@ struct ResolvedRenderGeometry {
 
   TextureFilter     filter = TextureFilter::Bilinear;
   GpuRenderGeometry gpu_data{};
+
+  /// When present, these maps own the image geometry. The affine image maps and GPU uniforms
+  /// above are unused. The decoded-to-reference and edit-to-render steps are still affine.
+  std::optional<ProjectiveRenderGeometry> projective;
 };
 
 /**
@@ -56,7 +71,7 @@ struct ResolvedRenderGeometry {
  * GraphCompiler (G4+) may skip GeometryResamplePass when this is true.
  */
 [[nodiscard]] inline auto IsIdentityResample(const ResolvedRenderGeometry& geometry) -> bool {
-  return geometry.decoded_extent == geometry.render_extent &&
+  return !geometry.projective && geometry.decoded_extent == geometry.render_extent &&
          IsApproxIdentity(geometry.render_to_decoded);
 }
 

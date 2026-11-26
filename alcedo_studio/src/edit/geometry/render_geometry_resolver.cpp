@@ -6,10 +6,12 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <stdexcept>
 #include <string>
 
 #include "edit/geometry/crop_frame.hpp"
+#include "edit/geometry/projective_transform.hpp"
 
 namespace alcedo {
 namespace {
@@ -146,6 +148,131 @@ void FillGpuData(ResolvedRenderGeometry& geometry) {
   geometry.gpu_data.filter         = static_cast<std::uint32_t>(geometry.filter);
 }
 
+/// Rounds a positive frame extent once, within the range of the required-region rectangles.
+auto RoundProjectiveExtent(double width, double height) -> Extent2D {
+  constexpr double kMax = std::numeric_limits<std::int32_t>::max();
+  if (!(width > 0.0 && height > 0.0 && width <= kMax && height <= kMax)) {
+    throw std::runtime_error("ResolveRenderGeometry: projective frame extent is out of range");
+  }
+  return {static_cast<std::uint32_t>(std::max(1.0, std::round(width))),
+          static_cast<std::uint32_t>(std::max(1.0, std::round(height)))};
+}
+
+/// Applies the viewport target, resolution cap, and native ROI limit before rounding.
+auto ProjectiveRenderExtent(Rectangle2d visible_pixels, bool full_view, const ViewRequest& view,
+                            const ResolutionRequest& resolution) -> Extent2D {
+  const bool   use_viewport = !view.viewport_extent.Empty();
+  const double target_w     = use_viewport ? view.viewport_extent.width : visible_pixels.width;
+  const double target_h     = use_viewport ? view.viewport_extent.height : visible_pixels.height;
+  double       width        = target_w * resolution.render_scale;
+  double       height       = target_h * resolution.render_scale;
+  if (resolution.max_edge > 0) {
+    const double scale = std::min(1.0, resolution.max_edge / std::max(width, height));
+    width *= scale;
+    height *= scale;
+  }
+  if (!full_view) {
+    const double scale =
+        std::min({1.0, width / visible_pixels.width, height / visible_pixels.height});
+    width  = visible_pixels.width * scale;
+    height = visible_pixels.height * scale;
+  }
+  return RoundProjectiveExtent(width, height);
+}
+
+/// Bounds a projectively mapped frame by its corners and expands for the source-pixel footprint.
+auto ProjectiveRequiredRegion(const ProjectiveTransform& map, Rectangle2d render_frame,
+                              const SamplingFootprint& footprint, Extent2D extent) -> RectI {
+  if (footprint.requires_full_reference) {
+    return {0, 0, static_cast<std::int32_t>(extent.width),
+            static_cast<std::int32_t>(extent.height)};
+  }
+  const auto bounds = QuadBounds(map.MapQuad(render_frame.Corners()));
+  const auto clip   = [](double value, double limit) {
+    return static_cast<std::int32_t>(std::clamp(value, 0.0, limit));
+  };
+  return ClampRectI(clip(std::floor(bounds.x - footprint.radius_x), extent.width),
+                    clip(std::floor(bounds.y - footprint.radius_y), extent.height),
+                    clip(std::ceil(bounds.x + bounds.width + footprint.radius_x), extent.width),
+                    clip(std::ceil(bounds.y + bounds.height + footprint.radius_y), extent.height),
+                    extent);
+}
+
+/// Converts normalized projective geometry into the pixel spaces required by a render request.
+auto ResolveProjectiveRenderGeometry(const SourceGeometry& source, const ImageGeometryParams& image,
+                                     const ViewRequest& view, const ResolutionRequest& resolution,
+                                     const SamplingFootprint& footprint) -> ResolvedRenderGeometry {
+  const auto     decoded   = source.decoded_extent;
+  const auto     reference = source.full_reference_extent;
+  constexpr auto kMax      = static_cast<std::uint32_t>(std::numeric_limits<std::int32_t>::max());
+  if (std::max({decoded.width, decoded.height, reference.width, reference.height}) > kMax) {
+    throw std::runtime_error("ResolveRenderGeometry: projective source extent is out of range");
+  }
+  const auto [source_to_plane, plane_to_source, frame] =
+      ResolveProjectiveImageFrame(image, reference);
+  const auto visible =
+      ClampNormalizedRect(view.visible_rect_in_edit_space, "visible_rect_in_edit_space");
+  const double q             = 0.5 * std::max(reference.width, reference.height);
+  const double center_x      = 0.5 * reference.width;
+  const double center_y      = 0.5 * reference.height;
+  const auto   to_normalized = ProjectiveTransform::Scale(1.0 / q, 1.0 / q) *
+                               ProjectiveTransform::Translate(-center_x, -center_y);
+  const auto   to_reference =
+      ProjectiveTransform::Translate(center_x, center_y) * ProjectiveTransform::Scale(q, q);
+
+  ResolvedRenderGeometry result;
+  result.decoded_extent        = decoded;
+  result.full_reference_extent = reference;
+  result.decoded_to_reference  = MakeDecodedToReference(decoded, reference);
+  result.edit_extent           = RoundProjectiveExtent(frame.width * q, frame.height * q);
+  const double edit_w          = result.edit_extent.width;
+  const double edit_h          = result.edit_extent.height;
+  const auto   to_edit = ProjectiveTransform::Scale(edit_w / frame.width, edit_h / frame.height) *
+                         ProjectiveTransform::Translate(-frame.x, -frame.y);
+  const Rectangle2d visible_pixels{visible.x * edit_w, visible.y * edit_h, visible.w * edit_w,
+                                   visible.h * edit_h};
+  result.render_extent =
+      ProjectiveRenderExtent(visible_pixels, visible.IsFullFrame(), view, resolution);
+  const double render_w  = result.render_extent.width;
+  const double render_h  = result.render_extent.height;
+  const double sx        = render_w / visible_pixels.width;
+  const double sy        = render_h / visible_pixels.height;
+  const auto   to_render = ProjectiveTransform::Scale(sx, sy) *
+                           ProjectiveTransform::Translate(-visible_pixels.x, -visible_pixels.y);
+  result.edit_to_render  = Matrix3x3::Scale(static_cast<float>(sx), static_cast<float>(sy)) *
+                           Matrix3x3::Translate(static_cast<float>(-visible_pixels.x),
+                                                static_cast<float>(-visible_pixels.y));
+
+  // Only invert the homography in normalized coordinates. Invert view, crop, and decode
+  // placement from their known scale and offset to avoid conditioning on pixel units.
+  const auto render_to_plane =
+      ProjectiveTransform::Translate(frame.x, frame.y) *
+      ProjectiveTransform::Scale(frame.width / edit_w, frame.height / edit_h) *
+      ProjectiveTransform::Translate(visible_pixels.x, visible_pixels.y) *
+      ProjectiveTransform::Scale(1.0 / sx, 1.0 / sy);
+  const auto reference_to_edit   = to_edit * source_to_plane * to_normalized;
+  const auto render_to_reference = to_reference * plane_to_source * render_to_plane;
+  const auto render_to_decoded =
+      ProjectiveTransform::Scale(static_cast<double>(decoded.width) / reference.width,
+                                 static_cast<double>(decoded.height) / reference.height) *
+      render_to_reference;
+  result.projective = ProjectiveRenderGeometry{
+      reference_to_edit,
+      to_render * reference_to_edit,
+      render_to_reference,
+      render_to_decoded,
+      {frame.x * q + center_x, frame.y * q + center_y, frame.width * q, frame.height * q}};
+
+  result.filter = resolution.quality == RenderQuality::Export ? TextureFilter::Bicubic
+                                                              : TextureFilter::Bilinear;
+  const Rectangle2d render_frame{0.0, 0.0, render_w, render_h};
+  result.required_reference_region =
+      ProjectiveRequiredRegion(render_to_reference, render_frame, footprint, reference);
+  result.required_decoded_region =
+      ProjectiveRequiredRegion(render_to_decoded, render_frame, footprint, decoded);
+  return result;
+}
+
 }  // namespace
 
 auto ResolveRenderGeometry(const SourceGeometry& source, const ImageGeometryParams& image,
@@ -153,12 +280,21 @@ auto ResolveRenderGeometry(const SourceGeometry& source, const ImageGeometryPara
                            const SamplingFootprint& footprint) -> ResolvedRenderGeometry {
   ThrowIfInvalidExtent(source.decoded_extent, "decoded_extent");
   ThrowIfInvalidExtent(source.full_reference_extent, "full_reference_extent");
+  if (!std::isfinite(image.rotation_degrees)) {
+    throw std::runtime_error("ResolveRenderGeometry: rotation must be finite");
+  }
   if (!std::isfinite(resolution.render_scale) || resolution.render_scale <= 0.0f) {
     throw std::runtime_error("ResolveRenderGeometry: render_scale must be positive and finite");
   }
   if (!std::isfinite(footprint.radius_x) || !std::isfinite(footprint.radius_y) ||
       footprint.radius_x < 0.0f || footprint.radius_y < 0.0f) {
     throw std::runtime_error("ResolveRenderGeometry: footprint radius must be finite and >= 0");
+  }
+
+  if (!HasIdentityManualTransform(image) ||
+      image.output_frame == GeometryOutputFrame::TransformedSourceBounds ||
+      (image.output_frame == GeometryOutputFrame::CropFrame && !image.constrain_crop)) {
+    return ResolveProjectiveRenderGeometry(source, image, view, resolution, footprint);
   }
 
   // The preview frame reads the whole source; only the product crop frame is constrained to
