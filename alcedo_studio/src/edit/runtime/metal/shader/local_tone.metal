@@ -145,8 +145,9 @@ static inline float RemapDelta(float delta, float sigma, float alpha, float beta
 }
 
 static inline float2 Transform(constant float* matrix, float x, float y) {
+  const float w = matrix[6] * x + matrix[7] * y + matrix[8];
   return float2(matrix[0] * x + matrix[1] * y + matrix[2],
-                matrix[3] * x + matrix[4] * y + matrix[5]);
+                matrix[3] * x + matrix[4] * y + matrix[5]) / w;
 }
 
 static inline float Bilinear(device const float* plane, int width, int height, float x, float y) {

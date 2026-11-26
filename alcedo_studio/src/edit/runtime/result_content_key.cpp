@@ -43,6 +43,23 @@ auto MixMatrix(ContentHash& hash, const Matrix3x3& matrix) -> void {
   }
 }
 
+/// Adds the complete projective map to the content identity of the pass that reads it.
+void MixProjectiveMap(ContentHash& hash, const ProjectiveTransform& map) {
+  for (double value : map.m) {
+    hash.MixF64(value);
+  }
+}
+
+/// View-independent geometry identity for source-sized reference passes.
+void MixReferenceToEdit(ContentHash& hash, const ResolvedRenderGeometry& geometry) {
+  if (geometry.projective) {
+    hash.MixBool(true);
+    MixProjectiveMap(hash, geometry.projective->reference_to_edit);
+  } else {
+    MixMatrix(hash, geometry.reference_to_edit);
+  }
+}
+
 auto MixPreparedSource(ContentHash& hash, const PreparedSourceKey& key) -> void {
   hash.MixU64(key.encoded_content_hash);
   hash.MixU64(key.encoded_byte_count);
@@ -345,7 +362,7 @@ auto MixLlfSharedIdentity(ContentHash& hash, const ExecutionPlan& plan,
   MixPreparedSource(hash, input.source_key);
   MixExtent(hash, plan.geometry.full_reference_extent);
   MixExtent(hash, plan.geometry.edit_extent);
-  MixMatrix(hash, plan.geometry.reference_to_edit);
+  MixReferenceToEdit(hash, plan.geometry);
   MixExtent(hash, plan.source.host_extent);
   MixExtent(hash, plan.source.develop_output_extent);
   MixExtent(hash, plan.source.full_reference_extent);
@@ -436,7 +453,7 @@ auto HashCanonicalReferenceIdentity(const ExecutionPlan& plan, const PreparedRaw
   MixExtent(hash, plan.geometry.edit_extent);
   MixExtent(hash, plan.geometry.decoded_extent);
   MixMatrix(hash, plan.geometry.decoded_to_reference);
-  MixMatrix(hash, plan.geometry.reference_to_edit);
+  MixReferenceToEdit(hash, plan.geometry);
   MixExtent(hash, plan.source.host_extent);
   MixExtent(hash, plan.source.develop_output_extent);
   MixExtent(hash, plan.source.full_reference_extent);
@@ -531,11 +548,17 @@ auto HashResolvedRenderGeometry(const ResolvedRenderGeometry& geometry) -> Conte
   MixExtent(hash, geometry.edit_extent);
   MixExtent(hash, geometry.render_extent);
   MixMatrix(hash, geometry.decoded_to_reference);
-  MixMatrix(hash, geometry.reference_to_edit);
+  MixReferenceToEdit(hash, geometry);
   MixMatrix(hash, geometry.edit_to_render);
-  MixMatrix(hash, geometry.reference_to_render);
-  MixMatrix(hash, geometry.render_to_reference);
-  MixMatrix(hash, geometry.render_to_decoded);
+  if (geometry.projective) {
+    MixProjectiveMap(hash, geometry.projective->reference_to_render);
+    MixProjectiveMap(hash, geometry.projective->render_to_reference);
+    MixProjectiveMap(hash, geometry.projective->render_to_decoded);
+  } else {
+    MixMatrix(hash, geometry.reference_to_render);
+    MixMatrix(hash, geometry.render_to_reference);
+    MixMatrix(hash, geometry.render_to_decoded);
+  }
   MixRect(hash, geometry.required_decoded_region);
   MixRect(hash, geometry.required_reference_region);
   hash.MixU32(static_cast<std::uint32_t>(geometry.filter));

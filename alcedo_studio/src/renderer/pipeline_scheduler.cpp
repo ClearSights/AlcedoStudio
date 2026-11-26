@@ -148,6 +148,7 @@ auto PipelineTask::MakeApplyRequest() const -> PipelineApplyRequest {
     request.role                = role;
     request.geometry            = MakeGeometryRequest(view, max_edge, export_quality);
     request.geometry.document_geometry = desc.document_geometry_;
+    request.geometry.final_frame_geometry = desc.final_frame_geometry_;
     request.submission          = FrameCompletionSubmission{.metadata = frame_metadata,
                                                             .mode     = presentation_mode};
   };
@@ -174,6 +175,7 @@ auto PipelineTask::MakeApplyRequest() const -> PipelineApplyRequest {
   }
   if (requested_render_type == RenderType::QUALITY_BASE_PREVIEW) {
     auto quality             = MakeQualityBaseApplyRequest(frame_metadata, desc.document_geometry_);
+    quality.geometry.final_frame_geometry = desc.final_frame_geometry_;
     quality.sink             = pipeline_executor_->GetFrameSink();
     quality.cancel_requested = request.cancel_requested;
     quality.prepared_input   = request.prepared_input;

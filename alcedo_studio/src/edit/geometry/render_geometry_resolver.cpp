@@ -269,10 +269,15 @@ auto ResolveProjectiveRenderGeometry(const SourceGeometry& source, const ImageGe
   result.filter = resolution.quality == RenderQuality::Export ? TextureFilter::Bicubic
                                                               : TextureFilter::Bilinear;
   const Rectangle2d render_frame{0.0, 0.0, render_w, render_h};
+  // The sampler needs its own taps as well as the footprint requested by later passes.
+  const float             filter_radius = result.filter == TextureFilter::Bicubic ? 2.0f : 1.0f;
+  const SamplingFootprint required_footprint{std::max(footprint.radius_x, filter_radius),
+                                             std::max(footprint.radius_y, filter_radius),
+                                             footprint.requires_full_reference};
   result.required_reference_region =
-      ProjectiveRequiredRegion(render_to_reference, render_frame, footprint, reference);
+      ProjectiveRequiredRegion(render_to_reference, render_frame, required_footprint, reference);
   result.required_decoded_region =
-      ProjectiveRequiredRegion(render_to_decoded, render_frame, footprint, decoded);
+      ProjectiveRequiredRegion(render_to_decoded, render_frame, required_footprint, decoded);
   FillGpuData(result);
   return result;
 }

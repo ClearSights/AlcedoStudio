@@ -38,11 +38,41 @@ constexpr float kRoiExtentEpsilon = 1.0e-6f;
 }
 
 [[nodiscard]] auto IsInvertibleAffine(const Matrix3x3& matrix) -> bool {
-  if (!IsFiniteAffine(matrix)) {
+  if (!IsFiniteAffine(matrix) || matrix.m[6] != 0.0f || matrix.m[7] != 0.0f ||
+      matrix.m[8] != 1.0f) {
     return false;
   }
   const float det = AffineDeterminant(matrix);
   return IsFinite(det) && std::fabs(det) >= kAffineDetEpsilon;
+}
+
+/// Validates the displayed inverse over its render boundary before accepting pointer input.
+[[nodiscard]] auto IsValidProjectiveFrame(const ResolvedRenderGeometry& geometry) -> bool {
+  const auto&  map = geometry.projective->render_to_reference;
+  const double w   = geometry.render_extent.width;
+  const double h   = geometry.render_extent.height;
+  try {
+    (void)map.MapQuad(Rectangle2d{0.0, 0.0, w, h}.Corners());
+    const auto [dx, dy] = map.Jacobian({w / 2.0, h / 2.0});
+    const auto det      = dx.x * dy.y - dx.y * dy.x;
+    return std::isfinite(det) && std::fabs(det) >= kAffineDetEpsilon;
+  } catch (const std::runtime_error&) {
+    return false;
+  }
+}
+
+/// Keeps the affine path's float arithmetic. Returns no point at an extrapolated horizon.
+[[nodiscard]] auto MapMaskPoint(const ProjectiveTransform* projective, const Matrix3x3& affine,
+                                Vector2 point) -> std::optional<Vector2> {
+  if (projective == nullptr) {
+    return TransformPoint(affine, point);
+  }
+  try {
+    const auto mapped = projective->Map({point.x, point.y});
+    return Vector2{static_cast<float>(mapped.x), static_cast<float>(mapped.y)};
+  } catch (const std::runtime_error&) {
+    return std::nullopt;
+  }
 }
 
 [[nodiscard]] auto PhotographUvInside(Vector2 uv) -> bool {
@@ -124,7 +154,8 @@ auto MaskEditGeometry::MakeDocumentPhotographGeometry(Extent2D full_reference,
       std::fabs(image.crop_rect.w - 1.0f) < 1.0e-6f &&
       std::fabs(image.crop_rect.h - 1.0f) < 1.0e-6f &&
       std::fabs(image.rotation_degrees) < 1.0e-4f;
-  if (identity_crop) {
+  if (identity_crop && HasIdentityManualTransform(image) && image.constrain_crop &&
+      image.output_frame == GeometryOutputFrame::CropFrame) {
     return MakeIdentityPhotographGeometry(full_reference);
   }
   return ResolveRenderGeometry(MakeSourceGeometry(full_reference, full_reference), image, {},
@@ -146,8 +177,11 @@ auto MaskEditGeometry::IsValid(const MaskEditViewMapping& mapping) -> bool {
       mapping.geometry.edit_extent.Empty()) {
     return false;
   }
-  if (!IsInvertibleAffine(mapping.geometry.render_to_reference) ||
-      !IsInvertibleAffine(mapping.geometry.reference_to_render)) {
+  const auto& geometry = mapping.geometry;
+  const bool valid_map = geometry.projective ? IsValidProjectiveFrame(geometry)
+                                             : IsInvertibleAffine(geometry.render_to_reference) &&
+                                                   IsInvertibleAffine(geometry.reference_to_render);
+  if (!valid_map) {
     return false;
   }
   if (UsesRoiExpansion(mapping) && !RoiIsUsable(mapping.displayed_roi)) {
@@ -178,21 +212,12 @@ auto MaskEditGeometry::Identity(const MaskEditViewMapping& mapping) -> MaskEditM
   identity.full_reference_height = mapping.geometry.full_reference_extent.height;
   identity.render_width          = mapping.geometry.render_extent.width;
   identity.render_height         = mapping.geometry.render_extent.height;
-  for (int i = 0; i < 6; ++i) {
-    identity.render_to_reference[i] = mapping.geometry.render_to_reference.m[i];
-  }
+  identity.render_to_reference   = mapping.geometry.RenderToReferenceMap();
+  identity.projective            = mapping.geometry.projective.has_value();
   return identity;
 }
 
 namespace {
-
-[[nodiscard]] auto AffineFromIdentityComponents(const float components[6]) -> Matrix3x3 {
-  Matrix3x3 matrix = Matrix3x3::Identity();
-  for (int i = 0; i < 6; ++i) {
-    matrix.m[i] = components[i];
-  }
-  return matrix;
-}
 
 [[nodiscard]] auto ViewMappingFromIdentity(const MaskEditMappingIdentity& identity)
     -> MaskEditViewMapping {
@@ -212,11 +237,18 @@ namespace {
   mapping.geometry.render_extent     = {identity.render_width, identity.render_height};
   mapping.geometry.edit_extent       = mapping.geometry.render_extent;
   mapping.geometry.decoded_extent    = mapping.geometry.render_extent;
-  mapping.geometry.render_to_reference = AffineFromIdentityComponents(identity.render_to_reference);
   try {
-    mapping.geometry.reference_to_render = InvertAffine(mapping.geometry.render_to_reference);
+    if (identity.projective) {
+      auto& projective               = mapping.geometry.projective.emplace();
+      projective.render_to_reference = identity.render_to_reference;
+      projective.reference_to_render = identity.render_to_reference.InversePixelMap(
+          mapping.geometry.render_extent, mapping.geometry.full_reference_extent);
+    } else {
+      mapping.geometry.render_to_reference = identity.render_to_reference.ToFloatMatrix();
+      mapping.geometry.reference_to_render = InvertAffine(mapping.geometry.render_to_reference);
+    }
   } catch (const std::runtime_error&) {
-    mapping.geometry.reference_to_render = {};
+    mapping.geometry.render_extent = {};
   }
   return mapping;
 }
@@ -341,10 +373,14 @@ auto MaskEditGeometry::MapItemToReference(const MaskEditViewMapping& mapping, co
   }
 
   const auto render_pixels = RenderPixelsFromPhotographUv(mapping.geometry, sample.photograph_uv);
-  sample.reference_pixels = TransformPoint(mapping.geometry.render_to_reference, render_pixels);
-  if (!IsFinitePoint(sample.reference_pixels)) {
+  const auto& geometry      = mapping.geometry;
+  const auto  reference_pixels =
+      MapMaskPoint(geometry.projective ? &geometry.projective->render_to_reference : nullptr,
+                   geometry.render_to_reference, render_pixels);
+  if (!reference_pixels || !IsFinitePoint(*reference_pixels)) {
     return std::nullopt;
   }
+  sample.reference_pixels = *reference_pixels;
   sample.normalized = NormalizedFromReferencePixels(
       sample.reference_pixels, mapping.geometry.full_reference_extent);
   return sample;
@@ -355,12 +391,14 @@ auto MaskEditGeometry::MapReferenceToItem(const MaskEditViewMapping& mapping,
   if (!IsValid(mapping) || !IsFinitePoint(reference_pixels)) {
     return std::nullopt;
   }
-  const auto render_pixels =
-      TransformPoint(mapping.geometry.reference_to_render, reference_pixels);
-  if (!IsFinitePoint(render_pixels)) {
+  const auto& geometry = mapping.geometry;
+  const auto  render_pixels =
+      MapMaskPoint(geometry.projective ? &geometry.projective->reference_to_render : nullptr,
+                   geometry.reference_to_render, reference_pixels);
+  if (!render_pixels || !IsFinitePoint(*render_pixels)) {
     return std::nullopt;
   }
-  const auto photograph_uv = PhotographUvFromRenderPixels(mapping.geometry, render_pixels);
+  const auto photograph_uv = PhotographUvFromRenderPixels(mapping.geometry, *render_pixels);
   if (!IsFinitePoint(photograph_uv)) {
     return std::nullopt;
   }

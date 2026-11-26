@@ -13,7 +13,7 @@
 // A size that differs from the host stops the build of this program, as in film_print.cl.
 typedef char FilmScanParamsSizeCheck[sizeof(FilmKernelParams) == 416 ? 1 : -1];
 typedef char FilmScanTermsSizeCheck[sizeof(FilmKernelNegativeScan) == 48 ? 1 : -1];
-typedef char       FilmScanGrainFieldSizeCheck[sizeof(FilmGrainFieldParams) == 388 ? 1 : -1];
+typedef char       FilmScanGrainFieldSizeCheck[sizeof(FilmGrainFieldParams) == 400 ? 1 : -1];
 typedef char       FilmScanGrainNegativeSizeCheck[sizeof(FilmGrainNegativeParams) == 616 ? 1 : -1];
 
 /// FP6 of Negative Scan at pixel @p gid with the record @p record. See film_print_scan_display.

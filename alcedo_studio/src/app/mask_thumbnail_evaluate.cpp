@@ -108,7 +108,14 @@ auto RenderMaskThumbnail(const MaskThumbnailSpec& spec) -> QImage {
     auto* row = image_out.scanLine(origin_y + y);
     for (int x = 0; x < content_w; ++x) {
       const Vector2 render_center{static_cast<float>(x) + 0.5f, static_cast<float>(y) + 0.5f};
-      const Vector2 reference = TransformPoint(geometry.render_to_reference, render_center);
+      const Vector2 reference = [&] {
+        if (!geometry.projective) {
+          return TransformPoint(geometry.render_to_reference, render_center);
+        }
+        const auto mapped =
+            geometry.projective->render_to_reference.Map({render_center.x, render_center.y});
+        return Vector2{static_cast<float>(mapped.x), static_cast<float>(mapped.y)};
+      }();
       if (reference.x < 0.0f || reference.y < 0.0f || reference.x >= full_w ||
           reference.y >= full_h) {
         continue;

@@ -86,7 +86,8 @@ struct MaskEditMappingIdentity {
   std::uint32_t         full_reference_height = 0;
   std::uint32_t         render_width          = 0;
   std::uint32_t         render_height         = 0;
-  float                 render_to_reference[6] = {1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f};
+  ProjectiveTransform   render_to_reference{};
+  bool                  projective = false;
 
   friend auto operator==(const MaskEditMappingIdentity&, const MaskEditMappingIdentity&)
       -> bool = default;

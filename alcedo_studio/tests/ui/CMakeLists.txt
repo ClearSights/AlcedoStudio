@@ -2617,7 +2617,8 @@ if(WIN32)
 endif()
 if(ALCEDO_CUDA_ENABLED)
     target_link_libraries(MaskCoveragePresentationTest PRIVATE EditRuntimeCuda)
-    alcedo_ui_gtest_discover_tests(MaskCoveragePresentationTest
+    gtest_discover_tests(MaskCoveragePresentationTest
+        DISCOVERY_TIMEOUT 120
         TEST_PREFIX "MaskCoveragePresentationTest.Cuda."
         TEST_LIST MaskCoveragePresentationCudaTests
         PROPERTIES LABELS "editor_rhi;presentation;mask;gpu"
@@ -2626,7 +2627,8 @@ endif()
 if(ALCEDO_OPENCL_ENABLED)
     target_link_libraries(MaskCoveragePresentationTest PRIVATE EditRuntimeOpenCl)
     if(NOT APPLE)
-        alcedo_ui_gtest_discover_tests(MaskCoveragePresentationTest
+        gtest_discover_tests(MaskCoveragePresentationTest
+            DISCOVERY_TIMEOUT 120
             TEST_PREFIX "MaskCoveragePresentationTest.OpenCl."
             TEST_LIST MaskCoveragePresentationOpenClTests
             PROPERTIES LABELS "editor_rhi;presentation;mask;gpu"
@@ -2635,7 +2637,8 @@ if(ALCEDO_OPENCL_ENABLED)
 endif()
 if(ALCEDO_METAL_ENABLED)
     target_link_libraries(MaskCoveragePresentationTest PRIVATE EditRuntimeMetal)
-    alcedo_ui_gtest_discover_tests(MaskCoveragePresentationTest
+    gtest_discover_tests(MaskCoveragePresentationTest
+        DISCOVERY_TIMEOUT 120
         TEST_PREFIX "MaskCoveragePresentationTest.Metal."
         TEST_LIST MaskCoveragePresentationMetalTests
         PROPERTIES LABELS "editor_rhi;presentation;mask;gpu;metal")
@@ -2751,7 +2754,8 @@ if(WIN32)
 endif()
 if(ALCEDO_CUDA_ENABLED)
     target_link_libraries(ViewportCoverageCompositeTest PRIVATE EditRuntimeCuda)
-    alcedo_ui_gtest_discover_tests(ViewportCoverageCompositeTest
+    gtest_discover_tests(ViewportCoverageCompositeTest
+        DISCOVERY_TIMEOUT 120
         TEST_PREFIX "ViewportCoverageCompositeTest.Cuda."
         TEST_LIST ViewportCoverageCompositeCudaTests
         PROPERTIES LABELS "editor_rhi;presentation;mask;gpu"
@@ -2760,7 +2764,8 @@ endif()
 if(ALCEDO_OPENCL_ENABLED)
     target_link_libraries(ViewportCoverageCompositeTest PRIVATE EditRuntimeOpenCl)
     if(NOT APPLE)
-        alcedo_ui_gtest_discover_tests(ViewportCoverageCompositeTest
+        gtest_discover_tests(ViewportCoverageCompositeTest
+            DISCOVERY_TIMEOUT 120
             TEST_PREFIX "ViewportCoverageCompositeTest.OpenCl."
             TEST_LIST ViewportCoverageCompositeOpenClTests
             PROPERTIES LABELS "editor_rhi;presentation;mask;gpu"
@@ -2769,7 +2774,8 @@ if(ALCEDO_OPENCL_ENABLED)
 endif()
 if(ALCEDO_METAL_ENABLED)
     target_link_libraries(ViewportCoverageCompositeTest PRIVATE EditRuntimeMetal)
-    alcedo_ui_gtest_discover_tests(ViewportCoverageCompositeTest
+    gtest_discover_tests(ViewportCoverageCompositeTest
+        DISCOVERY_TIMEOUT 120
         TEST_PREFIX "ViewportCoverageCompositeTest.Metal."
         TEST_LIST ViewportCoverageCompositeMetalTests
         PROPERTIES LABELS "editor_rhi;presentation;mask;gpu;metal")

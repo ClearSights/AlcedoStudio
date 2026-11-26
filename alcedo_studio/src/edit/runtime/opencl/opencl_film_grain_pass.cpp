@@ -26,8 +26,8 @@ namespace {
 
 // film_grain_post.cl reads these structs from the upload with the layout of OpenCL C, where every
 // member is a 4-byte scalar or an array of them.
-static_assert(sizeof(FilmGrainNoiseParams) == 36);
-static_assert(sizeof(FilmGrainFieldParams) == 388);
+static_assert(sizeof(FilmGrainNoiseParams) == 48);
+static_assert(sizeof(FilmGrainFieldParams) == 400);
 static_assert(sizeof(FilmGrainCurve) == 184);
 static_assert(sizeof(FilmGrainPostParams) == 612);
 static_assert(sizeof(FilmGrainNodeCurve) == 196);

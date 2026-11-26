@@ -107,12 +107,24 @@ auto MakeDiffusionScatterMapping(const ResolvedRenderGeometry& geometry, ImageEx
                        static_cast<float>(reference.height) / static_cast<float>(base.height));
 
   DiffusionScatterMapping mapping;
-  mapping.render_to_base = reference_to_base * geometry.render_to_reference;
-  mapping.base_to_render = geometry.reference_to_render * base_to_reference;
+  float                   footprint;
+  if (geometry.projective) {
+    mapping.render_to_base =
+        (ProjectiveTransform::FromMatrix(reference_to_base) * geometry.RenderToReferenceMap())
+            .ToFloatMatrix();
+    const auto base_map =
+        geometry.ReferenceToRenderMap() * ProjectiveTransform::FromMatrix(base_to_reference);
+    mapping.base_to_render = base_map.ToFloatMatrix();
+    const auto [dx, dy]    = base_map.Jacobian({0.5 * base.width, 0.5 * base.height});
+    footprint = static_cast<float>((std::max)(std::hypot(dx.x, dx.y), std::hypot(dy.x, dy.y)));
+  } else {
+    mapping.render_to_base = reference_to_base * geometry.render_to_reference;
+    mapping.base_to_render = geometry.reference_to_render * base_to_reference;
+    const auto& m          = mapping.base_to_render.m;
+    footprint              = (std::max)(std::hypot(m[0], m[3]), std::hypot(m[1], m[4]));
+  }
 
   // Render pixels covered by one base texel along each base axis.
-  const auto& m          = mapping.base_to_render.m;
-  const float footprint  = (std::max)(std::hypot(m[0], m[3]), std::hypot(m[1], m[4]));
   const float samples    = std::isfinite(footprint) ? std::ceil(footprint) : 1.0f;
   mapping.reduce_samples = static_cast<std::uint32_t>(
       std::clamp(samples, 1.0f, static_cast<float>(kDiffusionMaxReduceSamples)));

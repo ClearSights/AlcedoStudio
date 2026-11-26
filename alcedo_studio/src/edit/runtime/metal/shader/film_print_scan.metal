@@ -17,7 +17,7 @@
 // A size that differs from the host stops the build of this library, as in film_print.metal.
 static_assert(sizeof(FilmKernelParams) == 416, "FilmKernelParams differs from the host");
 static_assert(sizeof(FilmKernelNegativeScan) == 48, "FilmKernelNegativeScan differs from the host");
-static_assert(sizeof(FilmGrainFieldParams) == 388, "FilmGrainFieldParams differs from the host");
+static_assert(sizeof(FilmGrainFieldParams) == 400, "FilmGrainFieldParams differs from the host");
 static_assert(sizeof(FilmGrainNegativeParams) == 616,
               "FilmGrainNegativeParams differs from the host");
 

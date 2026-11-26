@@ -34,6 +34,9 @@ auto ComparisonImagePlacement::ToVariantMap() const -> QVariantMap {
       {QStringLiteral("m21"), static_cast<double>(m[3])},
       {QStringLiteral("m22"), static_cast<double>(m[4])},
       {QStringLiteral("dy"), static_cast<double>(m[5])},
+      {QStringLiteral("m31"), m[6]},
+      {QStringLiteral("m32"), m[7]},
+      {QStringLiteral("m33"), m[8]},
   };
 }
 
@@ -44,6 +47,23 @@ auto ComparisonPlacementFromGeometry(const ResolvedRenderGeometry& geometry)
   }
   if (geometry.render_extent.Empty()) {
     throw std::invalid_argument("Comparison image has an empty render extent.");
+  }
+  if (geometry.projective) {
+    auto         map    = geometry.RenderToReferenceMap();
+    const double width  = geometry.render_extent.width;
+    const double height = geometry.render_extent.height;
+    try {
+      (void)map.InversePixelMap(geometry.render_extent, geometry.full_reference_extent);
+      (void)map.MapQuad(Rectangle2d{0.0, 0.0, width, height}.Corners());
+    } catch (const std::runtime_error& error) {
+      throw std::invalid_argument(std::string("Comparison image geometry: ") + error.what());
+    }
+    // Qt clips negative w. Normalize the equivalent homography to w = 1 at the frame center.
+    const auto w = map.m[6] * width / 2.0 + map.m[7] * height / 2.0 + map.m[8];
+    for (auto& value : map.m) {
+      value /= w;
+    }
+    return {geometry.full_reference_extent, geometry.render_extent, map};
   }
   const auto& m = geometry.render_to_reference.m;
   for (const float value : m) {
@@ -59,7 +79,7 @@ auto ComparisonPlacementFromGeometry(const ResolvedRenderGeometry& geometry)
     throw std::invalid_argument("Comparison image placement is singular.");
   }
   return ComparisonImagePlacement{geometry.full_reference_extent, geometry.render_extent,
-                                  geometry.render_to_reference};
+                                  geometry.RenderToReferenceMap()};
 }
 
 auto ConvertRenderedImageForComparison(const RenderedPipelineImage& rendered)

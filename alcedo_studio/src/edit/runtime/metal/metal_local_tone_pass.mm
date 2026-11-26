@@ -351,7 +351,7 @@ struct MetalLocalToneOps {
     params.output_height = decision.heights[0];
     params.full_ref_w    = static_cast<float>(geometry.full_reference_extent.width);
     params.full_ref_h    = static_cast<float>(geometry.full_reference_extent.height);
-    CopyMatrix(params.reference_to_render, geometry.reference_to_render);
+    CopyMatrix(params.reference_to_render, geometry.ReferenceToRenderMap().ToFloatMatrix());
     encoder->setComputePipelineState(pipeline.get());
     encoder->setTexture(static_cast<MTL::Texture*>(MetalSceneTexture(device, input).Native()), 0);
     BindPlane(encoder, dest, 0);

@@ -151,7 +151,7 @@ void EncodeAnalytic(OpenClRenderDevice& device, OpenClBackend::Texture2D& output
                                             ? OpenCL::GpuDag::kMaskAnalyticRangedKernelName
                                             : OpenCL::GpuDag::kMaskAnalyticKernelName);
   MaskAnalyticParams params;
-  SetMatrix(params.render_to_reference, plan.geometry.render_to_reference);
+  SetMatrix(params.render_to_reference, plan.geometry.RenderToReferenceMap().ToFloatMatrix());
   params.width               = output.Width();
   params.height              = output.Height();
   params.reference_width     = plan.geometry.full_reference_extent.width;

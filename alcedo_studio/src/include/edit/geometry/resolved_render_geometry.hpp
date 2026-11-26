@@ -74,6 +74,16 @@ struct ResolvedRenderGeometry {
   /// When present, these maps own the image geometry and supply the inverse map in gpu_data.
   /// The decoded-to-reference and edit-to-render steps are still affine.
   std::optional<ProjectiveRenderGeometry> projective;
+
+  /// Complete pixel-center maps. Use Map or MapQuad for point coordinates.
+  [[nodiscard]] auto                      RenderToReferenceMap() const -> ProjectiveTransform {
+    return projective ? projective->render_to_reference
+                      : ProjectiveTransform::FromMatrix(render_to_reference);
+  }
+  [[nodiscard]] auto ReferenceToRenderMap() const -> ProjectiveTransform {
+    return projective ? projective->reference_to_render
+                      : ProjectiveTransform::FromMatrix(reference_to_render);
+  }
 };
 
 /**
@@ -115,20 +125,30 @@ struct ResolvedRenderGeometry {
 /**
  * @brief Render pixels per reference pixel along one render axis.
  *
- * Sizes in reference pixels become sizes in render pixels with this value. It is at most 1, so a
- * zoom above 1:1 keeps the size of a reference pixel.
+ * Uses the center of the complete edit frame for parameters that take a single scale, so a
+ * viewport ROI does not change the scale. It is at most 1.
  */
 [[nodiscard]] inline auto RenderAxisScale(const ResolvedRenderGeometry& geometry, bool horizontal)
     -> float {
-  const auto& matrix                            = geometry.render_to_reference.m;
-  const float dx                                = horizontal ? matrix[0] : matrix[1];
-  const float dy                                = horizontal ? matrix[3] : matrix[4];
-  const float reference_pixels_per_render_pixel = std::hypot(dx, dy);
-  if (!(reference_pixels_per_render_pixel > 0.0f) ||
-      !std::isfinite(reference_pixels_per_render_pixel)) {
-    return 1.0f;
+  const auto axis_scale = [](auto reference_pixels_per_render_pixel) {
+    using T = decltype(reference_pixels_per_render_pixel);
+    if (!(reference_pixels_per_render_pixel > T{0}) ||
+        !std::isfinite(reference_pixels_per_render_pixel)) {
+      return 1.0f;
+    }
+    return static_cast<float>(
+        std::clamp(T{1} / reference_pixels_per_render_pixel, static_cast<T>(1.0e-4), T{1}));
+  };
+  const std::size_t axis = horizontal ? 0 : 1;
+  if (!geometry.projective) {
+    const auto& matrix = geometry.render_to_reference.m;
+    return axis_scale(std::hypot(matrix[axis], matrix[3 + axis]));
   }
-  return std::clamp(1.0f / reference_pixels_per_render_pixel, 1.0e-4f, 1.0f);
+  const auto edit_to_render = ProjectiveTransform::FromMatrix(geometry.edit_to_render);
+  const auto center =
+      edit_to_render.Map({0.5 * geometry.edit_extent.width, 0.5 * geometry.edit_extent.height});
+  const auto derivative = geometry.projective->render_to_reference.Jacobian(center)[axis];
+  return axis_scale(std::hypot(derivative.x, derivative.y));
 }
 
 }  // namespace alcedo

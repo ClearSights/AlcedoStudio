@@ -10,12 +10,14 @@ layout(std140, binding = 0) uniform ViewerUniforms {
   vec4 coverageU;
   // xyz: photo UV -> coverage UV, v row.
   vec4 coverageV;
+  vec4 coverageW;
   // rgb: display-encoded tint; a: overlay opacity.
   vec4 coverageTint;
   // xyz: photo UV -> detail coverage UV, u row; w: 1 when a detail coverage frame is composited.
   vec4 detailCoverageU;
   // xyz: photo UV -> detail coverage UV, v row.
   vec4 detailCoverageV;
+  vec4 detailCoverageW;
   // x: 1 when the display table converts the output; y: nodes per axis; z: input exponent.
   vec4 displayLut;
 } ubo;
@@ -59,14 +61,16 @@ void main() {
     bool sampled = false;
     if (inDetail && ubo.detailCoverageU.w > 0.5) {
       vec2 detailUv = vec2(dot(ubo.detailCoverageU.xyz, photoUv),
-                           dot(ubo.detailCoverageV.xyz, photoUv));
+                           dot(ubo.detailCoverageV.xyz, photoUv)) /
+                      dot(ubo.detailCoverageW.xyz, photoUv);
       if (insideFrame(detailUv)) {
         coverage = texture(detailCoverageTexture, detailUv).r;
         sampled = true;
       }
     }
     if (!sampled && ubo.coverageU.w > 0.5) {
-      vec2 coverageUv = vec2(dot(ubo.coverageU.xyz, photoUv), dot(ubo.coverageV.xyz, photoUv));
+      vec2 coverageUv = vec2(dot(ubo.coverageU.xyz, photoUv), dot(ubo.coverageV.xyz, photoUv)) /
+                        dot(ubo.coverageW.xyz, photoUv);
       if (insideFrame(coverageUv)) {
         coverage = texture(coverageTexture, coverageUv).r;
       }

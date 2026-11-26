@@ -52,10 +52,20 @@ auto MakeRasterMaskSamplingPlan(const ResolvedRenderGeometry& geometry,
   }
   const auto bounds = ClampBounds(reference_bounds);
   TextureSamplingPlan plan;
-  plan.render_to_texture_uv =
-      ReferencePixelToUv(geometry.full_reference_extent, bounds) * geometry.render_to_reference;
-  plan.uv_dx  = Vector2{plan.render_to_texture_uv.m[0], plan.render_to_texture_uv.m[3]};
-  plan.uv_dy  = Vector2{plan.render_to_texture_uv.m[1], plan.render_to_texture_uv.m[4]};
+  const auto          reference_to_uv = ReferencePixelToUv(geometry.full_reference_extent, bounds);
+  if (geometry.projective) {
+    const auto map =
+        ProjectiveTransform::FromMatrix(reference_to_uv) * geometry.projective->render_to_reference;
+    const auto [dx, dy] =
+        map.Jacobian({0.5 * geometry.render_extent.width, 0.5 * geometry.render_extent.height});
+    plan.render_to_texture_uv = map.ToFloatMatrix();
+    plan.uv_dx                = {static_cast<float>(dx.x), static_cast<float>(dx.y)};
+    plan.uv_dy                = {static_cast<float>(dy.x), static_cast<float>(dy.y)};
+  } else {
+    plan.render_to_texture_uv = reference_to_uv * geometry.render_to_reference;
+    plan.uv_dx                = {plan.render_to_texture_uv.m[0], plan.render_to_texture_uv.m[3]};
+    plan.uv_dy                = {plan.render_to_texture_uv.m[1], plan.render_to_texture_uv.m[4]};
+  }
   plan.filter = geometry.filter;
 
   const float tex_w = static_cast<float>(texture_extent.width);

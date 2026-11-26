@@ -24,12 +24,12 @@ struct ComparisonImagePlacement {
   Extent2D           reference_extent{};
   /// Pixel extent of the rendered image; equal to the QImage size.
   Extent2D           render_extent{};
-  /// Affine map from continuous render pixel coordinates to reference coordinates.
-  Matrix3x3          render_to_reference = Matrix3x3::Identity();
+  /// Homogeneous map from continuous render pixel coordinates to reference coordinates.
+  ProjectiveTransform render_to_reference{};
 
   /**
    * @brief Values for QML: `referenceWidth`, `referenceHeight`, `renderWidth`, `renderHeight`,
-   *        and the affine terms `m11`, `m12`, `dx`, `m21`, `m22`, `dy` of render_to_reference.
+   *        and the nine coefficients of render_to_reference.
    */
   [[nodiscard]] auto ToVariantMap() const -> QVariantMap;
 };
@@ -49,7 +49,7 @@ struct ComparisonPresentationImage {
  * @brief Reads the placement of @p rendered from its executed render geometry.
  *
  * @throws std::invalid_argument when the reference or render extent is empty, or when
- *         render_to_reference is not a finite, invertible affine map.
+ *         the map is singular, non-finite, or crosses the render frame's horizon.
  */
 [[nodiscard]] auto ComparisonPlacementFromGeometry(const ResolvedRenderGeometry& geometry)
     -> ComparisonImagePlacement;

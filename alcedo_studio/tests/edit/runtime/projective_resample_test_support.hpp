@@ -16,6 +16,7 @@
 #include <string_view>
 #include <vector>
 
+#include "../geometry/perspective_frame_test_support.hpp"
 #include "../graph/test_camera_profile.hpp"
 #include "../input/prepared_raw_test_support.hpp"
 #include "edit/geometry/projective_transform.hpp"
@@ -33,25 +34,13 @@
 namespace alcedo::gpu_dag_test {
 
 constexpr Extent2D kProjectiveExtent{35, 27};
-constexpr double   kHorizontal = 62.0;
-constexpr double   kVertical   = -48.0;
-constexpr double   kScale      = 86.0;
-constexpr double   kOffsetX    = 6.0;
-constexpr double   kOffsetY    = -4.0;
 using RgbaPixel                = std::array<float, 4>;
 constexpr RgbaPixel kOpaqueBlack{0.0f, 0.0f, 0.0f, 1.0f};
 
 /// Resolves an uncropped tilted image with both interior and uncovered output pixels.
 inline auto         ResolveTiltedFrame(RenderQuality quality) -> ResolvedRenderGeometry {
-  ImageGeometryParams image;
-  image.horizontal     = kHorizontal;
-  image.vertical       = kVertical;
-  image.scale          = kScale;
-  image.offset_x       = kOffsetX;
-  image.offset_y       = kOffsetY;
-  image.constrain_crop = false;
-  return ResolveRenderGeometry(MakeSourceGeometry(kProjectiveExtent, kProjectiveExtent), image, {},
-                               {.quality = quality}, {});
+  return ResolveRenderGeometry(MakeSourceGeometry(kProjectiveExtent, kProjectiveExtent),
+                               kTiltedFrame, {}, {.quality = quality}, {});
 }
 
 /// Creates two coordinate ramps and four different blue values marking the source corners.
@@ -68,26 +57,6 @@ inline auto MakeLabeledRamp() -> std::vector<RgbaPixel> {
     }
   }
   return pixels;
-}
-
-/// Solves the two scalar perspective equations directly, without using the resolver's matrices.
-inline auto InverseTiltedPosition(double x, double y) -> Point2d {
-  const auto [width, height] = kProjectiveExtent;
-  const double q             = width / 2.0;
-  const double plane_x       = ((x - width / 2.0) / q - 0.005 * kOffsetX) / (kScale / 100.0);
-  const double plane_y       = ((y - height / 2.0) / q + 0.005 * kOffsetY) / (kScale / 100.0);
-  const double h             = kHorizontal / 200.0;
-  const double v             = kVertical / 200.0;
-  const double normalization = 1.0 / std::sqrt(std::cos(h) * std::cos(v));
-  const double z_from_x      = std::cos(v) * std::sin(h) / 1.5;
-  const double z_from_y      = std::sin(v) / 1.5;
-  const double a             = normalization * std::cos(h) + plane_x * z_from_x;
-  const double b             = plane_x * z_from_y;
-  const double c             = -normalization * std::sin(v) * std::sin(h) + plane_y * z_from_x;
-  const double d             = normalization * std::cos(v) + plane_y * z_from_y;
-  const double det           = a * d - b * c;
-  return {width / 2.0 + q * (plane_x * d - b * plane_y) / det,
-          height / 2.0 + q * (a * plane_y - c * plane_x) / det};
 }
 
 /// Returns the linear or Catmull–Rom weight of a tap at distance from the sample.
@@ -150,7 +119,7 @@ void VerifyProjectiveResample(Encode encode) {
     for (std::uint32_t y = 0; y < height; ++y) {
       for (std::uint32_t x = 0; x < width; ++x) {
         SCOPED_TRACE(::testing::Message() << "output pixel (" << x << ", " << y << ")");
-        const auto [sx, sy]         = InverseTiltedPosition(x + 0.5, y + 0.5);
+        const auto [sx, sy]         = InverseTiltedPosition(kProjectiveExtent, x + 0.5, y + 0.5);
         const auto&           pixel = pixels[y * width + x];
         const double          tap_x = sx - 0.5;
         const double          tap_y = sy - 0.5;

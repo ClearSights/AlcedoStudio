@@ -81,6 +81,23 @@ auto ProjectiveTransform::Rotate(double radians) -> ProjectiveTransform {
   return {{c, -s, 0.0, s, c, 0.0, 0.0, 0.0, 1.0}};
 }
 
+auto ProjectiveTransform::FromMatrix(const Matrix3x3& matrix) -> ProjectiveTransform {
+  ProjectiveTransform result;
+  std::copy_n(matrix.m, result.m.size(), result.m.begin());
+  return result;
+}
+
+auto ProjectiveTransform::ToFloatMatrix() const -> Matrix3x3 {
+  Matrix3x3 result;
+  for (std::size_t i = 0; i < m.size(); ++i) {
+    result.m[i] = static_cast<float>(m[i]);
+    if (!std::isfinite(result.m[i])) {
+      throw std::runtime_error("ProjectiveTransform: shader coefficients must be finite");
+    }
+  }
+  return result;
+}
+
 auto ProjectiveTransform::Map(Point2d point) const -> Point2d {
   return DividePoint(*this, point, Denominator(*this, point));
 }
@@ -140,6 +157,16 @@ auto ProjectiveTransform::Inverse() const -> ProjectiveTransform {
     value /= det;
   }
   return inverse;
+}
+
+auto ProjectiveTransform::InversePixelMap(Extent2D input, Extent2D output) const
+    -> ProjectiveTransform {
+  if (input.Empty() || output.Empty()) {
+    throw std::runtime_error("ProjectiveTransform: pixel map extents must be positive");
+  }
+  const auto input_pixels = Scale(input.width, input.height);
+  const auto output_uv    = Scale(1.0 / output.width, 1.0 / output.height);
+  return input_pixels * (output_uv * *this * input_pixels).Inverse() * output_uv;
 }
 
 auto operator*(const ProjectiveTransform& left, const ProjectiveTransform& right)

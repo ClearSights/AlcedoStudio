@@ -2,19 +2,20 @@
 //  SPDX-License-Identifier: GPL-3.0-only
 //  Additional permission under GPLv3 section 7 applies; see the LICENSE file.
 
-#include <gtest/gtest.h>
+#include "ui/edit_viewer/mask_edit_geometry.hpp"
 
-#include <cmath>
-#include <stdexcept>
+#include <gtest/gtest.h>
 
 #include <QPointF>
 #include <QVector2D>
+#include <cmath>
+#include <stdexcept>
 
+#include "../edit/geometry/perspective_frame_test_support.hpp"
 #include "edit/geometry/render_geometry_resolver.hpp"
 #include "edit/geometry/render_request.hpp"
 #include "edit/geometry/source_geometry.hpp"
 #include "edit/geometry/types.hpp"
-#include "ui/edit_viewer/mask_edit_geometry.hpp"
 #include "ui/edit_viewer/viewport_mapper.hpp"
 #include "ui/editor_rhi/editor_interaction_controller.hpp"
 
@@ -200,6 +201,42 @@ TEST(MaskEditGeometryTest, DetailPatchDoesNotChangeMaskReferenceSpace) {
   ASSERT_TRUE(capped_sample.has_value());
   ExpectNormalizedClose(capped_sample->normalized, full_sample->normalized,
                          "interactive_output_size");
+}
+
+TEST(MaskEditGeometryTest, PerspectiveMaskHandleRoundTripsThroughDisplayedRoi) {
+  constexpr Extent2D  extent{64, 48};
+  MaskEditViewMapping mapping;
+  mapping.widget     = {640, 480, 2.0f};
+  mapping.photograph = {64, 48};
+  mapping.geometry =
+      MaskEditGeometry::MakeDocumentPhotographGeometry(extent, gpu_dag_test::kTiltedFrame);
+  ASSERT_TRUE(mapping.geometry.projective);
+  const auto identity   = MaskEditGeometry::Identity(mapping);
+
+  mapping.presentation  = FramePresentationMode::RoiFrame;
+  mapping.displayed_roi = {0.125f, 0.125f, 0.75f, 0.75f};
+  for (const auto& point : gpu_dag_test::kTiltedFrameProbes) {
+    const auto ref  = gpu_dag_test::InverseTiltedPosition(extent, point.x, point.y);
+    const auto item = ViewportMapper::ImageUvToWidgetPoint(
+        {(point.x / 64.0 - 0.125) / 0.75, (point.y / 48.0 - 0.125) / 0.75}, mapping.widget,
+        mapping.photograph, 1.0f, {}, false);
+    ASSERT_TRUE(item);
+    const auto sample = MaskEditGeometry::MapItemToReference(mapping, *item, false);
+    ASSERT_TRUE(sample);
+    EXPECT_NEAR(sample->reference_pixels.x, ref.x, 1.0e-4);
+    EXPECT_NEAR(sample->reference_pixels.y, ref.y, 1.0e-4);
+    const auto handle = MaskEditGeometry::MapReferenceToItem(
+        mapping, {static_cast<float>(ref.x), static_cast<float>(ref.y)});
+    ASSERT_TRUE(handle);
+    EXPECT_NEAR(handle->x(), item->x(), kMaskItemRoundTripLogicalPx);
+    EXPECT_NEAR(handle->y(), item->y(), kMaskItemRoundTripLogicalPx);
+  }
+
+  mapping.presentation = FramePresentationMode::FullFrame;
+  auto changed         = gpu_dag_test::kTiltedFrame;
+  changed.horizontal   = -changed.horizontal;
+  mapping.geometry     = MaskEditGeometry::MakeDocumentPhotographGeometry(extent, changed);
+  EXPECT_TRUE(MaskEditGeometry::MappingChanged(identity, MaskEditGeometry::Identity(mapping)));
 }
 
 TEST(MaskEditGeometryTest, InvalidGeometryRejectsMaskPress) {

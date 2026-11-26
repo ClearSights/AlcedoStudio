@@ -10,6 +10,7 @@
 #include <cmath>
 #include <cstddef>
 #include <memory>
+#include <stdexcept>
 #include <utility>
 #include <vector>
 
@@ -36,26 +37,6 @@ void DestroyRhi(T*& resource) {
   resource = nullptr;
 }
 
-/// Row-major 2x3 affine in double precision: [a b c; d e f].
-struct Affine {
-  double m[6] = {1.0, 0.0, 0.0, 0.0, 1.0, 0.0};
-};
-
-auto FromMatrix(const Matrix3x3& matrix) -> Affine {
-  return Affine{{matrix.m[0], matrix.m[1], matrix.m[2], matrix.m[3], matrix.m[4], matrix.m[5]}};
-}
-
-/// lhs ∘ rhs: apply @p rhs first.
-auto Compose(const Affine& lhs, const Affine& rhs) -> Affine {
-  const auto* a = lhs.m;
-  const auto* b = rhs.m;
-  return Affine{{a[0] * b[0] + a[1] * b[3], a[0] * b[1] + a[1] * b[4],
-                 a[0] * b[2] + a[1] * b[5] + a[2], a[3] * b[0] + a[4] * b[3],
-                 a[3] * b[1] + a[4] * b[4], a[3] * b[2] + a[4] * b[5] + a[5]}};
-}
-
-auto Scale(double sx, double sy) -> Affine { return Affine{{sx, 0.0, 0.0, 0.0, sy, 0.0}}; }
-
 auto LoadShader(const QString& path) -> QShader {
   QFile file(path);
   if (!file.open(QIODevice::ReadOnly)) {
@@ -74,26 +55,23 @@ auto MapPhotoUvToCoverageUv(const ResolvedRenderGeometry& photo,
       photo.full_reference_extent != coverage.full_reference_extent) {
     return std::nullopt;
   }
-  const Affine photo_uv_to_render =
-      Scale(static_cast<double>(photo.render_extent.width), photo.render_extent.height);
-  const Affine render_to_coverage_uv =
-      Scale(1.0 / static_cast<double>(coverage.render_extent.width),
-            1.0 / static_cast<double>(coverage.render_extent.height));
-  const Affine map =
-      Compose(render_to_coverage_uv,
-              Compose(FromMatrix(coverage.reference_to_render),
-                      Compose(FromMatrix(photo.render_to_reference), photo_uv_to_render)));
-  for (const double value : map.m) {
-    if (!std::isfinite(value)) {
-      return std::nullopt;
-    }
+  const auto photo_uv_to_render =
+      ProjectiveTransform::Scale(photo.render_extent.width, photo.render_extent.height);
+  const auto render_to_coverage_uv = ProjectiveTransform::Scale(
+      1.0 / coverage.render_extent.width, 1.0 / coverage.render_extent.height);
+  const auto map = render_to_coverage_uv * (coverage.ReferenceToRenderMap() *
+                                            (photo.RenderToReferenceMap() * photo_uv_to_render));
+  try {
+    // Validate the composed map on the displayed frame before submitting shader parameters.
+    (void)map.Inverse();
+    (void)map.MapQuad(Rectangle2d{0.0, 0.0, 1.0, 1.0}.Corners());
+    const auto matrix = map.ToFloatMatrix();
+    return CoverageUvTransform{{matrix.m[0], matrix.m[1], matrix.m[2]},
+                               {matrix.m[3], matrix.m[4], matrix.m[5]},
+                               {matrix.m[6], matrix.m[7], matrix.m[8]}};
+  } catch (const std::runtime_error&) {
+    return std::nullopt;
   }
-  CoverageUvTransform transform;
-  for (int i = 0; i < 3; ++i) {
-    transform.u_row[i] = static_cast<float>(map.m[i]);
-    transform.v_row[i] = static_cast<float>(map.m[3 + i]);
-  }
-  return transform;
 }
 
 auto BuildViewportCompositeUniforms(const ViewportCompositeLayout& layout)
@@ -130,7 +108,7 @@ auto BuildViewportCompositeUniforms(const ViewportCompositeLayout& layout)
   if (!style.visible || !(style.opacity > 0.0f)) {
     return uniforms;
   }
-  const auto fill = [&](const ResolvedRenderGeometry* geometry, float* u, float* v) {
+  const auto fill = [&](const ResolvedRenderGeometry* geometry, float* u, float* v, float* w) {
     if (geometry == nullptr) {
       return false;
     }
@@ -141,14 +119,16 @@ auto BuildViewportCompositeUniforms(const ViewportCompositeLayout& layout)
     for (int i = 0; i < 3; ++i) {
       u[i] = map->u_row[i];
       v[i] = map->v_row[i];
+      w[i] = map->w_row[i];
     }
     u[3] = 1.0f;
     return true;
   };
-  const bool base = fill(layout.coverage_geometry, uniforms.coverage_u, uniforms.coverage_v);
-  const bool detail =
-      layout.detail_roi.has_value() &&
-      fill(layout.detail_coverage_geometry, uniforms.detail_coverage_u, uniforms.detail_coverage_v);
+  const bool base =
+      fill(layout.coverage_geometry, uniforms.coverage_u, uniforms.coverage_v, uniforms.coverage_w);
+  const bool detail = layout.detail_roi.has_value() &&
+                      fill(layout.detail_coverage_geometry, uniforms.detail_coverage_u,
+                           uniforms.detail_coverage_v, uniforms.detail_coverage_w);
   if (!base && !detail) {
     return uniforms;
   }

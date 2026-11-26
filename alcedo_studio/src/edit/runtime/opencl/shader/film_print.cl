@@ -42,7 +42,7 @@ typedef struct {
 typedef char FilmBlurKernelSizeCheck[sizeof(FilmBlurKernel) == 1552 ? 1 : -1];
 typedef char FilmNarrowKernelSizeCheck[sizeof(FilmNarrowKernel) == 76 ? 1 : -1];
 typedef char FilmKernelParamsSizeCheck[sizeof(FilmKernelParams) == 416 ? 1 : -1];
-typedef char FilmGrainFieldParamsSizeCheck[sizeof(FilmGrainFieldParams) == 388 ? 1 : -1];
+typedef char FilmGrainFieldParamsSizeCheck[sizeof(FilmGrainFieldParams) == 400 ? 1 : -1];
 typedef char FilmGrainNegativeParamsSizeCheck[sizeof(FilmGrainNegativeParams) == 616 ? 1 : -1];
 
 __constant sampler_t kFilmNearestClamp =

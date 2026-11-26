@@ -612,6 +612,11 @@ TEST_F(OpenClMaskFixture, AiMaskCoverageMatchesIndependentReferenceAtFullAndPrev
   ai_mask_test::CheckAiMaskMatchesReferenceAtFullAndPreviewScale(h);
 }
 
+TEST_F(OpenClMaskFixture, MaskRemainsOnSourceFeatureAfterPerspectiveChange) {
+  auto harness = AiMaskHarness();
+  ai_mask_test::CheckMaskRemainsOnSourceFeatureAfterPerspectiveChange(harness);
+}
+
 TEST_F(OpenClMaskFixture, AiMaskCoverageFollowsCropAndRotation) {
   auto h = AiMaskHarness();
   ai_mask_test::CheckAiMaskFollowsCropAndRotation(h);
@@ -720,9 +725,9 @@ TEST_F(OpenClMaskFixture, OnlyRangedMasksReadTheGradeInput) {
   mask_range_test::CheckOnlyRangedMasksReadTheGradeInput(h);
 }
 
-TEST_F(OpenClMaskFixture, DefaultSaturationThresholdKeepsTheFixedChromaGate) {
+TEST_F(OpenClMaskFixture, DefaultSaturationThresholdPreservesChromaRamp) {
   auto h = MaskRangeHarness();
-  mask_range_test::CheckDefaultMinChromaKeepsTheFixedChromaGate(h);
+  mask_range_test::CheckDefaultThresholdPreservesChromaRamp(h);
 }
 
 TEST_F(OpenClMaskFixture, RaisedSaturationThresholdDropsLowChromaPixels) {

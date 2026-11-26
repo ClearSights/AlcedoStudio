@@ -12,6 +12,7 @@
 #include "edit/geometry/render_geometry_resolver.hpp"
 #include "edit/geometry/texture_sampling_plan.hpp"
 #include "edit/graph/pipeline_document.hpp"
+#include "perspective_frame_test_support.hpp"
 
 namespace alcedo {
 namespace {
@@ -103,6 +104,31 @@ TEST(GpuDagGeometry, OddImageDimensionsUseOneRoundingResultAcrossImageMaskAndLlf
   EXPECT_NEAR(uv_m.y, n.y, 1.0e-5f);
   EXPECT_NEAR(uv_l.x, n.x, 1.0e-5f);
   EXPECT_NEAR(uv_l.y, n.y, 1.0e-5f);
+}
+
+TEST(GpuDagGeometry, PerspectiveRoiAndCompleteFrameSampleSameLlfReferencePositions) {
+  constexpr Extent2D extent{64, 48};
+  const auto         source = MakeSourceGeometry(extent, extent);
+  const auto         full   = ResolveRenderGeometry(source, gpu_dag_test::kTiltedFrame, {}, {}, {});
+  const ViewRequest  view{{0.125f, 0.125f, 0.75f, 0.75f}, {}};
+  const auto         roi = ResolveRenderGeometry(source, gpu_dag_test::kTiltedFrame, view, {}, {});
+  const auto         complete_uv =
+      ProjectiveTransform::FromMatrix(MakeLlfSamplingPlan(full, extent).render_to_texture_uv);
+  const auto roi_uv =
+      ProjectiveTransform::FromMatrix(MakeLlfSamplingPlan(roi, extent).render_to_texture_uv);
+  EXPECT_TRUE(CoversFullEditSpace(full));
+  EXPECT_FALSE(CoversFullEditSpace(roi));
+  for (const auto& point : gpu_dag_test::kTiltedFrameProbes) {
+    const auto expected = gpu_dag_test::InverseTiltedPosition(extent, point.x, point.y);
+    const auto a        = complete_uv.Map(point);
+    const auto b        = roi_uv.Map({point.x - 8.0, point.y - 6.0});
+    EXPECT_NEAR(a.x, expected.x / extent.width, 1.0e-6);
+    EXPECT_NEAR(a.y, expected.y / extent.height, 1.0e-6);
+    EXPECT_NEAR(b.x, a.x, 1.0e-6);
+    EXPECT_NEAR(b.y, a.y, 1.0e-6);
+  }
+  EXPECT_NEAR(RenderAxisScale(full, true), RenderAxisScale(roi, true), 1.0e-6);
+  EXPECT_NEAR(RenderAxisScale(full, false), RenderAxisScale(roi, false), 1.0e-6);
 }
 
 TEST(GpuDagGeometry, FullViewCoversEditSpaceAndViewportRoiDoesNot) {

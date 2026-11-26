@@ -176,7 +176,7 @@ FILM_GRAIN_FIELD_INLINE float FilmGrainCurveSigma(FILM_GRAIN_FIELD_PARAMS FilmGr
  * image.
  */
 typedef struct {
-  float                 render_to_reference[6];  ///< m00 m01 tx m10 m11 ty
+  float                 render_to_reference[9];  ///< Row-major homogeneous pixel map.
   FILM_GRAIN_FIELD_UINT seed;
   /// k: reference pixels summed per render pixel and axis, 1 to FILM_GRAIN_MAX_AGGREGATE.
   FILM_GRAIN_FIELD_UINT aggregate;
@@ -219,10 +219,16 @@ FILM_GRAIN_FIELD_INLINE FilmGrainNoise3 FilmGrainAggregateNoise(FilmGrainNoisePa
                                                                 int y) {
   const float px = (float)x + 0.5f;
   const float py = (float)y + 0.5f;
-  const float rx = params.render_to_reference[0] * px + params.render_to_reference[1] * py +
-                   params.render_to_reference[2] - 0.5f;
-  const float ry = params.render_to_reference[3] * px + params.render_to_reference[4] * py +
-                   params.render_to_reference[5] - 0.5f;
+  const float     w  = params.render_to_reference[6] * px + params.render_to_reference[7] * py +
+                       params.render_to_reference[8];
+  const float     rx = (params.render_to_reference[0] * px + params.render_to_reference[1] * py +
+                        params.render_to_reference[2]) /
+                           w -
+                       0.5f;
+  const float     ry = (params.render_to_reference[3] * px + params.render_to_reference[4] * py +
+                        params.render_to_reference[5]) /
+                           w -
+                       0.5f;
   const int       k      = (int)params.aggregate;
   // The k reference pixels centred on the reference position: for k = 2 and a render at half size,
   // the reference pixels 2x and 2x + 1.

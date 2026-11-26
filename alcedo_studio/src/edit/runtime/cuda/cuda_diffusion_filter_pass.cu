@@ -52,8 +52,9 @@ __device__ __forceinline__ auto Fetch(const float4* image, int width, int height
 }
 
 __device__ __forceinline__ auto Transform(const Matrix3x3& matrix, float x, float y) -> float2 {
-  return make_float2(matrix.m[0] * x + matrix.m[1] * y + matrix.m[2],
-                     matrix.m[3] * x + matrix.m[4] * y + matrix.m[5]);
+  const auto& m = matrix.m;
+  const float w = m[6] * x + m[7] * y + m[8];
+  return make_float2((m[0] * x + m[1] * y + m[2]) / w, (m[3] * x + m[4] * y + m[5]) / w);
 }
 
 /// Bilinear sample with clamp-to-edge addressing. Texel `i` covers [i, i + 1).
