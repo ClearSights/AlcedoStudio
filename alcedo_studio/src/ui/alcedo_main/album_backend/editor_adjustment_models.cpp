@@ -277,10 +277,14 @@ void EditorAdjustmentValueModel::beginDrag() {
     return;
   }
   // A drag supersedes any pending keyboard/wheel settled commit.
+  const bool had_pending = hasPendingSettled();
   debounceTimer_->stop();
   dragActive_ = true;
   dragMoved_  = false;
   emit dragActiveChanged();
+  if (had_pending) {
+    emit pendingSettledChanged();
+  }
 }
 
 void EditorAdjustmentValueModel::updateDrag(double v) {
@@ -314,7 +318,11 @@ void EditorAdjustmentValueModel::editValue(double v) {
     return;
   }
   submitInteractive(value_);
+  const bool had_pending = hasPendingSettled();
   debounceTimer_->start();
+  if (!had_pending) {
+    emit pendingSettledChanged();
+  }
 }
 
 void EditorAdjustmentValueModel::commitImmediately() {
@@ -324,9 +332,11 @@ void EditorAdjustmentValueModel::commitImmediately() {
   debounceTimer_->stop();
   submitSettled(value_);
   emit settledCommitted();
+  emit pendingSettledChanged();
 }
 
 void EditorAdjustmentValueModel::reset() {
+  const bool had_pending = hasPendingSettled();
   debounceTimer_->stop();
   if (dragActive_) {
     dragActive_ = false;
@@ -334,11 +344,13 @@ void EditorAdjustmentValueModel::reset() {
     emit dragActiveChanged();
   }
   const bool changed = applyValue(defaultValue_);
-  if (!changed) {
-    return;
+  if (changed) {
+    submitSettled(value_);
+    emit settledCommitted();
   }
-  submitSettled(value_);
-  emit settledCommitted();
+  if (had_pending) {
+    emit pendingSettledChanged();
+  }
 }
 
 void EditorAdjustmentValueModel::setInvalid(const QString& message) {
@@ -459,6 +471,7 @@ void EditorAdjustmentValueModel::submitSettled(double v) {
 void EditorAdjustmentValueModel::onDebounceTimeout() {
   submitSettled(value_);
   emit settledCommitted();
+  emit pendingSettledChanged();
 }
 
 // ── EditorAdjustmentEnumModel ───────────────────────────────────────────────

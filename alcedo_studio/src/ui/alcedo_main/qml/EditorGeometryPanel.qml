@@ -24,6 +24,7 @@ Item {
 
     property var theme: null
     property var editorSession: null
+    property var editorBehavior: null
     property var interaction: null
     property bool controlsEnabled: true
     property bool panelActive: false
@@ -54,6 +55,10 @@ Item {
                                       || rotationModel.dragActive
                                       || aspectWidthModel.dragActive
                                       || aspectHeightModel.dragActive
+    readonly property bool guideInputActive: root.panelActive && root.controlsEnabled
+        && (cropXSlider.inputActive || cropYSlider.inputActive || cropWidthSlider.inputActive
+            || cropHeightSlider.inputActive || rotationSlider.inputActive
+            || aspectWidthSlider.inputActive || aspectHeightSlider.inputActive)
 
     EditorParameterCatalog {
         id: parameterCatalog
@@ -503,14 +508,13 @@ Item {
                 mutedColor: root.colMuted
                 hoverColor: root.colHover
                 accentColor: root.colAccent
-                bodyContentHeight: cropControls.implicitHeight + appTheme.spaceSm
+                bodyContentHeight: cropControls.implicitHeight
 
                 ColumnLayout {
                     id: cropControls
                     anchors.left: parent.left
                     anchors.right: parent.right
                     anchors.top: parent.top
-                    anchors.margins: appTheme.spaceXs
                     spacing: appTheme.spaceSm
 
                     AdjustmentCombo {
@@ -519,6 +523,7 @@ Item {
                         model: aspectModel
                     }
                     AdjustmentSlider {
+                        id: aspectWidthSlider
                         objectName: "geometryAspectWidthSlider"
                         Layout.fillWidth: true
                         visible: aspectModel.currentValue === "custom"
@@ -526,6 +531,7 @@ Item {
                         flickable: scroller
                     }
                     AdjustmentSlider {
+                        id: aspectHeightSlider
                         objectName: "geometryAspectHeightSlider"
                         Layout.fillWidth: true
                         visible: aspectModel.currentValue === "custom"
@@ -533,34 +539,43 @@ Item {
                         flickable: scroller
                     }
                     AdjustmentSlider {
+                        id: cropXSlider
                         objectName: "geometryCropXSlider"
                         Layout.fillWidth: true
                         model: cropXModel
                         flickable: scroller
                     }
                     AdjustmentSlider {
+                        id: cropYSlider
                         objectName: "geometryCropYSlider"
                         Layout.fillWidth: true
                         model: cropYModel
                         flickable: scroller
                     }
                     AdjustmentSlider {
+                        id: cropWidthSlider
                         objectName: "geometryCropWidthSlider"
                         Layout.fillWidth: true
                         model: cropWidthModel
                         flickable: scroller
                     }
                     AdjustmentSlider {
+                        id: cropHeightSlider
                         objectName: "geometryCropHeightSlider"
                         Layout.fillWidth: true
                         model: cropHeightModel
                         flickable: scroller
                     }
                     AdjustmentSlider {
+                        id: rotationSlider
                         objectName: "geometryRotationSlider"
                         Layout.fillWidth: true
                         model: rotationModel
                         flickable: scroller
+                    }
+                    EditorCropGuideControls {
+                        Layout.fillWidth: true
+                        preferences: root.editorBehavior
                     }
                     RowLayout {
                         Layout.fillWidth: true

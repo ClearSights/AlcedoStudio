@@ -13,6 +13,7 @@ Item {
     property var host: null
     property var workspaceRouter: appModules.workspaceRouter
     property var editorSession: appModules.editorSession
+    property var editorBehavior: appModules ? appModules.editorBehavior : null
     property var aiDenoise: appModules.editorAiDenoise
     // The image of the viewport before the first frame of a photo (AI Denoise plan, DN14).
     property var viewportPlaceholder: appModules.editorPlaceholder
@@ -272,6 +273,12 @@ Item {
                         scale: viewportSlot.stageScale
                         visible: root.hasImage
                         interaction: editorInteraction
+                        cropGuideIndex: root.editorBehavior ? root.editorBehavior.cropGuideIndex : 0
+                        cropGuideVisibility: root.editorBehavior
+                                             ? root.editorBehavior.cropGuideVisibility : 0
+                        cropGuideOrientation: root.editorBehavior
+                                              ? Math.max(0, root.editorBehavior.cropGuideOrientation) : 0
+                        cropPanelInputActive: adjustmentStack.cropPanelInputActive
                         maskOverlayControlColor: appTheme.maskOverlayControlColor
                         maskOverlayControlOutlineColor: appTheme.maskOverlayControlOutlineColor
                         maskOverlayInactiveColor: appTheme.maskOverlayInactiveColor
@@ -1092,6 +1099,7 @@ Item {
                 Layout.fillHeight: true
                 theme: root.theme
                 editorSession: root.editorSession
+                editorBehavior: root.editorBehavior
                 interaction: editorInteraction
                 nodeController: historyVersionsRail.nodeController
                 comparison: root.comparison
@@ -1121,6 +1129,20 @@ Item {
         && editorInteraction.cropToolEnabled,
         root.maskEditScopeActive || root.aiMaskToolActive || root.comparisonActive,
         root, root.Window.activeFocusItem)
+
+    RegisteredShortcut {
+        commandId: "crop.cycleGuide"
+        activeScope: root.cropEditShortcutScope
+        commandEnabled: !!root.editorBehavior && root.editorBehavior.cropGuideIndex >= 0
+        onActivated: root.editorBehavior.cycleCropGuide()
+    }
+
+    RegisteredShortcut {
+        commandId: "crop.rotateGuide"
+        activeScope: root.cropEditShortcutScope
+        commandEnabled: !!root.editorBehavior && root.editorBehavior.cropGuideOrientation >= 0
+        onActivated: root.editorBehavior.rotateCropGuide()
+    }
 
     RegisteredShortcut {
         objectName: "maskFinishEditShortcut"

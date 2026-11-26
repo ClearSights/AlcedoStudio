@@ -8,6 +8,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QLatin1String>
+#include <QMetaType>
 #include <QSettings>
 #include <exception>
 #include <json.hpp>
@@ -57,6 +58,7 @@ auto FilmPrintUiValue(const nlohmann::json& film_print) -> QVariantMap {
 
 EditorBehaviorPreferences::EditorBehaviorPreferences(QObject* parent) : QObject(parent) {
   const QSettings settings;
+  crop_guide_ = ReadCropGuide(settings.value(QLatin1String(kCropGuideSettingsKey), QVariantMap{}));
   const QString   stored =
       settings.value(QLatin1String(kLockedNodeMaskActionSettingKey), QLatin1String(kAskAction))
           .toString();
@@ -73,6 +75,108 @@ EditorBehaviorPreferences::EditorBehaviorPreferences(QObject* parent) : QObject(
       film_print_ui_value_ = FilmPrintUiValue(*film_print);
     }
   }
+}
+
+auto EditorBehaviorPreferences::ReadCropGuide(const QVariant& value)
+    -> std::optional<CropGuideSettings> {
+  if (value.metaType().id() != QMetaType::QVariantMap) {
+    return std::nullopt;
+  }
+  const auto fields = value.toMap();
+  const auto index  = [&fields](const char* key, int default_value, int maximum) {
+    const auto stored = fields.value(QLatin1String(key), default_value);
+    if (stored.metaType().id() != QMetaType::Int) {
+      return -1;
+    }
+    const int number = stored.toInt();
+    return number >= 0 && number <= maximum ? number : -1;
+  };
+  const int guide =
+      index("guide", static_cast<int>(CropGuide::Thirds), static_cast<int>(CropGuide::Triangle));
+  const int visibility = index("visibility", static_cast<int>(CropGuideVisibility::Always),
+                               static_cast<int>(CropGuideVisibility::Never));
+  const int triangle =
+      index("triangleOrientation", 0, CropGuideOrientationCount(CropGuide::Triangle) - 1);
+  const int spiral =
+      index("spiralOrientation", 0, CropGuideOrientationCount(CropGuide::Spiral) - 1);
+  if (guide < 0 || visibility < 0 || triangle < 0 || spiral < 0) {
+    return std::nullopt;
+  }
+  return CropGuideSettings{static_cast<CropGuide>(guide),
+                           static_cast<CropGuideVisibility>(visibility), triangle, spiral};
+}
+
+void EditorBehaviorPreferences::saveCropGuide() {
+  const auto& settings = *crop_guide_;
+  QSettings{}.setValue(
+      QLatin1String(kCropGuideSettingsKey),
+      QVariantMap{{QStringLiteral("guide"), static_cast<int>(settings.guide)},
+                  {QStringLiteral("visibility"), static_cast<int>(settings.visibility)},
+                  {QStringLiteral("triangleOrientation"), settings.triangle_orientation},
+                  {QStringLiteral("spiralOrientation"), settings.spiral_orientation}});
+  emit cropGuideChanged();
+}
+
+auto EditorBehaviorPreferences::cropGuideIndex() const -> int {
+  return crop_guide_ ? static_cast<int>(crop_guide_->guide) : -1;
+}
+
+auto EditorBehaviorPreferences::cropGuideVisibility() const -> int {
+  return crop_guide_ ? static_cast<int>(crop_guide_->visibility) : -1;
+}
+
+auto EditorBehaviorPreferences::cropGuideOrientation() const -> int {
+  if (crop_guide_ && crop_guide_->guide == CropGuide::Triangle) {
+    return crop_guide_->triangle_orientation;
+  }
+  if (crop_guide_ && crop_guide_->guide == CropGuide::Spiral) {
+    return crop_guide_->spiral_orientation;
+  }
+  return -1;
+}
+
+bool EditorBehaviorPreferences::selectCropGuide(int index) {
+  if (!crop_guide_ || index < 0 || index > static_cast<int>(CropGuide::Triangle)) {
+    return false;
+  }
+  if (index != cropGuideIndex()) {
+    crop_guide_->guide = static_cast<CropGuide>(index);
+    saveCropGuide();
+  }
+  return true;
+}
+
+bool EditorBehaviorPreferences::selectCropGuideVisibility(int index) {
+  if (!crop_guide_ || index < 0 || index > static_cast<int>(CropGuideVisibility::Never)) {
+    return false;
+  }
+  if (index != cropGuideVisibility()) {
+    crop_guide_->visibility = static_cast<CropGuideVisibility>(index);
+    saveCropGuide();
+  }
+  return true;
+}
+
+void EditorBehaviorPreferences::cycleCropGuide() {
+  if (crop_guide_) {
+    selectCropGuide((cropGuideIndex() + 1) % (static_cast<int>(CropGuide::Triangle) + 1));
+  }
+}
+
+void EditorBehaviorPreferences::rotateCropGuide() {
+  if (cropGuideOrientation() < 0) {
+    return;
+  }
+  auto& settings    = *crop_guide_;
+  int&  orientation = settings.guide == CropGuide::Triangle ? settings.triangle_orientation
+                                                            : settings.spiral_orientation;
+  orientation       = (orientation + 1) % CropGuideOrientationCount(settings.guide);
+  saveCropGuide();
+}
+
+void EditorBehaviorPreferences::resetCropGuide() {
+  crop_guide_.emplace();
+  saveCropGuide();
 }
 
 auto EditorBehaviorPreferences::IsLockedNodeMaskAction(const QString& action) -> bool {

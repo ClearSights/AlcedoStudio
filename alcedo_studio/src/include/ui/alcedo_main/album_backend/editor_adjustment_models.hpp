@@ -135,6 +135,7 @@ class EditorAdjustmentValueModel : public EditorAdjustmentModelBase {
   Q_PROPERTY(bool valid READ valid NOTIFY validChanged)
   Q_PROPERTY(QString errorMessage READ errorMessage NOTIFY validChanged)
   Q_PROPERTY(bool dragActive READ dragActive NOTIFY dragActiveChanged)
+  Q_PROPERTY(bool pendingSettled READ hasPendingSettled NOTIFY pendingSettledChanged)
 
  public:
   explicit EditorAdjustmentValueModel(QObject* parent = nullptr);
@@ -202,6 +203,7 @@ class EditorAdjustmentValueModel : public EditorAdjustmentModelBase {
   void suffixChanged();
   void validChanged();
   void dragActiveChanged();
+  void pendingSettledChanged();
   /// Emitted when a settled commit lands (drag release, debounce fire, reset,
   /// or commitImmediately). Tests QSignalSpy::wait on this.
   void settledCommitted();

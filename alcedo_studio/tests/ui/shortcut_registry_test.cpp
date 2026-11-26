@@ -288,6 +288,29 @@ TEST_F(ShortcutRegistryTest, CropShortcutScopeYieldsToTextInputAndMaskEditing) {
   EXPECT_EQ(resolve(true, false, &viewport), crop_command);
 }
 
+TEST_F(ShortcutRegistryTest, GuideCommandsUseCropScopeAndKeepSavedOverrides) {
+  auto registry = MakeRegistry();
+  ASSERT_TRUE(registry->FinalizeRegistration().isEmpty());
+  const QString scope  = QLatin1String(shortcut_scope::kEditorCropEdit);
+  const QString cycle  = QLatin1String(shortcut_id::kCropCycleGuide);
+  const QString rotate = QLatin1String(shortcut_id::kCropRotateGuide);
+  EXPECT_EQ(registry->commandIdForKey(scope, Qt::Key_O, Qt::NoModifier), cycle);
+  EXPECT_EQ(registry->commandIdForKey(scope, Qt::Key_O, Qt::ShiftModifier), rotate);
+  EXPECT_TRUE(registry
+                  ->commandIdForKey(QLatin1String(shortcut_scope::kWorkspaceEditor), Qt::Key_O,
+                                    Qt::NoModifier)
+                  .isEmpty());
+  EXPECT_FALSE(registry->commandAutoRepeat(cycle));
+  EXPECT_FALSE(registry->commandAutoRepeat(rotate));
+  const auto result = registry->saveCandidate(cycle, Qt::Key_F8, Qt::NoModifier, kKeyChord);
+  ASSERT_TRUE(result.value(QStringLiteral("succeeded")).toBool());
+  const auto reopened = MakeRegistry();
+  ASSERT_TRUE(reopened->FinalizeRegistration().isEmpty());
+  EXPECT_EQ(reopened->commandIdForKey(scope, Qt::Key_F8, Qt::NoModifier), cycle);
+  EXPECT_TRUE(reopened->commandIdForKey(scope, Qt::Key_O, Qt::NoModifier).isEmpty());
+  EXPECT_EQ(reopened->commandIdForKey(scope, Qt::Key_O, Qt::ShiftModifier), rotate);
+}
+
 TEST_F(ShortcutRegistryTest, CropShortcutScopeLeavesExistingBindingsUnchanged) {
   const QString file         = QStringLiteral("crop-shortcuts.ini");
   const QString undo         = QLatin1String(shortcut_id::kEditorUndo);
@@ -329,13 +352,13 @@ TEST_F(ShortcutRegistryTest, CropShortcutScopeLeavesExistingBindingsUnchanged) {
   EXPECT_EQ(filmstrip_conflict.value(QStringLiteral("conflictingCommandId")).toString(),
             QLatin1String(shortcut_id::kFilmstripPreviousImage));
 
-  const auto saved = registry->saveCandidate(crop_command, Qt::Key_O, Qt::NoModifier, kKeyChord);
+  const auto saved = registry->saveCandidate(crop_command, Qt::Key_F6, Qt::NoModifier, kKeyChord);
   ASSERT_TRUE(saved.value(QStringLiteral("succeeded")).toBool());
   registry.reset();
   auto reopened = MakeRegistry(file);
   reopened->Register(binding);
   ASSERT_TRUE(reopened->FinalizeRegistration().isEmpty());
-  EXPECT_EQ(reopened->keySequenceTexts(crop_command), QStringList{QStringLiteral("O")});
+  EXPECT_EQ(reopened->keySequenceTexts(crop_command), QStringList{QStringLiteral("F6")});
   EXPECT_EQ(reopened->keySequenceTexts(undo), QStringList{QStringLiteral("Ctrl+J")});
   EXPECT_EQ(reopened->keySequenceTexts(mask_command), QStringList{QStringLiteral("X")});
 }

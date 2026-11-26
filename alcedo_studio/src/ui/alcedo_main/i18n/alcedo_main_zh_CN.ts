@@ -3498,6 +3498,69 @@ Original source files on disk will be kept.</source>
     </message>
 </context>
 <context>
+    <name>EditorCropGuideControls</name>
+    <message>
+        <source>Guide</source>
+        <translation>构图辅助线</translation>
+    </message>
+    <message>
+        <source>None</source>
+        <translation>无</translation>
+    </message>
+    <message>
+        <source>Thirds</source>
+        <translation>三分法</translation>
+    </message>
+    <message>
+        <source>Grid</source>
+        <translation>网格</translation>
+    </message>
+    <message>
+        <source>Golden Ratio</source>
+        <translation>黄金比例</translation>
+    </message>
+    <message>
+        <source>Golden Spiral</source>
+        <translation>黄金螺旋</translation>
+    </message>
+    <message>
+        <source>Diagonal</source>
+        <translation>对角线</translation>
+    </message>
+    <message>
+        <source>Triangle</source>
+        <translation>三角形</translation>
+    </message>
+    <message>
+        <source>Change guide orientation</source>
+        <translation>更改构图辅助线方向</translation>
+    </message>
+    <message>
+        <source>Show guide</source>
+        <translation>显示辅助线</translation>
+    </message>
+    <message>
+        <source>Always</source>
+        <translation>始终</translation>
+    </message>
+    <message>
+        <source>During input</source>
+        <translation>调整时</translation>
+    </message>
+    <message>
+        <source>Never</source>
+        <translation>从不</translation>
+    </message>
+    <message>
+        <source>Saved crop guide preferences are invalid.</source>
+        <translation>保存的裁剪辅助线偏好设置无效。</translation>
+    </message>
+    <message>
+        <source>Reset Guide</source>
+        <translation>重置辅助线</translation>
+    </message>
+</context>
+<context>
     <name>EditorDisplayTransformPanel</name>
     <message>
         <source>Film Print</source>
@@ -10750,6 +10813,17 @@ CLIP / SigLIP 这类视觉语言模型会把图像和文字映射到同一语义
     <message>
         <source>Select Folder to Import</source>
         <translation>选择要导入的文件夹</translation>
+    </message>
+</context>
+<context>
+    <name>ShortcutRegistry</name>
+    <message>
+        <source>Cycle crop guide</source>
+        <translation>循环切换裁剪辅助线</translation>
+    </message>
+    <message>
+        <source>Change crop guide orientation</source>
+        <translation>更改裁剪辅助线方向</translation>
     </message>
 </context>
 </TS>

@@ -70,6 +70,75 @@ TEST_F(EditorBehaviorPreferencesTest, UnknownStoredLockedNodeMaskActionReadsAsAs
   EXPECT_EQ(preferences.locked_node_mask_action(), QStringLiteral("ask"));
 }
 
+TEST_F(EditorBehaviorPreferencesTest, GuideSelectionCyclesAndEachOrientationPersists) {
+  const auto                index = [](auto value) { return static_cast<int>(value); };
+  EditorBehaviorPreferences preferences;
+  EXPECT_EQ(preferences.cropGuideIndex(), index(CropGuide::Thirds));
+  EXPECT_EQ(preferences.cropGuideVisibility(), index(CropGuideVisibility::Always));
+  EXPECT_EQ(preferences.cropGuideOrientation(), -1);
+  QSignalSpy changed(&preferences, &EditorBehaviorPreferences::cropGuideChanged);
+  preferences.rotateCropGuide();
+  EXPECT_EQ(changed.count(), 0);
+  ASSERT_TRUE(preferences.selectCropGuideVisibility(index(CropGuideVisibility::DuringInput)));
+  for (const auto guide :
+       {CropGuide::Grid, CropGuide::Ratio, CropGuide::Spiral, CropGuide::Diagonal,
+        CropGuide::Triangle, CropGuide::None, CropGuide::Thirds}) {
+    preferences.cycleCropGuide();
+    EXPECT_EQ(preferences.cropGuideIndex(), index(guide));
+    EXPECT_EQ(preferences.cropGuideVisibility(), index(CropGuideVisibility::DuringInput));
+  }
+  ASSERT_TRUE(preferences.selectCropGuide(index(CropGuide::Spiral)));
+  for (const int orientation : {1, 2, 3, 0, 1, 2}) {
+    preferences.rotateCropGuide();
+    EXPECT_EQ(preferences.cropGuideOrientation(), orientation);
+  }
+  ASSERT_TRUE(preferences.selectCropGuide(index(CropGuide::Triangle)));
+  preferences.rotateCropGuide();
+  EXPECT_EQ(preferences.cropGuideOrientation(), 1);
+
+  EditorBehaviorPreferences reopened;
+  EXPECT_EQ(reopened.cropGuideIndex(), index(CropGuide::Triangle));
+  EXPECT_EQ(reopened.cropGuideVisibility(), index(CropGuideVisibility::DuringInput));
+  EXPECT_EQ(reopened.cropGuideOrientation(), 1);
+  reopened.rotateCropGuide();
+  EXPECT_EQ(reopened.cropGuideOrientation(), 0);
+  ASSERT_TRUE(reopened.selectCropGuide(index(CropGuide::Spiral)));
+  EXPECT_EQ(reopened.cropGuideOrientation(), 2);
+}
+
+TEST_F(EditorBehaviorPreferencesTest, InvalidGuidePreferenceRequiresExplicitReset) {
+  const QLatin1String key(EditorBehaviorPreferences::kCropGuideSettingsKey);
+  const QVariant      invalid_values[] = {
+      QStringLiteral("unreadable"),          QVariantMap{{"guide", 9}},
+      QVariantMap{{"visibility", -2}},       QVariantMap{{"triangleOrientation", 2}},
+      QVariantMap{{"spiralOrientation", 4}}, QVariantMap{{"guide", QStringLiteral("1")}},
+  };
+  for (const auto& invalid : invalid_values) {
+    QSettings{}.setValue(key, invalid);
+    EditorBehaviorPreferences preferences;
+    QSignalSpy                changed(&preferences, &EditorBehaviorPreferences::cropGuideChanged);
+    EXPECT_EQ(preferences.cropGuideIndex(), -1);
+    EXPECT_EQ(preferences.cropGuideVisibility(), -1);
+    EXPECT_EQ(preferences.cropGuideOrientation(), -1);
+    EXPECT_FALSE(preferences.selectCropGuide(0));
+    EXPECT_FALSE(preferences.selectCropGuideVisibility(0));
+    preferences.cycleCropGuide();
+    preferences.rotateCropGuide();
+    EXPECT_EQ(changed.count(), 0);
+    EXPECT_EQ(QSettings{}.value(key), invalid);
+
+    preferences.resetCropGuide();
+    EXPECT_EQ(changed.count(), 1);
+    EditorBehaviorPreferences reopened;
+    EXPECT_EQ(reopened.cropGuideIndex(), static_cast<int>(CropGuide::Thirds));
+    EXPECT_EQ(reopened.cropGuideVisibility(), static_cast<int>(CropGuideVisibility::Always));
+    ASSERT_TRUE(reopened.selectCropGuide(static_cast<int>(CropGuide::Triangle)));
+    EXPECT_EQ(reopened.cropGuideOrientation(), 0);
+    ASSERT_TRUE(reopened.selectCropGuide(static_cast<int>(CropGuide::Spiral)));
+    EXPECT_EQ(reopened.cropGuideOrientation(), 0);
+  }
+}
+
 /// The `odt` Model JSON of a settled panel write with method film_print and @p film_print.
 auto FilmPrintWrite(const QString& film_print) -> QString {
   return QStringLiteral(R"({"odt":{"method":"film_print","encoding_space":"rec709",)"

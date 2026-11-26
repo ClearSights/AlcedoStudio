@@ -143,6 +143,7 @@ auto CropInteractionController::HandlePress(ViewerState& state, const MaskEditVi
     drag_mode_    = CropDragMode::Create;
     result.cursor = Qt::CrossCursor;
   }
+  result.request_repaint = true;
   return result;
 }
 
@@ -258,8 +259,8 @@ auto CropInteractionController::HandleRelease(ViewerState& state) -> CropInterac
   }
   result.consumed     = true;
   result.unset_cursor = true;
-  // The fine rotation grid goes away with the drag.
-  result.request_repaint = RotationActive();
+  // The pointer-driven guide visibility and fine rotation grid end with the drag.
+  result.request_repaint = true;
   if (drag_changed_) {
     const auto crop_state = state.GetCropOverlay();
     result.rect_changed   = crop_state.rect;

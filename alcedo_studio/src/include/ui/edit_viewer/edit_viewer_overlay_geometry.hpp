@@ -4,12 +4,12 @@
 
 #pragma once
 
-#include <array>
-#include <optional>
-
 #include <QPointF>
 #include <QRectF>
+#include <QSizeF>
 #include <Qt>
+#include <array>
+#include <optional>
 
 #include "ui/edit_viewer/crop_geometry.hpp"
 #include "ui/edit_viewer/mask_edit_geometry.hpp"
@@ -33,6 +33,7 @@ struct EditViewerOverlaySnapshot {
   QRectF                detail_roi_uv      = QRectF(0.0, 0.0, 1.0, 1.0);
   // A crop rotate drag is changing the angle: the overlay adds the fine rotation grid.
   bool                  crop_rotation_active = false;
+  bool                  crop_drag_active     = false;
 };
 
 struct CropOverlayWidgetGeometry {
@@ -43,6 +44,8 @@ struct CropOverlayWidgetGeometry {
   // Anchor of the crop angle badge (CropGeometry::CropAngleBadgeWidgetPoint).
   QPointF                angle_badge_widget{};
   bool                   crop_rotation_active = false;
+  bool                   crop_drag_active     = false;
+  QSizeF                 crop_size_pixels{};
   std::array<QPointF, 4> detail_roi_corners_widget{};
   bool                   detail_roi_valid    = false;
 };

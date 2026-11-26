@@ -7,9 +7,9 @@
 #include <QColor>
 #include <QPointF>
 #include <QQuickItem>
-
 #include <vector>
 
+#include "ui/edit_viewer/crop_guide_paths.hpp"
 #include "ui/edit_viewer/edit_viewer_overlay_geometry.hpp"
 #include "ui/edit_viewer/mask_overlay_geometry.hpp"
 #include "ui/edit_viewer/mask_overlay_layout.hpp"
@@ -31,7 +31,7 @@ struct OverlaySceneGeometry {
   // Edge grip and corner bracket strokes (outer thick, inner thin).
   std::vector<QPointF> grip_outer_triangles;
   std::vector<QPointF> grip_inner_triangles;
-  // Rule-of-thirds dashed strokes.
+  // Composition strokes and the rotation aid's stronger thirds lines.
   std::vector<QPointF> grid_triangles;
   // Fine grid inside the frame while a rotate drag is active (thirds lines excluded).
   std::vector<QPointF> fine_grid_triangles;
@@ -49,10 +49,17 @@ struct OverlaySceneGeometry {
   }
 };
 
-// Builds retained overlay draw primitives from logical geometry. Pure and
-// testable without a scene graph or GPU.
-auto BuildOverlaySceneGeometry(const CropOverlayWidgetGeometry& geometry,
-                               bool crop_tool_visible) -> OverlaySceneGeometry;
+/// Guide settings and current panel input used by the overlay. Pointer input comes from geometry.
+struct CropGuideDisplay {
+  CropGuide           guide              = CropGuide::Thirds;
+  CropGuideVisibility visibility         = CropGuideVisibility::Always;
+  int                 orientation        = 0;
+  bool                panel_input_active = false;
+};
+
+/// Builds retained overlay primitives in logical pixels. No scene graph or GPU is required.
+auto BuildOverlaySceneGeometry(const CropOverlayWidgetGeometry& geometry, bool crop_tool_visible,
+                               const CropGuideDisplay& guide = {}) -> OverlaySceneGeometry;
 
 // QQuickItem that renders crop mask/grid/handles, detail-ROI bounds, and Mask
 // controls as retained QSGGeometryNode content. Photograph pixels stay in
@@ -63,6 +70,13 @@ class EditorOverlayItem : public QQuickItem {
                  InteractionChanged)
   Q_PROPERTY(bool cropVisible READ cropVisible NOTIFY GeometryRevisionChanged)
   Q_PROPERTY(int geometryRevision READ geometryRevision NOTIFY GeometryRevisionChanged)
+  Q_PROPERTY(int cropGuideIndex READ cropGuideIndex WRITE setCropGuideIndex NOTIFY CropGuideChanged)
+  Q_PROPERTY(int cropGuideVisibility READ cropGuideVisibility WRITE setCropGuideVisibility NOTIFY
+                 CropGuideChanged)
+  Q_PROPERTY(int cropGuideOrientation READ cropGuideOrientation WRITE setCropGuideOrientation NOTIFY
+                 CropGuideChanged)
+  Q_PROPERTY(bool cropPanelInputActive READ cropPanelInputActive WRITE setCropPanelInputActive
+                 NOTIFY CropGuideChanged)
   // Diagnostics for tests: rebuilds coalesce; paint updates vertices in place.
   Q_PROPERTY(int geometryRebuildCount READ geometryRebuildCount NOTIFY GeometryRevisionChanged)
   Q_PROPERTY(int paintNodeCreateCount READ paintNodeCreateCount NOTIFY GeometryRevisionChanged)
@@ -96,6 +110,21 @@ class EditorOverlayItem : public QQuickItem {
 
   [[nodiscard]] auto interaction() const -> EditorInteractionController* { return interaction_; }
   void setInteraction(EditorInteractionController* controller);
+
+  [[nodiscard]] auto cropGuideIndex() const -> int { return static_cast<int>(crop_guide_.guide); }
+  [[nodiscard]] auto cropGuideVisibility() const -> int {
+    return static_cast<int>(crop_guide_.visibility);
+  }
+  [[nodiscard]] auto cropGuideOrientation() const -> int { return crop_guide_.orientation; }
+  [[nodiscard]] auto cropPanelInputActive() const -> bool { return crop_guide_.panel_input_active; }
+  /// Update the requested overlay guide and schedule a redraw on the GUI thread.
+  void               setCropGuideIndex(int index);
+  /// Update the visibility rule and schedule a redraw on the GUI thread.
+  void               setCropGuideVisibility(int index);
+  /// Update the selected guide's orientation and schedule a redraw on the GUI thread.
+  void               setCropGuideOrientation(int orientation);
+  /// Report numeric or slider input from the Crop panel and schedule a redraw on the GUI thread.
+  void               setCropPanelInputActive(bool active);
 
   [[nodiscard]] auto cropVisible() const -> bool;
   [[nodiscard]] auto geometryRevision() const -> int { return geometry_revision_; }
@@ -178,6 +207,7 @@ class EditorOverlayItem : public QQuickItem {
  signals:
   void InteractionChanged();
   void GeometryRevisionChanged();
+  void CropGuideChanged();
   void MaskOverlayRevisionChanged();
   void MaskOverlayStyleChanged();
 
@@ -196,8 +226,11 @@ class EditorOverlayItem : public QQuickItem {
   void applyOverlayCursor();
   void bindInteraction(EditorInteractionController* controller);
   void onInteractionOverlayChanged();
+  /// Publish changed draw inputs and coalesce their redraw with geometry changes.
+  void                         updateCropGuide();
 
   EditorInteractionController* interaction_ = nullptr;
+  CropGuideDisplay             crop_guide_{};
   OverlaySceneGeometry last_scene_geometry_{};
   MaskOverlayDisplay mask_display_{};
   MaskOverlayStyle mask_style_ = DefaultMaskOverlayStyle();

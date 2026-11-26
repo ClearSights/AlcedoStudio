@@ -67,6 +67,11 @@ void RegisterEditorShortcuts(ShortcutRegistry* registry) {
   add(shortcut_id::kEditorRedo, "Redo", {Chord(Qt::Key_R, Qt::ControlModifier)});
   add(shortcut_id::kEditorSaveCurrentImage, "Save current image",
       {Chord(Qt::Key_S, Qt::ControlModifier)});
+  AddSpec(registry, shortcut_id::kCropCycleGuide, "Editor", "Cycle crop guide", {Chord(Qt::Key_O)},
+          shortcut_scope::kEditorCropEdit, ShortcutInputKind::KeyChord, false);
+  AddSpec(registry, shortcut_id::kCropRotateGuide, "Editor", "Change crop guide orientation",
+          {Chord(Qt::Key_O, Qt::ShiftModifier)}, shortcut_scope::kEditorCropEdit,
+          ShortcutInputKind::KeyChord, false);
 }
 
 void RegisterFilmstripShortcuts(ShortcutRegistry* registry) {

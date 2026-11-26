@@ -17,6 +17,7 @@
 #include <QSignalSpy>
 #include <QTest>
 #include <Qt>
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstdint>
@@ -25,6 +26,7 @@
 #include "edit/geometry/crop_frame.hpp"
 #include "edit/geometry/render_geometry_resolver.hpp"
 #include "ui/edit_viewer/crop_geometry.hpp"
+#include "ui/edit_viewer/crop_guide_paths.hpp"
 #include "ui/edit_viewer/crop_interaction_controller.hpp"
 #include "ui/edit_viewer/mask_edit_geometry.hpp"
 #include "ui/editor_rhi/editor_interaction_controller.hpp"
@@ -234,6 +236,83 @@ TEST(EditorCropInteractionTest, RotationDragStartsAfterTravelSnapsToZeroAndShows
   const auto released = controller.overlayGeometry();
   EXPECT_FALSE(released.crop_rotation_active);
   EXPECT_TRUE(BuildOverlaySceneGeometry(released, true).fine_grid_triangles.empty());
+}
+
+TEST(EditorCropInteractionTest, DuringInputGuideAppearsOnCropPressAndClearsOnReleaseOrCancel) {
+  EditorInteractionController controller;
+  OpenInsetCrop(controller);
+  EditorOverlayItem overlay;
+  overlay.setInteraction(&controller);
+  overlay.setCropGuideIndex(static_cast<int>(CropGuide::Grid));
+  overlay.setCropGuideVisibility(static_cast<int>(CropGuideVisibility::DuringInput));
+  QCoreApplication::processEvents();
+  EXPECT_TRUE(overlay.lastSceneGeometry().grid_triangles.empty());
+  ASSERT_EQ(overlay.lastSceneGeometry().handle_count, 4);
+
+  constexpr auto left_button = static_cast<int>(Qt::LeftButton);
+  controller.handleHoverMove(400.0, 300.0);
+  QCoreApplication::processEvents();
+  EXPECT_TRUE(overlay.lastSceneGeometry().grid_triangles.empty());
+  controller.handlePress(400.0, 300.0, left_button);
+  QCoreApplication::processEvents();
+  EXPECT_FALSE(overlay.lastSceneGeometry().grid_triangles.empty());
+  EXPECT_TRUE(overlay.lastSceneGeometry().fine_grid_triangles.empty());
+  controller.handleRelease(400.0, 300.0, left_button);
+  QCoreApplication::processEvents();
+  EXPECT_TRUE(overlay.lastSceneGeometry().grid_triangles.empty());
+
+  controller.handlePress(400.0, 300.0, left_button);
+  controller.setInteractionEnabled(false);
+  QCoreApplication::processEvents();
+  EXPECT_TRUE(overlay.lastSceneGeometry().grid_triangles.empty());
+  EXPECT_EQ(overlay.lastSceneGeometry().handle_count, 4);
+}
+
+TEST(EditorCropInteractionTest, RotationAidSurvivesHiddenGuidesAndDrawsThirdsOnce) {
+  EditorInteractionController controller;
+  OpenInsetCrop(controller);
+  EditorOverlayItem overlay;
+  overlay.setInteraction(&controller);
+  constexpr auto left_button = static_cast<int>(Qt::LeftButton);
+
+  controller.handlePress(670.0, 90.0, left_button);
+  controller.handleMove(692.0, 120.0, left_button);
+  ASSERT_TRUE(controller.overlayGeometry().crop_rotation_active);
+  QCoreApplication::processEvents();
+  const auto thirds    = overlay.lastSceneGeometry().grid_triangles;
+  const auto fine_grid = overlay.lastSceneGeometry().fine_grid_triangles;
+  ASSERT_FALSE(thirds.empty());
+  ASSERT_FALSE(fine_grid.empty());
+
+  const std::array hidden{
+      CropGuideDisplay{.guide = CropGuide::None},
+      CropGuideDisplay{.visibility = CropGuideVisibility::Never},
+      CropGuideDisplay{.guide      = static_cast<CropGuide>(-1),
+                       .visibility = static_cast<CropGuideVisibility>(-1)},
+  };
+  for (const auto& guide : hidden) {
+    overlay.setCropGuideIndex(static_cast<int>(guide.guide));
+    overlay.setCropGuideVisibility(static_cast<int>(guide.visibility));
+    QCoreApplication::processEvents();
+    EXPECT_EQ(overlay.lastSceneGeometry().grid_triangles, thirds);
+    EXPECT_EQ(overlay.lastSceneGeometry().fine_grid_triangles, fine_grid);
+    EXPECT_EQ(overlay.lastSceneGeometry().handle_count, 4);
+    EXPECT_TRUE(controller.overlayGeometry().crop_rotation_active);
+  }
+
+  overlay.setCropGuideIndex(static_cast<int>(CropGuide::Grid));
+  overlay.setCropGuideVisibility(static_cast<int>(CropGuideVisibility::Always));
+  QCoreApplication::processEvents();
+  const auto grid_and_thirds = overlay.lastSceneGeometry().grid_triangles;
+  ASSERT_GT(grid_and_thirds.size(), thirds.size());
+  EXPECT_EQ(overlay.lastSceneGeometry().fine_grid_triangles, fine_grid);
+
+  controller.handleRelease(692.0, 120.0, left_button);
+  QCoreApplication::processEvents();
+  EXPECT_TRUE(overlay.lastSceneGeometry().fine_grid_triangles.empty());
+  const auto& grid = overlay.lastSceneGeometry().grid_triangles;
+  ASSERT_EQ(grid.size() + thirds.size(), grid_and_thirds.size());
+  EXPECT_TRUE(std::equal(grid.begin(), grid.end(), grid_and_thirds.begin()));
 }
 
 TEST(EditorCropInteractionTest, AspectLockedBoxPreservesPixelRatio) {

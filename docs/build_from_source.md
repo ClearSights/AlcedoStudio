@@ -91,6 +91,16 @@ cmd /c scripts\msvc_env.cmd --build --preset win_release --parallel 8
 cmd /c scripts\msvc_env.cmd --install build/release --prefix build/install
 ```
 
+Use the Qt 6.9.3 SDK shown above for the Windows release. Qt 6.12.0 and
+6.12.1 can lose QML property data when the packaged editor opens, leaving
+Crop and Rotate controls unavailable. When changing Qt SDKs in an existing
+`build/release` directory, pass `'-UQt6*_DIR'` to the configure command to clear
+the previous Qt package paths.
+
+Windows 发布构建请使用上述 Qt 6.9.3 SDK。使用 Qt 6.12.0 或 6.12.1 打开打包后的编辑器时，
+QML 属性数据可能丢失，导致裁剪和旋转控件不可用。在现有的 `build/release` 目录切换 Qt SDK 时，
+请在配置命令中添加 `'-UQt6*_DIR'`，以清除旧的 Qt 包路径。
+
 DuckDB FTS is packaged from a local extension install, not from Git. If CMake
 cannot find `fts.duckdb_extension`, install it locally with:
 

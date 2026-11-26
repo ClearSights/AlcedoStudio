@@ -18,6 +18,10 @@ AlcedoSlider {
     partName: "adjustmentSlider"
 
     property var model: null
+    // A focused slider rail is idle until a key edit starts a settled commit.
+    readonly property bool inputActive: root.editing
+                                        || !!(root.model
+                                              && (root.model.dragActive || root.model.pendingSettled))
 
     layout: "stacked"
     infoObjectName: "adjustmentSliderInfoHint"

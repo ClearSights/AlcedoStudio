@@ -49,6 +49,8 @@ inline constexpr const char* kLibrarySaveProject            = "library.saveProje
 inline constexpr const char* kEditorUndo                    = "editor.undo";
 inline constexpr const char* kEditorRedo                    = "editor.redo";
 inline constexpr const char* kEditorSaveCurrentImage        = "editor.saveCurrentImage";
+inline constexpr const char* kCropCycleGuide                = "crop.cycleGuide";
+inline constexpr const char* kCropRotateGuide               = "crop.rotateGuide";
 
 inline constexpr const char* kFilmstripPreviousImage        = "filmstrip.previousImage";
 inline constexpr const char* kFilmstripNextImage            = "filmstrip.nextImage";

@@ -5,6 +5,7 @@
 #include <gtest/gtest.h>
 
 #include <QCoreApplication>
+#include <QImage>
 #include <QQuickItem>
 #include <QQuickWindow>
 #include <QSettings>
@@ -13,30 +14,46 @@
 #include <QTest>
 #include <QVariantList>
 #include <QVariantMap>
+#include <exception>
 #include <memory>
 #include <utility>
 
 #include "app/editor_render_coordinator.hpp"
 #include "edit/frame_presentation_types.hpp"
+#include "edit/pipeline/pipeline_accelerator.hpp"
 #include "support/harness_completing_pipeline_scheduler_port.hpp"
 #include "ui/album_backend_populated_project_fixture.hpp"
 #include "ui/album_backend_test_fixture.hpp"
 #include "ui/alcedo_main/album_backend/editor_adjustment_models.hpp"
+#include "ui/alcedo_main/album_backend/editor_behavior_preferences.hpp"
 #include "ui/alcedo_main/album_backend/editor_session_controller.hpp"
+#include "ui/alcedo_main/album_backend/export_recipe_builder.hpp"
+#include "ui/alcedo_main/album_backend/import_export.hpp"
 #include "ui/alcedo_main/album_backend/library_module.hpp"
 #include "ui/alcedo_main/album_backend/workspace_router.hpp"
 #include "ui/alcedo_main/application_module_qml_types.hpp"
 #include "ui/alcedo_main/shortcut_registry.hpp"
+#include "ui/edit_viewer/crop_guide_paths.hpp"
 #include "ui/edit_viewer/frame_sink.hpp"
 #include "ui/edit_viewer/mask_edit_geometry.hpp"
+#include "ui/editor_rhi/editor_overlay_item.hpp"
 #include "ui/main_qml_test_fixture.hpp"
 
 namespace alcedo::ui::test {
 namespace {
 
-using EditorWorkspaceCropShortcutQmlTest = MainQmlTestFixture;
+class EditorWorkspaceCropShortcutQmlTest : public MainQmlTestFixture {
+ protected:
+  /// Load the packaged workspace with an editable photograph and a presented frame extent.
+  void OpenPhoto(std::unique_ptr<LoadedMainWindow>& loaded);
+};
 
-TEST_F(EditorWorkspaceCropShortcutQmlTest, EnterKeysCommitNumericInputAndReturnFromViewport) {
+/// Find the input by the name prefix of the instantiated shared slider.
+auto RotationValueInput(QQuickItem* slider) -> QQuickItem* {
+  return slider->findChild<QQuickItem*>(slider->property("partName").toString() + "ValueInput");
+}
+
+void EditorWorkspaceCropShortcutQmlTest::OpenPhoto(std::unique_ptr<LoadedMainWindow>& loaded) {
   QSettings::setDefaultFormat(QSettings::IniFormat);
   QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, PathToQString(temp_dir_));
   QCoreApplication::setOrganizationName(QStringLiteral("AlcedoTests"));
@@ -44,7 +61,7 @@ TEST_F(EditorWorkspaceCropShortcutQmlTest, EnterKeysCommitNumericInputAndReturnF
 
   const auto photos = WritePngPhotos(temp_dir_, "geometry-shortcut-", 1);
   ASSERT_EQ(photos.size(), 1u);
-  auto loaded = LoadMainWindowFromModule();
+  loaded = LoadMainWindowFromModule();
   ASSERT_NE(loaded->window, nullptr);
   ASSERT_TRUE(ImportAndWait(loaded->host, photos));
   const auto thumbnails = loaded->host.library()->Thumbnails();
@@ -78,7 +95,12 @@ TEST_F(EditorWorkspaceCropShortcutQmlTest, EnterKeysCommitNumericInputAndReturnF
   loaded->host.workspace_router()->OpenEditor(element_id, image_id);
   ASSERT_TRUE(QTest::qWaitFor(
       [&] { return session->element_id() == element_id && session->can_edit(); }, 15000));
+}
 
+TEST_F(EditorWorkspaceCropShortcutQmlTest, EnterKeysCommitNumericInputAndReturnFromViewport) {
+  std::unique_ptr<LoadedMainWindow> loaded;
+  ASSERT_NO_FATAL_FAILURE(OpenPhoto(loaded));
+  auto* session   = loaded->host.editor_session();
   auto* window    = loaded->window;
   auto* workspace = window->findChild<QQuickItem*>(QStringLiteral("editorWorkspace"));
   ASSERT_NE(workspace, nullptr);
@@ -108,8 +130,7 @@ TEST_F(EditorWorkspaceCropShortcutQmlTest, EnterKeysCommitNumericInputAndReturnF
     QQuickItem* numeric_input = nullptr;
     ASSERT_TRUE(QTest::qWaitFor(
         [&] {
-          numeric_input =
-              slider->findChild<QQuickItem*>(QStringLiteral("adjustmentSliderValueInput"));
+          numeric_input = RotationValueInput(slider);
           return numeric_input && slider->isVisible() && slider->isEnabled() &&
                  panel->property("hasSourceSize").toBool();
         },
@@ -146,6 +167,119 @@ TEST_F(EditorWorkspaceCropShortcutQmlTest, EnterKeysCommitNumericInputAndReturnF
     EXPECT_EQ(settled.size(), 1);
   }
 
+  session->Finalize(false);
+  EXPECT_TRUE(QTest::qWaitFor([&] { return !session->has_image(); }, 10000));
+}
+
+TEST_F(EditorWorkspaceCropShortcutQmlTest, GuidePreferenceChangesDoNotCreateHistoryEntries) {
+  std::unique_ptr<LoadedMainWindow> loaded;
+  ASSERT_NO_FATAL_FAILURE(OpenPhoto(loaded));
+  auto* session     = loaded->host.editor_session();
+  auto* preferences = loaded->host.editor_behavior();
+  auto* window      = loaded->window;
+  auto* workspace   = window->findChild<QQuickItem*>(QStringLiteral("editorWorkspace"));
+  ASSERT_NE(workspace, nullptr);
+  auto* viewport =
+      workspace->findChild<QQuickItem*>(QStringLiteral("editorViewportInteractionLayer"));
+  auto* overlay =
+      workspace->findChild<editor_rhi::EditorOverlayItem*>(QStringLiteral("editorOverlayItem"));
+  auto* panel = workspace->findChild<QQuickItem*>(QStringLiteral("editorAdjustmentPanel_geometry"));
+  ASSERT_TRUE(viewport && overlay && panel);
+
+  session->set_active_adjustment_panel(QStringLiteral("geometry"));
+  ASSERT_TRUE(QTest::qWaitFor([&] { return overlay->cropVisible(); }, 10000));
+  viewport->forceActiveFocus();
+  ASSERT_EQ(window->activeFocusItem(), viewport);
+  ASSERT_EQ(workspace->property("cropEditShortcutScope").toString(),
+            QLatin1String(shortcut_scope::kEditorCropEdit));
+  const auto history_revision = session->history_revision();
+  QSignalSpy history_changed(session, &EditorSessionController::HistoryChanged);
+  ASSERT_TRUE(preferences->selectCropGuide(static_cast<int>(CropGuide::Ratio)));
+  QTest::keyClick(window, Qt::Key_O);
+  ASSERT_EQ(preferences->cropGuideIndex(), static_cast<int>(CropGuide::Spiral));
+  EXPECT_EQ(overlay->cropGuideIndex(), static_cast<int>(CropGuide::Spiral));
+  QTest::keyClick(window, Qt::Key_O, Qt::ShiftModifier);
+  EXPECT_EQ(preferences->cropGuideOrientation(), 1);
+  EXPECT_EQ(overlay->cropGuideOrientation(), 1);
+
+  auto* show_guide = panel->findChild<QQuickItem*>(QStringLiteral("cropGuideVisibilitySelector"));
+  ASSERT_NE(show_guide, nullptr);
+  ASSERT_TRUE(QMetaObject::invokeMethod(
+      show_guide, "activated", Q_ARG(int, static_cast<int>(CropGuideVisibility::DuringInput))));
+  EXPECT_EQ(preferences->cropGuideVisibility(), static_cast<int>(CropGuideVisibility::DuringInput));
+  ASSERT_TRUE(QTest::qWaitFor([&] { return overlay->lastSceneGeometry().grid_triangles.empty(); }));
+
+  auto* slider = panel->findChild<QQuickItem*>(QStringLiteral("geometryRotationSlider"));
+  ASSERT_NE(slider, nullptr);
+  auto* numeric_input = RotationValueInput(slider);
+  ASSERT_NE(numeric_input, nullptr);
+  numeric_input->forceActiveFocus();
+  ASSERT_EQ(window->activeFocusItem(), numeric_input);
+  EXPECT_TRUE(workspace->property("cropEditShortcutScope").toString().isEmpty());
+  ASSERT_TRUE(
+      QTest::qWaitFor([&] { return !overlay->lastSceneGeometry().grid_triangles.empty(); }));
+  QTest::keyClick(window, Qt::Key_O);
+  EXPECT_EQ(preferences->cropGuideIndex(), static_cast<int>(CropGuide::Spiral));
+  QTest::keyClick(window, Qt::Key_Escape);
+  EXPECT_TRUE(QTest::qWaitFor([&] { return overlay->lastSceneGeometry().grid_triangles.empty(); }));
+
+  session->set_active_adjustment_panel(QStringLiteral("tone"));
+  viewport->forceActiveFocus();
+  QTest::keyClick(window, Qt::Key_O);
+  EXPECT_EQ(preferences->cropGuideIndex(), static_cast<int>(CropGuide::Spiral));
+  EXPECT_EQ(session->history_revision(), history_revision);
+  EXPECT_EQ(history_changed.count(), 0);
+  session->Finalize(false);
+  EXPECT_TRUE(QTest::qWaitFor([&] { return !session->has_image(); }, 10000));
+}
+
+TEST_F(EditorWorkspaceCropShortcutQmlTest, CropGuideDoesNotChangeExportedPixels) {
+  try {
+    (void)ResolveAcceleratorBackend(AcceleratorBackendPreference::Auto);
+  } catch (const std::exception& error) {
+    GTEST_SKIP() << error.what();
+  }
+  std::unique_ptr<LoadedMainWindow> loaded;
+  ASSERT_NO_FATAL_FAILURE(OpenPhoto(loaded));
+  auto& host        = loaded->host;
+  auto* session     = host.editor_session();
+  auto* preferences = host.editor_behavior();
+  auto* progress    = host.import_export();
+  auto* overlay     = loaded->window->findChild<editor_rhi::EditorOverlayItem*>(
+      QStringLiteral("editorOverlayItem"));
+  ASSERT_NE(overlay, nullptr);
+  session->set_active_adjustment_panel(QStringLiteral("geometry"));
+  ASSERT_TRUE(QTest::qWaitFor([&] { return overlay->cropVisible(); }, 10000));
+
+  ExportRecipeOptions options;
+  options.out_dir          = PathToQString(temp_dir_);
+  options.format           = QStringLiteral("PNG");
+  options.include_metadata = false;
+  const QVariantList targets{
+      QVariantMap{{"elementId", session->element_id()}, {"imageId", session->image_id()}}};
+  QImage reference;
+  for (const bool show_guide : {false, true}) {
+    SCOPED_TRACE(show_guide);
+    ASSERT_TRUE(preferences->selectCropGuide(
+        static_cast<int>(show_guide ? CropGuide::Triangle : CropGuide::None)));
+    ASSERT_TRUE(QTest::qWaitFor([&] {
+      const bool guide_drawn = !overlay->lastSceneGeometry().grid_triangles.empty();
+      return guide_drawn == show_guide;
+    }));
+    options.file_name_pattern =
+        show_guide ? QStringLiteral("with-guide") : QStringLiteral("without-guide");
+    const auto error = host.export_recipe()->Start(options, targets);
+    ASSERT_FALSE(error.has_value()) << error->message.toStdString();
+    ASSERT_TRUE(QTest::qWaitFor([&] { return !progress->ExportInFlight(); }, 30000));
+    ASSERT_EQ(progress->ExportSucceeded(), 1) << progress->ExportErrorSummary().toStdString();
+    const QImage pixels(options.out_dir + "/" + options.file_name_pattern + ".png");
+    ASSERT_EQ(pixels.size(), QSize(48, 32));
+    if (show_guide) {
+      EXPECT_EQ(pixels, reference);
+    } else {
+      reference = pixels;
+    }
+  }
   session->Finalize(false);
   EXPECT_TRUE(QTest::qWaitFor([&] { return !session->has_image(); }, 10000));
 }

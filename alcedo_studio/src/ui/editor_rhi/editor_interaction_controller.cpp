@@ -269,6 +269,7 @@ void EditorInteractionController::setInteractionEnabled(bool enabled) {
     crop_interaction_controller_.Cancel(viewer_state_);
     stopZoomAnimation();
     applyCursor(std::nullopt, true);
+    emit overlayGeometryChanged();
   }
   emit interactionEnabledChanged();
 }
@@ -690,6 +691,7 @@ auto EditorInteractionController::overlaySnapshot() const -> EditViewerOverlaySn
   snapshot.detail_roi_visible = detail_roi_visible_;
   snapshot.detail_roi_uv      = detail_roi_uv_;
   snapshot.crop_rotation_active = crop_interaction_controller_.RotationActive();
+  snapshot.crop_drag_active     = crop_interaction_controller_.DragActive();
   return snapshot;
 }
 

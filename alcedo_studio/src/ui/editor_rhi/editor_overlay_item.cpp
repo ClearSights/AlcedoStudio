@@ -204,8 +204,33 @@ void AppendPolygonStroke(std::vector<QPointF>& tris, const std::array<QPointF, 4
   }
 }
 
-void AppendDashedStroke(std::vector<QPointF>& tris, const QPointF& a, const QPointF& b, float width,
-                        float dash_len, float gap_len) {
+/// Tessellate and clip a one-logical-pixel guide stroke against the placed crop.
+void AppendGuideStroke(std::vector<QPointF>& tris, const QPointF& a, const QPointF& b,
+                       const std::array<QPointF, 4>& crop) {
+  if (a == b) {
+    return;
+  }
+  const QPointF    offset = PerpUnit(a, b) * 0.5;
+  const std::array quad{a + offset, a - offset, b - offset, b + offset};
+  if (std::all_of(quad.begin(), quad.end(), [&crop](const QPointF& point) {
+        return CropGeometry::IsPointInsideQuad(crop, point);
+      })) {
+    tris.insert(tris.end(), {quad[0], quad[1], quad[2], quad[0], quad[2], quad[3]});
+    return;
+  }
+  std::vector<QPointF> clipped(quad.begin(), quad.end());
+  const bool           positive = Cross(crop[0], crop[1], crop[2]) > 0.0;
+  for (size_t i = 0; i < crop.size(); ++i) {
+    clipped = ClipPolygonToHalfPlane(clipped, crop[i], crop[(i + 1) % crop.size()], positive);
+  }
+  AppendConvexPolygonTriangles(tris, clipped);
+}
+
+/// Draw the inherited dashed thirds with the same spacing in logical pixels at every zoom.
+void AppendDashedGuide(std::vector<QPointF>& tris, const QPointF& a, const QPointF& b,
+                       const std::array<QPointF, 4>& crop) {
+  constexpr double kDash = 6.0;
+  constexpr double kGap  = 4.0;
   const double dx = b.x() - a.x();
   const double dy = b.y() - a.y();
   const double len = std::hypot(dx, dy);
@@ -218,14 +243,36 @@ void AppendDashedStroke(std::vector<QPointF>& tris, const QPointF& a, const QPoi
   bool draw = true;
   while (t < len - 1e-6) {
     const double remaining = len - t;
-    const double step = std::min(remaining, static_cast<double>(draw ? dash_len : gap_len));
+    const double step      = std::min(remaining, draw ? kDash : kGap);
     if (draw && step > 1e-6) {
       const QPointF p0(a.x() + ux * t, a.y() + uy * t);
       const QPointF p1(a.x() + ux * (t + step), a.y() + uy * (t + step));
-      AppendThickLine(tris, p0, p1, width);
+      AppendGuideStroke(tris, p0, p1, crop);
     }
     t += step;
     draw = !draw;
+  }
+}
+
+/// Use the current crop placement to draw its crop-relative polylines.
+void AppendCropGuide(std::vector<QPointF>& tris, CropGuide guide, int orientation,
+                     const QSizeF& crop_pixels, const std::array<QPointF, 4>& corners) {
+  const auto place = [&corners](const QPointF& point) {
+    const auto top    = corners[0] + (corners[1] - corners[0]) * point.x();
+    const auto bottom = corners[3] + (corners[2] - corners[3]) * point.x();
+    return top + (bottom - top) * point.y();
+  };
+  for (const auto& path : BuildCropGuidePaths(guide, crop_pixels, orientation)) {
+    auto start = place(path.front());
+    for (size_t i = 1; i < path.size(); ++i) {
+      const auto end = place(path[i]);
+      if (guide == CropGuide::Thirds) {
+        AppendDashedGuide(tris, start, end, corners);
+      } else {
+        AppendGuideStroke(tris, start, end, corners);
+      }
+      start = end;
+    }
   }
 }
 
@@ -320,8 +367,8 @@ void UpsertPremultipliedTriangleNode(QSGNode* root, QSGGeometryNode*& slot,
 
 }  // namespace
 
-auto BuildOverlaySceneGeometry(const CropOverlayWidgetGeometry& geometry, bool crop_tool_visible)
-    -> OverlaySceneGeometry {
+auto BuildOverlaySceneGeometry(const CropOverlayWidgetGeometry& geometry, bool crop_tool_visible,
+                               const CropGuideDisplay& guide) -> OverlaySceneGeometry {
   OverlaySceneGeometry scene;
 
   if (geometry.detail_roi_valid) {
@@ -353,26 +400,20 @@ auto BuildOverlaySceneGeometry(const CropOverlayWidgetGeometry& geometry, bool c
   append_edge_grip(geometry.crop_corners_widget[2], geometry.crop_corners_widget[3]);
   append_edge_grip(geometry.crop_corners_widget[3], geometry.crop_corners_widget[0]);
 
-  // Dashed thirds (legacy Qt::DashLine).
-  constexpr float kDash = 6.0f;
-  constexpr float kGap = 4.0f;
-  for (const float t : {1.0f / 3.0f, 2.0f / 3.0f}) {
-    AppendDashedStroke(
-        scene.grid_triangles,
-        CropGeometry::LerpPoint(geometry.crop_corners_widget[0], geometry.crop_corners_widget[1], t),
-        CropGeometry::LerpPoint(geometry.crop_corners_widget[3], geometry.crop_corners_widget[2], t),
-        1.0f, kDash, kGap);
-    AppendDashedStroke(
-        scene.grid_triangles,
-        CropGeometry::LerpPoint(geometry.crop_corners_widget[0], geometry.crop_corners_widget[3], t),
-        CropGeometry::LerpPoint(geometry.crop_corners_widget[1], geometry.crop_corners_widget[2], t),
-        1.0f, kDash, kGap);
+  const bool show_guide = guide.visibility == CropGuideVisibility::Always ||
+                          (guide.visibility == CropGuideVisibility::DuringInput &&
+                           (geometry.crop_drag_active || guide.panel_input_active));
+  if (show_guide && !(geometry.crop_rotation_active && guide.guide == CropGuide::Thirds)) {
+    AppendCropGuide(scene.grid_triangles, guide.guide, guide.orientation, geometry.crop_size_pixels,
+                    geometry.crop_corners_widget);
   }
 
   // Fine grid while a rotate drag is active: about kCropFineGridSpacingPx cells, each third
   // split evenly so the thirds lines stay on the grid. Thirds lines stay dashed above.
   if (geometry.crop_rotation_active) {
     const auto& c        = geometry.crop_corners_widget;
+    // The reference thirds are part of the rotation aid and depend only on the placed corners.
+    AppendCropGuide(scene.grid_triangles, CropGuide::Thirds, 0, QSizeF(1.0, 1.0), c);
     const auto  side_len = [](const QPointF& a, const QPointF& b) {
       return static_cast<float>(std::hypot(b.x() - a.x(), b.y() - a.y()));
     };
@@ -461,6 +502,39 @@ void EditorOverlayItem::setInteraction(EditorInteractionController* controller) 
 
 auto EditorOverlayItem::cropVisible() const -> bool { return last_scene_geometry_.has_crop; }
 
+void EditorOverlayItem::setCropGuideIndex(int index) {
+  if (cropGuideIndex() != index) {
+    crop_guide_.guide = static_cast<CropGuide>(index);
+    updateCropGuide();
+  }
+}
+
+void EditorOverlayItem::setCropGuideVisibility(int index) {
+  if (cropGuideVisibility() != index) {
+    crop_guide_.visibility = static_cast<CropGuideVisibility>(index);
+    updateCropGuide();
+  }
+}
+
+void EditorOverlayItem::setCropGuideOrientation(int orientation) {
+  if (cropGuideOrientation() != orientation) {
+    crop_guide_.orientation = orientation;
+    updateCropGuide();
+  }
+}
+
+void EditorOverlayItem::setCropPanelInputActive(bool active) {
+  if (cropPanelInputActive() != active) {
+    crop_guide_.panel_input_active = active;
+    updateCropGuide();
+  }
+}
+
+void EditorOverlayItem::updateCropGuide() {
+  emit CropGuideChanged();
+  scheduleRebuildFromInteraction();
+}
+
 void EditorOverlayItem::refreshFromInteraction() {
   rebuildSceneGeometry();
   // Mask scene geometry is a pure function of (mask_display_, mask_style_);
@@ -530,10 +604,8 @@ void EditorOverlayItem::rebuildSceneGeometry() {
     last_scene_geometry_ = {};
     return;
   }
-  // Match legacy paint: draw crop chrome whenever overlay_visible is true.
-  // tool_enabled only gates hit-testing, not drawing.
   last_scene_geometry_ = BuildOverlaySceneGeometry(interaction_->overlayGeometry(),
-                                                   interaction_->cropOverlayVisible());
+                                                   interaction_->cropOverlayVisible(), crop_guide_);
 }
 
 void EditorOverlayItem::rebuildMaskSceneGeometry() {

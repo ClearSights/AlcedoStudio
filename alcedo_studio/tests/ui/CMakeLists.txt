@@ -2324,6 +2324,11 @@ target_link_libraries(EditorGeometryMathTest
 alcedo_ui_gtest_discover_tests(EditorGeometryMathTest TEST_PREFIX "EditorGeometryMathTest.")
 alcedo_register_test_target(EditorGeometryMathTest ui)
 
+add_executable(CropGuidePathsTest ${ALCEDO_TEST_ROOT}/ui/crop_guide_paths_test.cpp)
+target_link_libraries(CropGuidePathsTest PRIVATE EditorViewerLogic GTest::gtest_main)
+alcedo_ui_gtest_discover_tests(CropGuidePathsTest TEST_PREFIX "CropGuidePathsTest.")
+alcedo_register_test_target(CropGuidePathsTest ui)
+
 # Phase 6F: Geometry panel snapshot, overlay synchronization, and patch shape.
 add_executable(EditorGeometryPanelQmlTest
     ${ALCEDO_TEST_ROOT}/ui/editor_geometry_panel_qml_test.cpp

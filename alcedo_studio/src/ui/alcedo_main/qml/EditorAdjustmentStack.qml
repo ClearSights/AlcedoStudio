@@ -23,6 +23,7 @@ Item {
 
     property var theme: null
     property var editorSession: null
+    property var editorBehavior: null
     property var interaction: null
     property var nodeController: null
     // EditorComparisonController; its Compare page is in the nav only while a comparison is open.
@@ -32,6 +33,7 @@ Item {
     // EditorAiDenoiseControl of the application (AI Denoise plan, DN7); null in panel tests.
     property var aiDenoise: null
     property bool controlsEnabled: true
+    readonly property bool cropPanelInputActive: geometryPanel.guideInputActive
 
     // ── Opaque semantic colors (no alpha derivations) ─────────────────────
     readonly property color colCardSurface: theme ? theme.colCardSurface : "#161719"
@@ -362,6 +364,7 @@ Item {
                         objectName: "editorAdjustmentPanel_geometry"
                         theme: root.theme
                         editorSession: root.editorSession
+                        editorBehavior: root.editorBehavior
                         interaction: root.interaction
                         controlsEnabled: root.controlsEnabled
                         panelActive: root.activePanel === "geometry"

@@ -15,6 +15,8 @@
 #include <QQuickStyle>
 #include <QQuickWindow>
 #include <QRectF>
+#include <QSettings>
+#include <QTemporaryDir>
 #include <QVariantMap>
 #include <cstdint>
 #include <exception>
@@ -25,6 +27,7 @@
 
 #include "ui/alcedo_main/album_backend/editor_adjustment_models.hpp"
 #include "ui/alcedo_main/album_backend/editor_adjustment_submitter.hpp"
+#include "ui/alcedo_main/album_backend/editor_behavior_preferences.hpp"
 #include "ui/alcedo_main/app_theme.hpp"
 #include "ui/edit_viewer/crop_geometry.hpp"
 
@@ -216,7 +219,8 @@ auto MakeSnapshot(const QString& preset, double x, double y, double width, doubl
 
 class AdjustmentStackHarness {
  public:
-  AdjustmentStackHarness(GeometrySession* session, FakeGeometryInteraction* interaction) {
+  AdjustmentStackHarness(GeometrySession* session, FakeGeometryInteraction* interaction,
+                         EditorBehaviorPreferences* preferences = nullptr) {
     static bool registered = false;
     if (!registered) {
       RegisterEditorAdjustmentQmlTypes();
@@ -242,6 +246,8 @@ class AdjustmentStackHarness {
     initialProperties.insert(QStringLiteral("interaction"),
                              QVariant::fromValue(static_cast<QObject*>(interaction)));
     initialProperties.insert(QStringLiteral("controlsEnabled"), true);
+    initialProperties.insert(QStringLiteral("editorBehavior"),
+                             QVariant::fromValue(static_cast<QObject*>(preferences)));
     root_.reset(
         qobject_cast<QQuickItem*>(component.createWithInitialProperties(initialProperties)));
     if (!root_) {
@@ -386,6 +392,72 @@ TEST(EditorGeometryPanelQmlTest, SliderDragSubmitsInteractivePatchesThenOneSettl
   EXPECT_EQ(*geometry->aspect_preset, "free");
   // The overlay shows the value being edited.
   EXPECT_NEAR(interaction.cropRectNormalized().width(), 0.5, 1e-6);
+}
+
+TEST(EditorGeometryPanelQmlTest, InvalidGuidePreferenceRequiresExplicitReset) {
+  QTemporaryDir settings_dir;
+  ASSERT_TRUE(settings_dir.isValid());
+  QCoreApplication::setOrganizationName(QStringLiteral("AlcedoTests"));
+  QCoreApplication::setApplicationName(QStringLiteral("EditorGeometryPanelQmlTest"));
+  QSettings::setDefaultFormat(QSettings::IniFormat);
+  QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, settings_dir.path());
+  QSettings{}.setValue(EditorBehaviorPreferences::kCropGuideSettingsKey,
+                       QVariantMap{{"spiralOrientation", 4}});
+  EditorBehaviorPreferences preferences;
+  GeometrySession           session;
+  FakeGeometryInteraction   interaction;
+  AdjustmentStackHarness    harness(&session, &interaction, &preferences);
+  ASSERT_NE(harness.root(), nullptr) << harness.errors().toStdString();
+  auto* selector    = harness.findObject<QQuickItem>(QStringLiteral("cropGuideSelector"));
+  auto* visibility  = harness.findObject<QQuickItem>(QStringLiteral("cropGuideVisibilitySelector"));
+  auto* error       = harness.findObject<QQuickItem>(QStringLiteral("cropGuidePreferenceError"));
+  auto* reset       = harness.findObject<QQuickItem>(QStringLiteral("cropGuideResetButton"));
+  auto* orientation = harness.findObject<QQuickItem>(QStringLiteral("cropGuideOrientationButton"));
+  ASSERT_TRUE(selector && visibility && error && reset && orientation);
+  EXPECT_FALSE(selector->isVisible());
+  EXPECT_FALSE(visibility->isVisible());
+  EXPECT_TRUE(error->isVisible());
+  EXPECT_TRUE(reset->isVisible());
+  ASSERT_TRUE(QMetaObject::invokeMethod(reset, "clicked"));
+  EXPECT_FALSE(error->isVisible());
+  EXPECT_FALSE(reset->isVisible());
+  EXPECT_TRUE(selector->isVisible());
+  EXPECT_TRUE(visibility->isVisible());
+  EXPECT_EQ(selector->property("currentText").toString(), QStringLiteral("Thirds"));
+  EXPECT_EQ(visibility->property("currentText").toString(), QStringLiteral("Always"));
+  EXPECT_FALSE(orientation->isEnabled());
+  ASSERT_TRUE(QMetaObject::invokeMethod(selector, "activated",
+                                        Q_ARG(int, static_cast<int>(CropGuide::Spiral))));
+  EXPECT_EQ(selector->property("currentText").toString(), QStringLiteral("Golden Spiral"));
+  EXPECT_TRUE(orientation->isEnabled());
+  ASSERT_TRUE(QMetaObject::invokeMethod(orientation, "clicked"));
+  EXPECT_EQ(preferences.cropGuideOrientation(), 1);
+  ASSERT_TRUE(QMetaObject::invokeMethod(visibility, "activated",
+                                        Q_ARG(int, static_cast<int>(CropGuideVisibility::Never))));
+  EXPECT_EQ(visibility->property("currentText").toString(), QStringLiteral("Never"));
+  EXPECT_TRUE(session.calls.empty());
+}
+
+TEST(EditorGeometryPanelQmlTest, SliderInputStaysActiveThroughKeyboardCommit) {
+  GeometrySession         session;
+  FakeGeometryInteraction interaction;
+  AdjustmentStackHarness  harness(&session, &interaction);
+  ASSERT_NE(harness.root(), nullptr) << harness.errors().toStdString();
+  auto* rotation =
+      harness.findObject<EditorAdjustmentValueModel>(QStringLiteral("geometryRotationModel"));
+  ASSERT_NE(rotation, nullptr);
+  EXPECT_FALSE(harness.root()->property("cropPanelInputActive").toBool());
+  rotation->beginDrag();
+  EXPECT_TRUE(harness.root()->property("cropPanelInputActive").toBool());
+  rotation->finishDrag();
+  EXPECT_FALSE(harness.root()->property("cropPanelInputActive").toBool());
+  rotation->setDebounceIntervalMs(0);
+  rotation->editValue(10.0);
+  EXPECT_TRUE(harness.root()->property("cropPanelInputActive").toBool());
+  QCoreApplication::processEvents();
+  EXPECT_FALSE(harness.root()->property("cropPanelInputActive").toBool());
+  ASSERT_EQ(session.calls.size(), 2u);
+  EXPECT_TRUE(session.calls.back().settled);
 }
 
 TEST(EditorGeometryPanelQmlTest, OverlayDragSubmitsInteractivePatchesThenOneSettledPatch) {

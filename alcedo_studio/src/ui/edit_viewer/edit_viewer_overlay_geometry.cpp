@@ -77,6 +77,10 @@ auto EditViewerOverlayGeometry::Build(const EditViewerOverlaySnapshot& snapshot)
   geometry.crop_corners_valid   = true;
   geometry.angle_badge_widget   = CropGeometry::CropAngleBadgeWidgetPoint(*crop_corners);
   geometry.crop_rotation_active = snapshot.crop_rotation_active;
+  geometry.crop_drag_active     = snapshot.crop_drag_active;
+  const auto extent             = snapshot.mapping.geometry.full_reference_extent;
+  geometry.crop_size_pixels     = {crop_state.rect.width() * extent.width,
+                                   crop_state.rect.height() * extent.height};
   return geometry;
 }
 

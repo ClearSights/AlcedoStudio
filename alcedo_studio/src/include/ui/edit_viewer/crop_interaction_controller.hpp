@@ -83,6 +83,9 @@ class CropInteractionController {
     return drag_mode_ == CropDragMode::RotateHandle && drag_rotation_started_;
   }
 
+  /// True while a crop pointer sequence owns the frame, including before its first move.
+  [[nodiscard]] auto DragActive() const -> bool { return drag_mode_ != CropDragMode::None; }
+
  private:
   CropDragMode drag_mode_ = CropDragMode::None;
   CropEdge     drag_edge_ = CropEdge::None;

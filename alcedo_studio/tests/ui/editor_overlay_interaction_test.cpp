@@ -22,9 +22,10 @@
 #include <vector>
 
 #include "ui/edit_viewer/crop_geometry.hpp"
+#include "ui/edit_viewer/crop_guide_paths.hpp"
 #include "ui/edit_viewer/edit_viewer_overlay_geometry.hpp"
-#include "ui/edit_viewer/mask_edit_geometry.hpp"
 #include "ui/edit_viewer/frame_sink.hpp"
+#include "ui/edit_viewer/mask_edit_geometry.hpp"
 #include "ui/edit_viewer/view_transform_controller.hpp"
 #include "ui/editor_rhi/direct_frame_sink.hpp"
 #include "ui/editor_rhi/direct_present_queue.hpp"
@@ -466,6 +467,66 @@ TEST(EditorOverlayInteractionTest, OverlaySceneGeometryBuildsMaskBorderGridAndHa
   EXPECT_FALSE(scene.grip_inner_triangles.empty());
   EXPECT_TRUE(scene.fine_grid_triangles.empty());
   EXPECT_FALSE(scene.detail_roi_triangles.empty());
+}
+
+TEST(EditorOverlayInteractionTest, GuideStrokesAreClippedAndOneLogicalPixelAtEachDpr) {
+  std::vector<QPointF> first_grid;
+  for (const auto& c : kDprCases) {
+    SCOPED_TRACE(c.name);
+    EditorInteractionController controller;
+    controller.setViewportMetrics(c.width, c.height, c.dpr);
+    ConfigureImage(controller, 400, 300);
+    controller.setCropToolEnabled(true);
+    controller.setCropOverlayVisible(true);
+    controller.setCropRectNormalized(QRectF(0.2, 0.2, 0.6, 0.6));
+    const auto geometry = controller.overlayGeometry();
+    ASSERT_TRUE(geometry.crop_corners_valid);
+    EXPECT_NEAR(geometry.crop_size_pixels.width(), 240.0, 1e-5);
+    EXPECT_NEAR(geometry.crop_size_pixels.height(), 180.0, 1e-5);
+
+    const auto grid =
+        BuildOverlaySceneGeometry(geometry, true, CropGuideDisplay{.guide = CropGuide::Grid});
+    ASSERT_EQ(grid.grid_triangles.size(), 14u * 6);
+    const auto delta = grid.grid_triangles[0] - grid.grid_triangles[1];
+    EXPECT_NEAR(std::hypot(delta.x(), delta.y()), 1.0, 1e-6);
+    if (first_grid.empty()) {
+      first_grid = grid.grid_triangles;
+    } else {
+      EXPECT_EQ(grid.grid_triangles, first_grid);
+    }
+
+    for (const auto kind : {CropGuide::Diagonal, CropGuide::Triangle, CropGuide::Spiral}) {
+      const auto placed =
+          BuildOverlaySceneGeometry(geometry, true, CropGuideDisplay{.guide = kind});
+      ASSERT_FALSE(placed.grid_triangles.empty());
+      for (const auto& point : placed.grid_triangles) {
+        EXPECT_GE(point.x(), geometry.crop_corners_widget[0].x() - 1e-6);
+        EXPECT_LE(point.x(), geometry.crop_corners_widget[2].x() + 1e-6);
+        EXPECT_GE(point.y(), geometry.crop_corners_widget[0].y() - 1e-6);
+        EXPECT_LE(point.y(), geometry.crop_corners_widget[2].y() + 1e-6);
+      }
+    }
+  }
+}
+
+TEST(EditorOverlayInteractionTest, GuideVisibilityUsesPanelInputAndKeepsCropHandles) {
+  EditorInteractionController controller;
+  controller.setViewportMetrics(800, 600, 1.0);
+  ConfigureImage(controller, 400, 300);
+  controller.setCropToolEnabled(true);
+  controller.setCropOverlayVisible(true);
+  auto             geometry = controller.overlayGeometry();
+  CropGuideDisplay display{.guide      = CropGuide::Triangle,
+                           .visibility = CropGuideVisibility::DuringInput};
+  EXPECT_TRUE(BuildOverlaySceneGeometry(geometry, true, display).grid_triangles.empty());
+  display.panel_input_active = true;
+  const auto active          = BuildOverlaySceneGeometry(geometry, true, display);
+  EXPECT_FALSE(active.grid_triangles.empty());
+  EXPECT_TRUE(active.fine_grid_triangles.empty());
+  EXPECT_EQ(active.handle_count, 4);
+  EXPECT_TRUE(BuildOverlaySceneGeometry(geometry, false, display).grid_triangles.empty());
+  geometry.crop_size_pixels = QSizeF(0, 300);
+  EXPECT_TRUE(BuildOverlaySceneGeometry(geometry, true, display).grid_triangles.empty());
 }
 
 TEST(EditorOverlayInteractionTest, OverlaySceneGeometryKeepsCropFrameInsideImageAcrossViewportAspects) {
