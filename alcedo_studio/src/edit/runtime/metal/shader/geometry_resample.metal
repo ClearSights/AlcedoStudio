@@ -7,18 +7,13 @@
 using namespace metal;
 
 struct GeometryResampleParams {
-  float m00;
-  float m01;
-  float m02;
-  float m10;
-  float m11;
-  float m12;
+  float render_to_decoded[9];
   uint  decoded_width;
   uint  decoded_height;
   uint  render_width;
   uint  render_height;
-  float border[4];
-  uint  use_bicubic;
+  float border_rgba[4];
+  uint  filter;
 };
 
 static inline float4 ReadBorder(texture2d<float, access::read> src, int width, int height, int x,
@@ -93,14 +88,21 @@ kernel void geometry_resample_rgba32f(texture2d<float, access::read> src [[textu
   }
   const float  cx     = static_cast<float>(gid.x) + 0.5f;
   const float  cy     = static_cast<float>(gid.y) + 0.5f;
-  const float  sx     = params.m00 * cx + params.m01 * cy + params.m02;
-  const float  sy     = params.m10 * cx + params.m11 * cy + params.m12;
-  const float4 border = float4(params.border[0], params.border[1], params.border[2],
-                               params.border[3]);
-  const int    width  = static_cast<int>(params.decoded_width);
-  const int    height = static_cast<int>(params.decoded_height);
-  const float4 pixel  = params.use_bicubic != 0u
-                            ? BicubicSample(src, width, height, sx, sy, border)
-                            : BilinearSample(src, width, height, sx, sy, border);
+  constant float* m = params.render_to_decoded;
+  const float w = m[6] * cx + m[7] * cy + m[8];
+  const float sx = (m[0] * cx + m[1] * cy + m[2]) / w;
+  const float sy = (m[3] * cx + m[4] * cy + m[5]) / w;
+  const float4 border = float4(params.border_rgba[0], params.border_rgba[1],
+                               params.border_rgba[2], params.border_rgba[3]);
+  const int width = static_cast<int>(params.decoded_width);
+  const int height = static_cast<int>(params.decoded_height);
+  const bool use_bicubic = params.filter == 1u;
+  const float reach = use_bicubic ? 1.5f : 0.5f;
+  // Test the filter's coverage before the sampler converts the source position to integers.
+  float4 pixel = border;
+  if (sx > -reach && sx < width + reach && sy > -reach && sy < height + reach) {
+    pixel = use_bicubic ? BicubicSample(src, width, height, sx, sy, border)
+                        : BilinearSample(src, width, height, sx, sy, border);
+  }
   dst.write(pixel, gid);
 }

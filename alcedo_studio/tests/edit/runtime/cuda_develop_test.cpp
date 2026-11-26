@@ -28,6 +28,7 @@
 #include "edit/runtime/cuda/cuda_sensor_demosaic.hpp"
 #include "edit/runtime/graph_compiler.hpp"
 #include "edit/runtime/texture_format.hpp"
+#include "projective_resample_test_support.hpp"
 
 namespace alcedo {
 namespace {
@@ -139,6 +140,14 @@ auto AllFiniteNonZero(const std::vector<Rgba>& pixels) -> bool {
 }
 
 }  // namespace
+
+TEST_F(CudaDevelopFixture, ProjectiveResampleMatchesIndependentPixelOracle) {
+  gpu_dag_test::VerifyProjectiveResample<CudaRenderDevice>(ExecuteCudaGeometryResample);
+}
+
+TEST_F(CudaDevelopFixture, BackendFailureReportsErrorWithoutPublishingFrame) {
+  gpu_dag_test::VerifyGeometryAllocationFailure<CudaRenderDevice>();
+}
 
 TEST_F(CudaDevelopFixture, UnpackedRgbLevelsAndAppliedWhiteBalanceProduceEquivalentFullRenders) {
   gpu_dag_test::VerifyRgbWhiteBalanceAndLevels<CudaRenderDevice>();

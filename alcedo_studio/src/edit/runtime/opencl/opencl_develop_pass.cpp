@@ -56,21 +56,6 @@ OpenClDemosaicNetModelCache* g_opencl_neural_cache_for_test = nullptr;
 
 void                         TraceDevelopStage(const char* stage) { (void)stage; }
 
-struct GeometryResampleParams {
-  float         m00;
-  float         m01;
-  float         m02;
-  float         m10;
-  float         m11;
-  float         m12;
-  std::uint32_t decoded_width;
-  std::uint32_t decoded_height;
-  std::uint32_t render_width;
-  std::uint32_t render_height;
-  float         border[4];
-  std::uint32_t use_bicubic;
-};
-
 struct ImageWarpParams {
   std::uint32_t coefficient_set_count = 0;
   std::uint32_t width                 = 0;
@@ -700,28 +685,14 @@ void ExecuteOpenClGeometryResample(OpenClRenderDevice& device, const ExecutionPl
     throw std::runtime_error("ExecuteOpenClGeometryResample: sensor texture lost during acquire");
   }
 
-  const auto&            gpu = plan.geometry.gpu_data;
-  GeometryResampleParams params{
-      .m00            = gpu.render_to_decoded[0],
-      .m01            = gpu.render_to_decoded[1],
-      .m02            = gpu.render_to_decoded[2],
-      .m10            = gpu.render_to_decoded[3],
-      .m11            = gpu.render_to_decoded[4],
-      .m12            = gpu.render_to_decoded[5],
-      .decoded_width  = gpu.decoded_width,
-      .decoded_height = gpu.decoded_height,
-      .render_width   = gpu.render_width,
-      .render_height  = gpu.render_height,
-      .border = {gpu.border_rgba[0], gpu.border_rgba[1], gpu.border_rgba[2], gpu.border_rgba[3]},
-      .use_bicubic = plan.geometry.filter == TextureFilter::Bicubic ? 1U : 0U,
-  };
+  const auto& gpu     = plan.geometry.gpu_data;
   cl_mem src_mem = sensor->Texture().Native();
   cl_mem dst_mem = dest.Texture().Native();
   auto   kernel  = OpenClKernelCache::Instance().GetKernel(
       OpenCL::GpuDag::kGeometryCameraProgramName, OpenCL::GpuDag::kGeometryResampleKernelName);
   CheckOpenCl(clSetKernelArg(kernel, 0, sizeof(cl_mem), &src_mem), "geometry arg0");
   CheckOpenCl(clSetKernelArg(kernel, 1, sizeof(cl_mem), &dst_mem), "geometry arg1");
-  CheckOpenCl(clSetKernelArg(kernel, 2, sizeof(params), &params), "geometry arg2");
+  CheckOpenCl(clSetKernelArg(kernel, 2, sizeof(gpu), &gpu), "geometry arg2");
   DispatchKernel(device, kernel, gpu.render_width, gpu.render_height);
 }
 

@@ -47,6 +47,7 @@
 #include "opencl/opencl_context.hpp"
 #include "opencl/opencl_kernel_cache.hpp"
 #include "opencl/opencl_runtime.hpp"
+#include "projective_resample_test_support.hpp"
 
 namespace alcedo {
 namespace {
@@ -271,6 +272,14 @@ auto MakeSrcImage(std::uint32_t width, std::uint32_t height) -> std::vector<Rgba
 }
 
 }  // namespace
+
+TEST_F(OpenClDevelopFixture, ProjectiveResampleMatchesIndependentPixelOracle) {
+  gpu_dag_test::VerifyProjectiveResample<OpenClRenderDevice>(ExecuteOpenClGeometryResample);
+}
+
+TEST_F(OpenClDevelopFixture, BackendFailureReportsErrorWithoutPublishingFrame) {
+  gpu_dag_test::VerifyGeometryAllocationFailure<OpenClRenderDevice>();
+}
 
 TEST_F(OpenClDevelopFixture, UnpackedRgbLevelsAndAppliedWhiteBalanceProduceEquivalentFullRenders) {
   gpu_dag_test::VerifyRgbWhiteBalanceAndLevels<OpenClRenderDevice>();
