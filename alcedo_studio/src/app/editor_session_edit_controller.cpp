@@ -80,6 +80,7 @@ namespace {
   patch.write     = field.write;
   patch.enabled   = field.enabled;
   patch.target    = field.target;
+  patch.source_extent = field.source_extent;
   return patch;
 }
 

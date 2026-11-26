@@ -15,6 +15,7 @@
 #include "app/editor_adjustment_context.hpp"
 #include "app/editor_panel_projection.hpp"
 #include "edit/geometry/crop_frame.hpp"
+#include "edit/geometry/render_request.hpp"
 #include "edit/geometry/types.hpp"
 #include "edit/graph/develop_raster_input.hpp"
 #include "edit/graph/film_format.hpp"
@@ -433,6 +434,48 @@ auto CropUiToModel(const json& ui_value) -> json {
             {"aspect_ratio",
              {{"width", ui_value.at("aspect_width")}, {"height", ui_value.at("aspect_height")}}}}}};
 }
+
+constexpr auto ManualTransformProperty(std::string_view key) -> EditorParameterProperty {
+  return {key, PropertyType::Number, {}, kManualTransformMinimum, kManualTransformMaximum, 0.1, 1};
+}
+
+constexpr std::array kGeometryTransformProperties{
+    ManualTransformProperty("horizontal"),
+    ManualTransformProperty("vertical"),
+    ManualTransformProperty("aspect"),
+    EditorParameterProperty{"scale",
+                            PropertyType::Number,
+                            {},
+                            kManualTransformScaleMinimum,
+                            kManualTransformScaleMaximum,
+                            0.1,
+                            1},
+    ManualTransformProperty("offset_x"),
+    ManualTransformProperty("offset_y"),
+    EditorParameterProperty{"constrain_crop", PropertyType::Boolean},
+};
+
+auto GeometryTransformUiDefault() -> json {
+  return {{"horizontal", 0.0}, {"vertical", 0.0}, {"aspect", 0.0},         {"scale", 100.0},
+          {"offset_x", 0.0},   {"offset_y", 0.0}, {"constrain_crop", true}};
+}
+
+/// Read only the manual fields from either a geometry document or a panel projection.
+auto GeometryTransformModelToUi(const json& model, std::string* error) -> std::optional<json> {
+  const auto& value = UnwrapObject(model, "geometry_transform");
+  if (!RequireObject(value, "geometry_transform", error)) {
+    return std::nullopt;
+  }
+  auto ui = GeometryTransformUiDefault();
+  for (auto& [key, field] : ui.items()) {
+    if (const auto found = value.find(key); found != value.end()) {
+      field = *found;
+    }
+  }
+  return ui;
+}
+
+auto GeometryTransformUiToModel(const json& ui) -> json { return {{"geometry_transform", ui}}; }
 
 auto IsFixedAspectPreset(std::string_view preset) -> bool {
   return preset != "custom";
@@ -1569,16 +1612,16 @@ auto ModelEntry(std::string_view field, std::string_view alias, EditorAdjustment
 // Values of the Tone, Look, LUT, Post Processing, RAW Decode, Geometry, and Display Transform
 // panels. The exposure default is the neutral reset value; the product Default document starts
 // at +1.5 EV.
-auto Table() -> const std::array<EditorParameterCatalogEntry, 25>& {
-  static const std::array<EditorParameterCatalogEntry, 25> entries = {
+auto Table() -> const std::array<EditorParameterCatalogEntry, 26>& {
+  static const std::array<EditorParameterCatalogEntry, 26> entries = {
       Scalar("exposure", {}, EditorAdjustmentField::Exposure, "tone", "exposure_ev",
              Conversion::Identity, kExposureRange),
       Scalar("contrast", {}, EditorAdjustmentField::Contrast, "tone", "contrast",
              Conversion::Identity, kSignedPercentRange),
       Scalar("highlights", {}, EditorAdjustmentField::Highlights, "tone", "highlights",
              Conversion::Identity, kHighlightsRange),
-      Scalar("shadows", {}, EditorAdjustmentField::Shadows, "tone", "shadows",
-             Conversion::Identity, kShadowsRange),
+      Scalar("shadows", {}, EditorAdjustmentField::Shadows, "tone", "shadows", Conversion::Identity,
+             kShadowsRange),
       Scalar("white", "whites", EditorAdjustmentField::Whites, "tone", "white",
              Conversion::Identity, kSignedPercentRange),
       Scalar("black", "blacks", EditorAdjustmentField::Blacks, "tone", "black",
@@ -1589,10 +1632,10 @@ auto Table() -> const std::array<EditorParameterCatalogEntry, 25>& {
              Conversion::Identity, kSignedPercentRange),
       Scalar("diffusion", {}, EditorAdjustmentField::Diffusion, "post", "strength",
              Conversion::Percent, kPercentRange),
-      Scalar("clarity", {}, EditorAdjustmentField::Clarity, "post", "clarity",
-             Conversion::Identity, kSignedPercentRange),
-      Scalar("sharpen", {}, EditorAdjustmentField::Sharpen, "post", "offset",
-             Conversion::Identity, kPercentRange),
+      Scalar("clarity", {}, EditorAdjustmentField::Clarity, "post", "clarity", Conversion::Identity,
+             kSignedPercentRange),
+      Scalar("sharpen", {}, EditorAdjustmentField::Sharpen, "post", "offset", Conversion::Identity,
+             kPercentRange),
       Scalar("film_grain", {}, EditorAdjustmentField::FilmGrain, "post", "strength",
              Conversion::Percent, kFilmGrainRange),
       ObjectEntry("film_format", EditorAdjustmentField::FilmFormat, "post", kFilmFormatProperties,
@@ -1608,17 +1651,19 @@ auto Table() -> const std::array<EditorParameterCatalogEntry, 25>& {
                   &LensUiDefault, &LensModelToUi, &LensUiToModel, &LensConstrain),
       ObjectEntry("crop_rotate", EditorAdjustmentField::CropRotate, "geometry", CropProperties(),
                   &CropUiDefault, &CropModelToUi, &CropUiToModel, &CropConstrain),
+      ObjectEntry("geometry_transform", EditorAdjustmentField::GeometryTransform, "geometry",
+                  kGeometryTransformProperties, &GeometryTransformUiDefault,
+                  &GeometryTransformModelToUi, &GeometryTransformUiToModel, nullptr),
       ObjectEntry("odt", EditorAdjustmentField::Drt, "display", kOdtProperties, &OdtUiDefault,
                   &OdtModelToUi, &OdtUiToModel, &OdtConstrain),
-      ObjectEntry("color_temp", EditorAdjustmentField::ColorTemperature, "raw", kColorTempProperties,
-                  &ColorTempUiDefault, &ColorTempModelToUi, &ColorTempUiToModel,
-                  &ColorTempConstrain),
+      ObjectEntry("color_temp", EditorAdjustmentField::ColorTemperature, "raw",
+                  kColorTempProperties, &ColorTempUiDefault, &ColorTempModelToUi,
+                  &ColorTempUiToModel, &ColorTempConstrain),
       ObjectEntry("grade_white_balance", EditorAdjustmentField::GradeWhiteBalance, "look",
                   kGradeWhiteBalanceProperties, &GradeWhiteBalanceUiDefault,
                   &GradeWhiteBalanceModelToUi, &GradeWhiteBalanceUiToModel, nullptr),
-      WithValidate(WithAlias(ObjectEntry("hls", EditorAdjustmentField::Hls, "look",
-                                         kHlsProperties, &HlsUiDefault, &HlsModelToUi,
-                                         &HlsUiToModel, nullptr),
+      WithValidate(WithAlias(ObjectEntry("hls", EditorAdjustmentField::Hls, "look", kHlsProperties,
+                                         &HlsUiDefault, &HlsModelToUi, &HlsUiToModel, nullptr),
                              "HLS"),
                    &HlsValidate),
       WithValidate(ObjectEntry("color_wheel", EditorAdjustmentField::ColorWheel, "look",
@@ -1896,6 +1941,9 @@ auto EditorParameterCatalog::ToModelJson(std::string_view field_key, const json&
     if (!ValidateObjectUiValue(*entry, ui_value, error)) {
       return std::nullopt;
     }
+    if (entry->adjustment == EditorAdjustmentField::GeometryTransform) {
+      return entry->ui_to_model(ui_value);
+    }
     json current_ui;
     if (current_model_json.is_null()) {
       current_ui = entry->ui_default();
@@ -2057,7 +2105,7 @@ auto EditorParameterCatalog::ConstrainCrop(const json& crop_ui, EditorCropDriver
       constrained = true;
     }
   }
-  if (source.width != 0 && source.height != 0) {
+  if (source.width != 0 && source.height != 0 && !source.use_projective_crop) {
     const auto clamped =
         ClampCropToRotatedSource(NormalizedRect{rect[0], rect[1], rect[2], rect[3]},
                                  CropNumber(ui, "angle_degrees"),

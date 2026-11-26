@@ -46,7 +46,7 @@ class HeadlessFrameSink final : public IFrameSink {
 
   /// Source size of the last presented frame in reference pixels (the
   /// `full_reference_extent` of its geometry). Empty before a frame with geometry arrives.
-  [[nodiscard]] auto presented_source_extent() const -> Extent2D;
+  [[nodiscard]] auto GetPresentedSourceExtent() const -> Extent2D override;
 
   /// Number of frames that the renderer completed into this sink.
   [[nodiscard]] auto ready_frame_count() const -> std::uint64_t {

@@ -248,6 +248,80 @@ TEST_F(EditorSessionHistoryPortTest, ActiveVersionIdentityReadReturnsOnlyTheChec
   EXPECT_EQ(active_version_id, Graph()->GetActiveVersionId());
 }
 
+TEST_F(EditorSessionHistoryPortTest, TransformAndConstrainedCropUndoTogether) {
+  std::string error;
+  const auto  handle = history_.Acquire(42, &error);
+  ASSERT_TRUE(handle.valid) << error;
+  const auto            before = Working()->Document().Geometry().ToJson();
+  EditorAdjustmentPatch patch;
+  patch.field_key = "geometry_transform";
+  patch.target = {.owner_kind = EditorParameterOwnerKind::Document, .field_key = patch.field_key};
+  patch.write =
+      ParseEditorParameterWrite(patch.field_key, {{"horizontal", 30.0}, {"scale", 65.0}}, &error);
+  ASSERT_TRUE(patch.write) << error;
+  patch.settled       = true;
+  patch.source_extent = {1200, 800};
+  ASSERT_TRUE(history_.CaptureAdjustmentBeforePreview(handle, patch, &error)) << error;
+  EXPECT_EQ(Working()->Document().Geometry().ToJson(), before);
+  ASSERT_TRUE(history_.CommitAdjustment(handle, patch, &error)) << error;
+  const auto accepted = Working()->Document().Geometry().ToJson();
+  EXPECT_EQ(accepted.at("horizontal"), 30.0);
+  EXPECT_EQ(accepted.at("scale"), 65.0);
+  EXPECT_LT(accepted.at("crop_rect").at(2).get<double>(), 0.66);
+  EXPECT_NE(accepted.at("crop_rect"), before.at("crop_rect"));
+  const auto capture = history_.CaptureSaveCheckpoint(handle, &error);
+  ASSERT_NE(capture, nullptr) << error;
+  ASSERT_EQ(capture->journal_records.size(), 1u);
+  const auto head = Head();
+  ASSERT_TRUE(history_.Undo(handle, &error)) << error;
+  EXPECT_EQ(Working()->Document().Geometry().ToJson(), before);
+  ASSERT_TRUE(history_.Redo(handle, &error)) << error;
+  EXPECT_EQ(Head(), head);
+  EXPECT_EQ(Working()->Document().Geometry().ToJson(), accepted);
+
+  history_.Release(handle);
+  const auto reopened = history_.Acquire(42, &error);
+  ASSERT_TRUE(reopened.valid) << error;
+  EXPECT_EQ(Head(), head);
+  EXPECT_EQ(Working()->Document().Geometry().ToJson(), accepted);
+
+  const auto       edited_version = Graph()->GetActiveVersionId();
+  version_ref_id_t root_version;
+  ASSERT_TRUE(history_.CreateRootVersionAndCheckout(reopened, "Root crop", &root_version, &error))
+      << error;
+  EXPECT_EQ(Working()->Document().Geometry().ToJson(), before);
+  ASSERT_TRUE(history_.CheckoutVersion(reopened, edited_version, &error)) << error;
+  EXPECT_EQ(Head(), head);
+  EXPECT_EQ(Working()->Document().Geometry().ToJson(), accepted);
+}
+
+TEST_F(EditorSessionHistoryPortTest, TransformJournalFailureRetainsPublishedCropAndHead) {
+  history_.SetServices(EditorSessionHistoryPort::Services{
+      [this](sl_element_id_t) { return journal_path_ / "image-42.wal"; }});
+  {
+    std::ofstream blocked_parent(journal_path_, std::ios::binary);
+    ASSERT_TRUE(blocked_parent.is_open());
+    blocked_parent << "The journal parent is a file.";
+  }
+  std::string error;
+  const auto  handle = history_.Acquire(42, &error);
+  ASSERT_TRUE(handle.valid) << error;
+  const auto            before = Working()->Document().ToJson();
+  EditorAdjustmentPatch patch;
+  patch.field_key = "geometry_transform";
+  patch.target = {.owner_kind = EditorParameterOwnerKind::Document, .field_key = patch.field_key};
+  patch.write  = ParseEditorParameterWrite(patch.field_key, {{"scale", 70.0}}, &error);
+  ASSERT_TRUE(patch.write) << error;
+  patch.settled       = true;
+  patch.source_extent = {1200, 800};
+  ASSERT_TRUE(history_.CaptureAdjustmentBeforePreview(handle, patch, &error)) << error;
+  EXPECT_EQ(Working()->Document().ToJson(), before);
+  EXPECT_FALSE(history_.CommitAdjustment(handle, patch, &error));
+  EXPECT_FALSE(error.empty());
+  EXPECT_FALSE(Head().has_value());
+  EXPECT_EQ(Working()->Document().ToJson(), before);
+}
+
 TEST_F(EditorSessionHistoryPortTest, HistoryOfAnUnacquiredImageIsNeverLoaded) {
   // Only Acquire binds an image's history. A stale caller (an input batch or
   // render that outlived its image) must fail instead of loading it again.
@@ -368,9 +442,10 @@ TEST_F(EditorSessionHistoryPortTest, ExposureEditSequenceProducesUnchangedCommit
 }
 
 // G10.3 changed Checkout and Paste to build-then-swap. The pinned root id and CommitClock make the
-// hashes depend only on the payloads. The expected values were recorded at cd0a4f2e (after G10.2,
-// before G10.3); the paste hashes were re-recorded after the product Default look gained contrast
-// +15 (the exposure edit hashes did not change). The root keeps that look (#891).
+// hashes depend only on the payloads. The exposure hashes are from cd0a4f2e. Paste serializes
+// the Grade Models, including the HLS defaults from d3f46808f and the Color Wheel format from
+// e1effd87d. Use the Paste hashes that clean main (18c86370) produced with these Models (#555).
+// The root keeps the import look before the Film-like curve (#891).
 TEST_F(EditorSessionHistoryPortTest, CheckoutAndPasteHashesAreUnchanged) {
   lease_ =
       alcedo::test::MakeInMemoryEditorLease(42, DefaultDocumentWithTheImportLookBeforeFilmLike());
@@ -413,8 +488,8 @@ TEST_F(EditorSessionHistoryPortTest, CheckoutAndPasteHashesAreUnchanged) {
   ASSERT_TRUE(paste_head.has_value());
   EXPECT_EQ(edit_head->ToString(), "b6cf9394111073bfab5f5020f7c5c9c3");
   EXPECT_EQ(edit_chain.ToString(), "e89bc194d74eae2ca7e4e4f1b6fec12a");
-  EXPECT_EQ(paste_head->ToString(), "8376928d33c9a133b035b0794d752cab");
-  EXPECT_EQ(paste_chain.ToString(), "a04f1845c45e9f522de6fbbbf15b6012");
+  EXPECT_EQ(paste_head->ToString(), "29b6a17ebae47cb72a36218fa532f924");
+  EXPECT_EQ(paste_chain.ToString(), "f9d5940854782cfc378077b3a248954c");
   EXPECT_EQ(checkout_default_head, edit_head);
   EXPECT_EQ(checkout_default_chain, edit_chain);
   EXPECT_EQ(checkout_pasted_head, paste_head);

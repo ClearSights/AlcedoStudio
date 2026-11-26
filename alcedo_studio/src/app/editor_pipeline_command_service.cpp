@@ -105,12 +105,13 @@ auto DrtPostModel(const DrtNodeModel& drt, const AdjustmentInstanceId& id, std::
 }  // namespace
 
 auto ApplyEditorParameterPatch(PipelineDocument& document, const EditorParameterTarget& target,
-                               const nlohmann::json& params, std::string* error) -> bool {
+                               const nlohmann::json& params, std::string* error,
+                               Extent2D source_extent) -> bool {
   auto write = ParseEditorParameterWrite(target.field_key, params, error);
   if (!write.has_value()) {
     return false;
   }
-  return ApplyEditorParameterWrite(document, target, *write, error);
+  return ApplyEditorParameterWrite(document, target, *write, error, source_extent);
 }
 
 auto ApplyEditorParameterValue(PipelineDocument& document, const EditorParameterTarget& target,
@@ -118,6 +119,18 @@ auto ApplyEditorParameterValue(PipelineDocument& document, const EditorParameter
   auto write = ParseEditorParameterValue(target.field_key, value, error);
   if (!write.has_value()) {
     return false;
+  }
+  if (target.owner_kind == EditorParameterOwnerKind::Document) {
+    const auto target_error = DescribeEditorParameterTargetError(target, target.field_key);
+    if (!target_error.empty()) {
+      return SetError(error, target_error);
+    }
+    try {
+      document.Geometry().ApplyUpdate(std::get<ImageGeometryUpdate>(*write));
+      return true;
+    } catch (const std::exception& ex) {
+      return SetError(error, ex.what());
+    }
   }
   return ApplyEditorParameterWrite(document, target, *write, error);
 }
@@ -147,7 +160,7 @@ auto ReadEditorParameterJson(const PipelineDocument& document, const EditorParam
         return true;
       }
       case EditorParameterOwnerKind::Document:
-        *json = document.Geometry().ToJson();
+        *json = document.Geometry().ToJson(target.field_key == "geometry_transform");
         return true;
       case EditorParameterOwnerKind::Develop: {
         const auto* develop = document.Develop();
@@ -431,7 +444,7 @@ auto CompleteCurrentPanelParameterTarget(const PipelineDocument& document, std::
     -> std::optional<EditorParameterTarget> {
   EditorParameterTarget target;
   target.field_key = std::move(field_key);
-  if (target.field_key == "crop_rotate") {
+  if (target.field_key == "crop_rotate" || target.field_key == "geometry_transform") {
     target.owner_kind = EditorParameterOwnerKind::Document;
     return target;
   }

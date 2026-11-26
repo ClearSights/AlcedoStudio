@@ -62,7 +62,8 @@ class PipelineDocument {
    */
   [[nodiscard]] auto Freeze() const -> std::shared_ptr<const PipelineDocument>;
 
-  [[nodiscard]] auto FormatVersion() const -> std::uint32_t { return format_version_; }
+  /// Stored revision, advanced while the document contains manual transform settings.
+  [[nodiscard]] auto FormatVersion() const -> std::uint32_t;
   [[nodiscard]] auto Geometry() -> ImageGeometryModel& { return geometry_; }
   [[nodiscard]] auto Geometry() const -> const ImageGeometryModel& { return geometry_; }
   [[nodiscard]] auto Graph() -> PipelineGraph& { return graph_; }

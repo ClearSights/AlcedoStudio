@@ -100,7 +100,8 @@ class EditorParameterCatalogAdapter : public QObject {
    *         is not valid.
    */
   Q_INVOKABLE QVariantMap  constrainCrop(const QVariantMap& cropState, const QString& driver,
-                                         int sourceWidth, int sourceHeight) const;
+                                         int sourceWidth, int sourceHeight,
+                                         bool useProjectiveCrop = false) const;
 
   /// Width / height of the locked crop frame oriented to the source, or undefined when the
   /// aspect is not locked.

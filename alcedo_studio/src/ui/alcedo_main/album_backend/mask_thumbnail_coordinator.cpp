@@ -141,11 +141,7 @@ auto MaskThumbnailCoordinator::MakeGeometry(const alcedo::PipelineDocument& docu
   if (full_reference_.Empty()) {
     return std::nullopt;
   }
-  alcedo::MaskThumbnailGeometry geometry;
-  geometry.full_reference    = full_reference_;
-  geometry.crop_rect         = document.Geometry().CropRect();
-  geometry.rotation_degrees  = document.Geometry().RotationDegrees();
-  return geometry;
+  return alcedo::MaskThumbnailGeometry{full_reference_, document.Geometry().RenderParams()};
 }
 
 void MaskThumbnailCoordinator::Request(const Target& target, alcedo::MaskThumbnailSpec spec) {

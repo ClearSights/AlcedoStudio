@@ -264,15 +264,18 @@ QString EditorParameterCatalogAdapter::modelParamsJson(const QString&     field,
 
 QVariantMap EditorParameterCatalogAdapter::constrainCrop(const QVariantMap& cropState,
                                                          const QString& driver, int sourceWidth,
-                                                         int sourceHeight) const {
+                                                         int  sourceHeight,
+                                                         bool useProjectiveCrop) const {
   std::string error;
   const auto  state = ValidCropState(cropState, &error);
   if (!state.has_value()) {
     qCWarning(alcedo::diag::editorLog, "EditorParameterCatalog: %s", error.c_str());
     return {};
   }
-  return ToVariantMap(EditorParameterCatalog::ConstrainCrop(*state, ParseCropDriver(driver),
-                                                            ToSource(sourceWidth, sourceHeight)));
+  auto source                = ToSource(sourceWidth, sourceHeight);
+  source.use_projective_crop = useProjectiveCrop;
+  return ToVariantMap(
+      EditorParameterCatalog::ConstrainCrop(*state, ParseCropDriver(driver), source));
 }
 
 QVariant EditorParameterCatalogAdapter::cropLockedAspectRatio(const QVariantMap& cropState,

@@ -12,6 +12,7 @@
 #include "edit/graph/develop_node_model.hpp"
 #include "edit/graph/drt_node_model.hpp"
 #include "edit/graph/image_geometry_model.hpp"
+#include "edit/geometry/types.hpp"
 #include "edit/operators/models/cat02_white_balance_model.hpp"
 #include "edit/operators/models/color_wheel_model.hpp"
 #include "edit/operators/models/curve_model.hpp"
@@ -139,6 +140,7 @@ using EditorParameterWrite =
  * @return false for an invalid target, type mismatch, or Model rejection.
  */
 auto ApplyEditorParameterWrite(PipelineDocument& document, const EditorParameterTarget& target,
-                               const EditorParameterWrite& write, std::string* error) -> bool;
+                               const EditorParameterWrite& write, std::string* error,
+                               Extent2D source_extent = {}) -> bool;
 
 }  // namespace alcedo

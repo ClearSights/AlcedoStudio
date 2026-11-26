@@ -509,7 +509,8 @@ ApplicationModuleHost::ApplicationModuleHost(QObject* parent, LifecycleObserver 
     return [pipeline = std::move(pipeline), element_id] {
       const auto snapshot = pipeline->AcquireCommittedSnapshot(element_id);
       const auto& geometry = snapshot->Document().Geometry();
-      return !geometry.CropRect().IsFullFrame() || geometry.RotationDegrees() != 0.0f;
+      return !geometry.CropRect().IsFullFrame() || geometry.RotationDegrees() != 0.0f ||
+             geometry.HasManualTransformSettings();
     };
   };
   placeholder_services.read_camera_preview = [](const std::filesystem::path& path) -> QImage {

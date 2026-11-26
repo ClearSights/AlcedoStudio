@@ -74,16 +74,13 @@ auto RenderMaskThumbnail(const MaskThumbnailSpec& spec) -> QImage {
   if (spec.geometry.full_reference.Empty()) {
     throw std::runtime_error("Mask thumbnail render requires a nonempty full reference");
   }
-  ImageGeometryParams image;
-  image.crop_rect        = spec.geometry.crop_rect;
-  image.rotation_degrees = spec.geometry.rotation_degrees;
   ResolutionRequest resolution;
   resolution.render_scale = 1.0f;
   resolution.max_edge     = kMaskThumbnailSize;
   resolution.quality      = RenderQuality::Preview;
   const auto geometry     = ResolveRenderGeometry(
-      MakeSourceGeometry(spec.geometry.full_reference, spec.geometry.full_reference), image,
-      ViewRequest{}, resolution, SamplingFootprint{});
+      MakeSourceGeometry(spec.geometry.full_reference, spec.geometry.full_reference),
+      spec.geometry.image, ViewRequest{}, resolution, SamplingFootprint{});
   if (geometry.render_extent.Empty() ||
       geometry.render_extent.width > kMaskThumbnailSize ||
       geometry.render_extent.height > kMaskThumbnailSize) {

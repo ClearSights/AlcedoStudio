@@ -206,7 +206,17 @@ auto FieldMap(const alcedo::EditorPanelFieldPresentation& field) -> QVariantMap 
           aspect.insert(QStringLiteral("width"), value.aspect_ratio.width);
           aspect.insert(QStringLiteral("height"), value.aspect_ratio.height);
           crop.insert(QStringLiteral("aspect_ratio"), aspect);
+          crop.insert(QStringLiteral("use_projective_crop"), value.use_projective_crop);
           map.insert(QStringLiteral("crop_rotate"), crop);
+        } else if constexpr (std::is_same_v<T, alcedo::ImageGeometryParams>) {
+          map.insert(QStringLiteral("geometry_transform"),
+                     QVariantMap{{QStringLiteral("horizontal"), value.horizontal},
+                                 {QStringLiteral("vertical"), value.vertical},
+                                 {QStringLiteral("aspect"), value.aspect},
+                                 {QStringLiteral("scale"), value.scale},
+                                 {QStringLiteral("offset_x"), value.offset_x},
+                                 {QStringLiteral("offset_y"), value.offset_y},
+                                 {QStringLiteral("constrain_crop"), value.constrain_crop}});
         }
       },
       field.value);

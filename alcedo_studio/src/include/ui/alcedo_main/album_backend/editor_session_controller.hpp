@@ -492,6 +492,8 @@ class EditorSessionController final : public QObject, public IEditorAdjustmentSu
   // Returns null when unbound or the object is not an EditorViewportItem.
   // Callers must re-resolve after PresentationBindingChanged / StateChanged.
   [[nodiscard]] auto presentation_frame_sink() const -> alcedo::IFrameSink*;
+  /// Full reference extent from the active viewport or headless presentation sink.
+  [[nodiscard]] auto PresentedSourceExtent() const -> alcedo::Extent2D;
   /// Coverage channel of the bound viewport (SM8.5), or null when unbound or headless. Same
   /// re-resolution rule as @ref presentation_frame_sink.
   [[nodiscard]] auto presentation_mask_coverage_sink() const -> alcedo::IMaskCoverageSink*;

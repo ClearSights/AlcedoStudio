@@ -486,7 +486,17 @@ auto ReadGeometry(const PipelineDocument& document, const EditorParameterTarget&
   value.rotation_degrees  = geometry.RotationDegrees();
   value.aspect_preset     = geometry.AspectPreset();
   value.aspect_ratio      = geometry.AspectRatio();
+  value.use_projective_crop = geometry.HasManualTransformSettings();
   return FinishField(target, std::move(value), out);
+}
+
+/// Project the owning geometry's manual fields for read-only panel and automation consumers.
+auto ReadGeometryTransform(const PipelineDocument& document, const EditorParameterTarget& target,
+                           EditorPanelFieldPresentation* out, std::string* error) -> bool {
+  if (target.owner_kind != EditorParameterOwnerKind::Document) {
+    return SetError(error, "Geometry transform requires a document target");
+  }
+  return FinishField(target, ImageGeometryParams{document.Geometry().RenderParams()}, out);
 }
 
 auto ReadThroughTable(const PipelineDocument& document, const EditorParameterTarget& target,
@@ -563,6 +573,7 @@ auto EditorPanelAdapterTable::Production() -> EditorPanelAdapterTable {
     table.Add({"input_profile", "raw", &ReadInputProfile});
     table.Add({"camera_profile_file", "raw", &ReadCameraProfileFile});
     table.Add({"crop_rotate", "geometry", &ReadGeometry});
+    table.Add({"geometry_transform", "geometry", &ReadGeometryTransform});
     return table;
   }();
   return kProduction;

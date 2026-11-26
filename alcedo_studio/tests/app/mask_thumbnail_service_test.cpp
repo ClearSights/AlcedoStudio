@@ -83,9 +83,7 @@ auto QuantizeToR8(float coverage) -> std::uint8_t {
 }
 
 auto IndependentPixel(const MaskThumbnailSpec& spec, int x, int y) -> std::uint8_t {
-  ImageGeometryParams image;
-  image.crop_rect        = spec.geometry.crop_rect;
-  image.rotation_degrees = spec.geometry.rotation_degrees;
+  const auto&       image = spec.geometry.image;
   ResolutionRequest resolution;
   resolution.render_scale = 1.0f;
   resolution.max_edge     = kMaskThumbnailSize;
@@ -336,7 +334,7 @@ TEST(MaskThumbnailService, CropChangeMissesAndEvictedQImageHandleStaysValid) {
   QObject receiver;
   auto uncropped = MakeSingleMaskThumbnailSpec(SquareGeometry(), MakeRadial(MaskId{"mask.radial"}));
   auto cropped_geometry = SquareGeometry();
-  cropped_geometry.crop_rect = NormalizedRect{0.1f, 0.1f, 0.8f, 0.8f};
+  cropped_geometry.image.crop_rect = NormalizedRect{0.1f, 0.1f, 0.8f, 0.8f};
   const auto cropped =
       MakeSingleMaskThumbnailSpec(cropped_geometry, MakeRadial(MaskId{"mask.radial"}));
   ASSERT_NE(uncropped, cropped);
@@ -352,6 +350,21 @@ TEST(MaskThumbnailService, CropChangeMissesAndEvictedQImageHandleStaysValid) {
   EXPECT_FALSE(service.Cached(uncropped).has_value());
   EXPECT_EQ(retained.width(), 128);
   EXPECT_EQ(qGray(retained.pixel(64, 64)), 255);
+}
+
+TEST(MaskThumbnailEvaluate, OffsetMovesCoverageAndChangesThumbnailKey) {
+  auto       geometry           = SquareGeometry();
+  const auto mask               = MakeRadial(MaskId{"mask.radial"});
+  const auto initial            = MakeSingleMaskThumbnailSpec(geometry, mask);
+  geometry.image.offset_x       = 60.0;
+  geometry.image.constrain_crop = false;
+  const auto shifted            = MakeSingleMaskThumbnailSpec(geometry, mask);
+  EXPECT_NE(initial.key, shifted.key);
+  EXPECT_NE(initial, shifted);
+  const auto image = RenderMaskThumbnail(shifted);
+  ASSERT_FALSE(image.isNull());
+  EXPECT_EQ(qGray(image.pixel(16, 64)), 0);
+  EXPECT_EQ(qGray(image.pixel(83, 64)), 255);
 }
 
 }  // namespace alcedo

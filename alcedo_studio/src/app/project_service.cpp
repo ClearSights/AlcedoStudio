@@ -7,6 +7,7 @@
 #include <QCoreApplication>
 #include <QDir>
 #include <QMetaObject>
+#include <QSaveFile>
 #include <QSettings>
 #include <QThread>
 #include <algorithm>
@@ -34,6 +35,24 @@ namespace alcedo {
 namespace {
 
 using namespace std::chrono_literals;
+
+/// Publish the workspace metadata atomically so a prior reader can reject this revision.
+void WriteProjectMetadata(const std::filesystem::path& path, const nlohmann::json& metadata) {
+  QSaveFile  file(QString::fromStdU16String(path.u16string()));
+  const auto bytes = QByteArray::fromStdString(metadata.dump(4));
+  if (!file.open(QIODevice::WriteOnly) || file.write(bytes) != bytes.size() || !file.commit()) {
+    throw std::runtime_error("Failed to write project metadata: " +
+                             file.errorString().toStdString());
+  }
+}
+
+void SetProjectMetadataVersion(nlohmann::json& metadata) {
+  metadata["project_file_version"] = std::string(project_pack::kProjectFileVersion);
+  metadata["project_file_min_supported_version"] =
+      std::string(project_pack::kMinSupportedProjectFileVersion);
+  metadata["project_file_max_supported_version"] =
+      std::string(project_pack::kMaxSupportedProjectFileVersion);
+}
 
 constexpr auto kAiSidecarRuntimeStartupTimeout = 60s;
 constexpr auto kJinaClipProfileId              = "jina-clip-v2-int8-multilingual";
@@ -430,21 +449,12 @@ void ProjectService::SaveProject(const std::filesystem::path& meta_path) {
   metadata["db_path"]              = conv::ToBytes(db_path_.wstring());
   metadata["meta_path"]            = conv::ToBytes(meta_path_.wstring());
   metadata["project_uuid"]         = project_uuid_;
-  metadata["project_file_version"] = std::string(project_pack::kProjectFileVersion);
-  metadata["project_file_min_supported_version"] =
-      std::string(project_pack::kMinSupportedProjectFileVersion);
-  metadata["project_file_max_supported_version"] =
-      std::string(project_pack::kMaxSupportedProjectFileVersion);
+  SetProjectMetadataVersion(metadata);
   metadata["start_id"]            = sleeve_service_->GetCurrentID();
   metadata["image_pool_start_id"] = pool_service_->GetCurrentID();
   metadata["data_summary"]        = ComputeProjectDataSummary(*storage_);
 
-  std::ofstream file(meta_path_);
-  if (!file.is_open()) {
-    throw std::runtime_error("Failed to open meta file for writing");
-  }
-  file << metadata.dump(4);
-  file.close();
+  WriteProjectMetadata(meta_path_, metadata);
 }
 
 void ProjectService::LoadProject(const std::filesystem::path& meta_path) {
@@ -465,6 +475,7 @@ void ProjectService::LoadProject(const std::filesystem::path& meta_path) {
 
   nlohmann::json metadata;
   file >> metadata;
+  file.close();
 
   if (!metadata.contains("project_file_version") ||
       !metadata.at("project_file_version").is_string()) {
@@ -609,6 +620,13 @@ void ProjectService::LoadProject(const std::filesystem::path& meta_path) {
   browse_service_  = std::make_shared<AlbumBrowseService>(sleeve_service_, filter_service_);
   package_service_ = std::make_shared<ProjectPackageService>();
   mount_service_   = std::make_shared<MountService>(storage_, sleeve_service_, pool_service_);
+  // An edit can reach the recovery journal before the packed project is saved. Advance the
+  // workspace metadata before exposing the services that can write that journal.
+  if (metadata.at("project_file_version").get_ref<const std::string&>() !=
+      project_pack::kProjectFileVersion) {
+    SetProjectMetadataVersion(metadata);
+    WriteProjectMetadata(meta_path, metadata);
+  }
 }
 
 void ProjectService::RecreateSleeveService(sl_element_id_t start_id) {

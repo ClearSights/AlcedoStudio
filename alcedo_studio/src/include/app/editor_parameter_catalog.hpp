@@ -101,6 +101,8 @@ struct EditorParameterProperty {
 struct EditorParameterSource {
   std::uint32_t width  = 0;
   std::uint32_t height = 0;
+  /// The document owner applies coverage after the crop aspect and dimensions are resolved.
+  bool          use_projective_crop = false;
 };
 
 /// Input change that the crop constraint follows (the control that the user changed).
@@ -210,6 +212,7 @@ class EditorParameterCatalog {
    * they replace the matching properties of @p current_model_json (the field default when it is
    * null), the entry constraint runs, and the result is one complete write. The crop constraint
    * can move or resize the frame (aspect lock, rotated source); the written value is the result.
+   * The manual transform field emits only the supplied properties for the geometry owner.
    * A Model field value is the complete Model JSON; ParseEditorParameterWrite checks its shape.
    *
    * @param ui_value Number for a scalar field, object for an object or Model field.

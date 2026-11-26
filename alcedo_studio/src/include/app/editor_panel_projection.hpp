@@ -156,6 +156,7 @@ struct EditorPanelGeometryValue {
   float           rotation_degrees = 0.0f;
   std::string     aspect_preset;
   CropAspectRatio aspect_ratio{};
+  bool            use_projective_crop = false;
 };
 
 using EditorPanelFieldValue =
@@ -164,7 +165,7 @@ using EditorPanelFieldValue =
                  EditorPanelColorTempValue, EditorPanelRawDecodeValue, EditorPanelOdtValue,
                  EditorPanelLensValue, EditorPanelGeometryValue, EditorPanelGradeWhiteBalanceValue,
                  EditorPanelInputProfileValue, EditorPanelFilmFormatValue,
-                 EditorPanelCameraProfileFileValue>;
+                 EditorPanelCameraProfileFileValue, ImageGeometryParams>;
 
 /**
  * @brief One panel field copied from a Graph Node Model.

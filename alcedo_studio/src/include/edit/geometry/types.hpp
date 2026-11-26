@@ -158,6 +158,8 @@ struct NormalizedRect {
   float w = 1.0f;
   float h = 1.0f;
 
+  auto               operator==(const NormalizedRect&) const -> bool = default;
+
   [[nodiscard]] auto IsFullFrame() const -> bool {
     return x == 0.0f && y == 0.0f && w == 1.0f && h == 1.0f;
   }

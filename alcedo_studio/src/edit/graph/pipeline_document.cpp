@@ -98,6 +98,8 @@ auto ReadDocumentGeometry(const nlohmann::json& json, std::uint32_t format_versi
     -> ImageGeometryModel {
   switch (format_version) {
     case kCropRotateDocumentFormatVersion:
+      return ImageGeometryModel::FromJson(json, false);
+    case kPipelineDocumentFormatVersion:
       return ImageGeometryModel::FromJson(json);
     default:
       throw std::runtime_error("Unsupported pipeline document geometry format_version");
@@ -378,13 +380,19 @@ auto PipelineDocument::ToJson() const -> nlohmann::json {
                      {"to", nlohmann::json::array({std::string{edge.to_node.Value()},
                                                    std::string{edge.to_port.Value()}})}});
   }
-  return {{"format_version", format_version_},
-          {"geometry", geometry_.ToJson()},
-          {"next_color_grade_name_number", next_color_grade_name_number_},
-          {"default_grade_id", default_grade_id_.Empty() ? nlohmann::json(nullptr)
-                                                        : nlohmann::json(default_grade_id_.Value())},
-          {"nodes", std::move(nodes)},
-          {"edges", std::move(edges)}};
+  const auto version = FormatVersion();
+  return {
+      {"format_version", version},
+      {"geometry", geometry_.ToJson(version != kCropRotateDocumentFormatVersion)},
+      {"next_color_grade_name_number", next_color_grade_name_number_},
+      {"default_grade_id", default_grade_id_.Empty() ? nlohmann::json(nullptr)
+                                                     : nlohmann::json(default_grade_id_.Value())},
+      {"nodes", std::move(nodes)},
+      {"edges", std::move(edges)}};
+}
+
+auto PipelineDocument::FormatVersion() const -> std::uint32_t {
+  return geometry_.HasManualTransformSettings() ? kPipelineDocumentFormatVersion : format_version_;
 }
 
 auto PipelineDocument::FromJson(const nlohmann::json&        json,

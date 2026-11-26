@@ -186,7 +186,8 @@ void ApplyDrtPostWrite(IOperatorModel& model, std::string_view field,
 }  // namespace
 
 auto ApplyEditorParameterWrite(PipelineDocument& document, const EditorParameterTarget& target,
-                               const EditorParameterWrite& write, std::string* error) -> bool {
+                               const EditorParameterWrite& write, std::string* error,
+                               Extent2D source_extent) -> bool {
   const auto target_error = DescribeEditorParameterTargetError(target, target.field_key);
   if (!target_error.empty()) {
     return SetError(error, target_error);
@@ -207,7 +208,21 @@ auto ApplyEditorParameterWrite(PipelineDocument& document, const EditorParameter
         return true;
       }
       case EditorParameterOwnerKind::Document: {
-        document.Geometry().ApplyUpdate(RequireWrite<ImageGeometryUpdate>(write, target.field_key));
+        const auto& update = RequireWrite<ImageGeometryUpdate>(write, target.field_key);
+        if (target.field_key == "crop_rotate") {
+          if (update.horizontal || update.vertical || update.aspect || update.scale ||
+              update.offset_x || update.offset_y || update.constrain_crop) {
+            return SetError(error, "Manual transform fields require geometry_transform");
+          }
+        } else if (target.field_key == "geometry_transform") {
+          if (update.crop_rect || update.rotation_degrees || update.aspect_preset ||
+              update.aspect_ratio) {
+            return SetError(error, "Crop and straightening fields require crop_rotate");
+          }
+        } else {
+          return SetError(error, "Unsupported document geometry field: " + target.field_key);
+        }
+        document.Geometry().ApplyResolvedUpdate(update, source_extent);
         return true;
       }
       case EditorParameterOwnerKind::Develop: {

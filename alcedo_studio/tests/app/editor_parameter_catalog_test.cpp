@@ -390,6 +390,7 @@ TEST(EditorParameterCatalogTest, ObjectFieldsAreKnownFieldKeysWithPanels) {
       {"input_profile", "raw"},
       {"lens_calib", "raw"},
       {"crop_rotate", "geometry"},
+      {"geometry_transform", "geometry"},
       {"odt", "display"},
       {"color_temp", "raw"},
       {"grade_white_balance", "look"},
@@ -412,6 +413,28 @@ TEST(EditorParameterCatalogTest, ObjectFieldsAreKnownFieldKeysWithPanels) {
         << entry.field << ": " << error;
   }
   EXPECT_EQ(listed, expected);
+}
+
+TEST(EditorParameterCatalogTest, GeometryTransformConvertsOnlyRequestedFields) {
+  const auto* entry = EditorParameterCatalog::Find("geometry_transform");
+  ASSERT_NE(entry, nullptr);
+  EXPECT_EQ(entry->properties.size(), 7u);
+  const auto defaults = EditorParameterCatalog::UiDefault(*entry);
+  EXPECT_EQ(defaults.at("scale"), 100.0);
+  EXPECT_EQ(defaults.at("constrain_crop"), true);
+  EXPECT_EQ(defaults.at("horizontal"), 0.0);
+  std::string          error;
+  const nlohmann::json patch{{"offset_y", -28.4}, {"constrain_crop", false}};
+  const auto           model =
+      EditorParameterCatalog::ToModelJson(entry->field, patch, {{"scale", 120.0}}, &error);
+  ASSERT_TRUE(model) << error;
+  EXPECT_EQ(model->at("geometry_transform"), patch);
+  EXPECT_FALSE(
+      EditorParameterCatalog::ToModelJson(entry->field, {{"vertical", 100.001}}, {}, &error));
+  EXPECT_NE(error.find("vertical"), std::string::npos);
+  EXPECT_FALSE(
+      EditorParameterCatalog::ToModelJson(entry->field, {{"constrain_crop", 0}}, {}, &error));
+  EXPECT_NE(error.find("constrain_crop"), std::string::npos);
 }
 
 TEST(EditorParameterCatalogTest, RawDecodeDefaultsMatchPreviousPanelDefaults) {

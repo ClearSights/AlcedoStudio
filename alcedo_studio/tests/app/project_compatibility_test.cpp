@@ -417,7 +417,7 @@ TEST(ProjectCompatibilityTest, AcceptedProjectKeepsCanonicalRootBytesAndCommitHa
 }
 
 // #769: a 0.10.0 project opens, gains the library mark columns with empty marks, keeps its root
-// ids, stores marks, and saves as the current version (0.12.0 since #983).
+// ids, stores marks, and saves as the current version (0.13.0).
 TEST(ProjectCompatibilityTest, Version010ProjectGainsLibraryMarksAndKeepsRootIds) {
   const test::TestTempDirectory temp_dir;
   TimeProvider::Refresh();
@@ -447,6 +447,7 @@ TEST(ProjectCompatibilityTest, Version010ProjectGainsLibraryMarksAndKeepsRootIds
   const auto image_id = expected.at("image_id").get<image_id_t>();
   {
     ProjectService project(db_path, meta_path);
+    EXPECT_EQ(ReadProjectFileVersion(meta_path), "0.13.0");
     auto           image_pool = project.GetImagePoolService();
     EXPECT_EQ(image_pool->Read<int>(image_id,
                                     [](const std::shared_ptr<Image>& image) {
@@ -465,7 +466,7 @@ TEST(ProjectCompatibilityTest, Version010ProjectGainsLibraryMarksAndKeepsRootIds
     project.SaveProject(meta_path);
   }
 
-  EXPECT_EQ(ReadProjectFileVersion(meta_path), "0.12.0");
+  EXPECT_EQ(ReadProjectFileVersion(meta_path), "0.13.0");
   EXPECT_EQ(QueryDatabaseFileInt64(db_path, kImageMarkColumnCountSql), 2);
   EXPECT_EQ(QueryDatabaseFileInt64(db_path, kMountedElementCountSql), 0);
   EXPECT_EQ(QueryDatabaseFileInt64(
@@ -510,7 +511,7 @@ constexpr const char* kElementIdsSql =
 
 // #983 (Mounted Folder Plan, MF1): a 0.11.0 project opens, gains Element.mount_id with NULL for
 // each element and the empty mount tables, keeps the edit history root id of its image and its
-// library marks, and saves as 0.12.0. tests/resources/compat/raw_project_016c3535b.alcd was
+// library marks, and saves as 0.13.0. tests/resources/compat/raw_project_016c3535b.alcd was
 // written by build 016c3535b (project file 0.11.0): it opened raw_project_abdb000c8.alcd, set the
 // Green label on image 1, saved, and packed the project.
 TEST(ProjectCompatibilityTest, Version011ProjectGainsMountColumnAndKeepsRootIds) {
@@ -579,7 +580,7 @@ TEST(ProjectCompatibilityTest, Version011ProjectGainsMountColumnAndKeepsRootIds)
     project.SaveProject(meta_path);
   }
 
-  EXPECT_EQ(ReadProjectFileVersion(meta_path), "0.12.0");
+  EXPECT_EQ(ReadProjectFileVersion(meta_path), "0.13.0");
   EXPECT_EQ(QueryDatabaseFileInt64(db_path, kMountColumnCountSql), 1);
   EXPECT_EQ(QueryDatabaseFileInt64(db_path, kMountTableCountSql), 2);
   EXPECT_EQ(QueryDatabaseFileInt64(db_path, kMountedElementCountSql), 0);

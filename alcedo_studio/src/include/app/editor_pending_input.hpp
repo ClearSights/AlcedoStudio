@@ -43,6 +43,7 @@ struct EditorPendingFieldChange {
   EditorParameterTarget target{};
   EditorParameterWrite  write{};
   bool                  enabled = true;
+  Extent2D              source_extent{};
 };
 
 /**

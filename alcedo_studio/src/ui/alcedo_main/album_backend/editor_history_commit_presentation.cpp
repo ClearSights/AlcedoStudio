@@ -213,6 +213,8 @@ auto DisplayName(std::optional<EditorAdjustmentField> field) -> QString {
       return QStringLiteral("Halation");
     case EditorAdjustmentField::CropRotate:
       return QStringLiteral("Crop / Rotate");
+    case EditorAdjustmentField::GeometryTransform:
+      return QStringLiteral("Transform");
     case EditorAdjustmentField::RawDecode:
       return QStringLiteral("RAW Decode");
     case EditorAdjustmentField::LensCalibration:
@@ -271,6 +273,7 @@ auto IconResource(std::optional<EditorAdjustmentField> field) -> QString {
     case EditorAdjustmentField::Drt:
       return QStringLiteral(":/history_icons/monitor.svg");
     case EditorAdjustmentField::CropRotate:
+    case EditorAdjustmentField::GeometryTransform:
       return QStringLiteral(":/history_icons/crop.svg");
     case EditorAdjustmentField::RawDecode:
       return QStringLiteral(":/history_icons/scan-search.svg");
@@ -798,6 +801,8 @@ auto BuildSummary(std::optional<EditorAdjustmentField> field, const nlohmann::js
       return SummarizeOdt(after, before);
     case EditorAdjustmentField::CropRotate:
       return SummarizeCropRotate(after, before);
+    case EditorAdjustmentField::GeometryTransform:
+      return {};
     case EditorAdjustmentField::GradeWhiteBalance:
       break;
   }

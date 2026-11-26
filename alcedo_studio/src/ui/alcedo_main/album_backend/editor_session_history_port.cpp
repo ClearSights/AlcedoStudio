@@ -88,7 +88,11 @@ auto EditorSessionHistoryPort::CaptureAdjustmentBeforePreview(
     const alcedo::EditorHistoryGuardHandle& guard, const alcedo::EditorAdjustmentPatch& patch,
     std::string* error) -> bool {
   std::scoped_lock lock(mutex_);
-  return PublishAfterWrite(guard, mutation_->CaptureAdjustmentBeforePreview(guard, patch, error));
+  const bool       applied = mutation_->CaptureAdjustmentBeforePreview(guard, patch, error);
+  if (patch.settled && patch.field_key == "geometry_transform") {
+    return applied;  // Publish the complete settled change only after the journal accepts it.
+  }
+  return PublishAfterWrite(guard, applied);
 }
 
 auto EditorSessionHistoryPort::RestoreUnsettledPreview(

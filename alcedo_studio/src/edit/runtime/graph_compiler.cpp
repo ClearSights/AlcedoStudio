@@ -76,13 +76,10 @@ auto EstimatePeakTransientBytes(const DevelopCompileSource& source) -> std::size
  */
 auto ImageParamsForRequest(const PipelineDocument& document, DocumentGeometryUse use)
     -> ImageGeometryParams {
-  ImageGeometryParams params;
   if (use == DocumentGeometryUse::ReferenceSource) {
-    return params;
+    return {};
   }
-  params.rotation_degrees = document.Geometry().RotationDegrees();
-  params.crop_rect = document.Geometry().CropRect();
-  return params;
+  return document.Geometry().RenderParams();
 }
 
 auto MixU64(std::uint64_t hash, std::uint64_t value) -> std::uint64_t {

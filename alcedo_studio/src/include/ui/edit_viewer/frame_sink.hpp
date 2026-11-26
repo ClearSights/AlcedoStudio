@@ -11,6 +11,7 @@
 
 #include "edit/frame_presentation_types.hpp"
 #include "edit/geometry/resolved_render_geometry.hpp"
+#include "edit/geometry/types.hpp"
 #include "edit/operators/utils/color_utils.hpp"
 
 namespace alcedo {
@@ -193,6 +194,9 @@ class IFrameSink {
   // Get the size of the frame
   virtual int  GetWidth() const  = 0;
   virtual int  GetHeight() const = 0;
+
+  /// Full reference extent of the last presented image, or empty before presentation.
+  [[nodiscard]] virtual auto GetPresentedSourceExtent() const -> Extent2D { return {}; }
 
   // Returns ROI parameters derived from the current viewer transform (if any).
   virtual auto GetViewportRenderRegion() const -> std::optional<ViewportRenderRegion> {

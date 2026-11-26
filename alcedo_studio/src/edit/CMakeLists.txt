@@ -90,6 +90,7 @@ set(EDIT_GRAPH_SRCS
     ${ALCEDO_SRC_ROOT}/edit/graph/develop_node_model.cpp
     ${ALCEDO_SRC_ROOT}/edit/graph/develop_raster_input.cpp
     ${ALCEDO_SRC_ROOT}/edit/graph/drt_node_model.cpp
+    ${ALCEDO_SRC_ROOT}/edit/graph/image_geometry_model.cpp
     ${ALCEDO_SRC_ROOT}/edit/graph/pipeline_document.cpp
     ${ALCEDO_SRC_ROOT}/edit/graph/pipeline_graph.cpp
     ${ALCEDO_SRC_ROOT}/edit/graph/pipeline_graph_commands.cpp

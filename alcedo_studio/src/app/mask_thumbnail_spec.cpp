@@ -5,11 +5,14 @@
 #include "app/mask_thumbnail_spec.hpp"
 
 #include <algorithm>
+#include <bit>
 #include <cmath>
 #include <cstring>
 #include <stdexcept>
 #include <string>
 #include <utility>
+
+#include "edit/geometry/projective_transform.hpp"
 
 namespace alcedo {
 namespace {
@@ -34,6 +37,10 @@ void MixFloat(std::uint64_t& hash, float value) {
   static_assert(sizeof(bits) == sizeof(value));
   std::memcpy(&bits, &value, sizeof(bits));
   MixU32(hash, bits);
+}
+
+void MixTransformNumber(std::uint64_t& hash, double value) {
+  MixHash(hash, std::bit_cast<std::uint64_t>(value == 0.0 ? 0.0 : value));
 }
 
 [[nodiscard]] auto RadialParamsEqual(const RadialMaskParams& a, const RadialMaskParams& b) -> bool {
@@ -178,12 +185,6 @@ void MixLinear(std::uint64_t& hash, const LinearGradientMaskParams& params) {
 
 }  // namespace
 
-auto MaskThumbnailGeometry::operator==(const MaskThumbnailGeometry& other) const -> bool {
-  return full_reference == other.full_reference && crop_rect.x == other.crop_rect.x &&
-         crop_rect.y == other.crop_rect.y && crop_rect.w == other.crop_rect.w &&
-         crop_rect.h == other.crop_rect.h && rotation_degrees == other.rotation_degrees;
-}
-
 auto MaskThumbnailLayer::operator==(const MaskThumbnailLayer& other) const -> bool {
   if (kind != other.kind || enabled != other.enabled || invert != other.invert ||
       opacity != other.opacity) {
@@ -209,12 +210,13 @@ auto CanonicalizeMaskThumbnailSpec(MaskThumbnailSpec spec) -> MaskThumbnailSpec 
   if (spec.geometry.full_reference.Empty()) {
     throw std::invalid_argument("Mask thumbnail geometry requires a nonempty full reference");
   }
-  spec.geometry.crop_rect.x = CanonicalFloat(spec.geometry.crop_rect.x, "crop_rect.x");
-  spec.geometry.crop_rect.y = CanonicalFloat(spec.geometry.crop_rect.y, "crop_rect.y");
-  spec.geometry.crop_rect.w = CanonicalFloat(spec.geometry.crop_rect.w, "crop_rect.w");
-  spec.geometry.crop_rect.h = CanonicalFloat(spec.geometry.crop_rect.h, "crop_rect.h");
-  spec.geometry.rotation_degrees =
-      CanonicalFloat(spec.geometry.rotation_degrees, "rotation_degrees");
+  auto& image            = spec.geometry.image;
+  image.crop_rect.x      = CanonicalFloat(image.crop_rect.x, "crop_rect.x");
+  image.crop_rect.y      = CanonicalFloat(image.crop_rect.y, "crop_rect.y");
+  image.crop_rect.w      = CanonicalFloat(image.crop_rect.w, "crop_rect.w");
+  image.crop_rect.h      = CanonicalFloat(image.crop_rect.h, "crop_rect.h");
+  image.rotation_degrees = CanonicalFloat(image.rotation_degrees, "rotation_degrees");
+  (void)ResolveCropPlaneTransform(image);
   for (auto& layer : spec.layers) {
     layer.opacity = CanonicalFloat(layer.opacity, "opacity");
     if (layer.kind == MaskSourceKind::Radial) {
@@ -241,11 +243,19 @@ auto CanonicalizeMaskThumbnailSpec(MaskThumbnailSpec spec) -> MaskThumbnailSpec 
   MixU32(hash, static_cast<std::uint32_t>(spec.kind));
   MixU32(hash, spec.geometry.full_reference.width);
   MixU32(hash, spec.geometry.full_reference.height);
-  MixFloat(hash, spec.geometry.crop_rect.x);
-  MixFloat(hash, spec.geometry.crop_rect.y);
-  MixFloat(hash, spec.geometry.crop_rect.w);
-  MixFloat(hash, spec.geometry.crop_rect.h);
-  MixFloat(hash, spec.geometry.rotation_degrees);
+  MixFloat(hash, image.crop_rect.x);
+  MixFloat(hash, image.crop_rect.y);
+  MixFloat(hash, image.crop_rect.w);
+  MixFloat(hash, image.crop_rect.h);
+  MixFloat(hash, image.rotation_degrees);
+  MixU32(hash, static_cast<std::uint32_t>(image.output_frame));
+  MixTransformNumber(hash, image.horizontal);
+  MixTransformNumber(hash, image.vertical);
+  MixTransformNumber(hash, image.aspect);
+  MixTransformNumber(hash, image.scale);
+  MixTransformNumber(hash, image.offset_x);
+  MixTransformNumber(hash, image.offset_y);
+  MixBool(hash, image.constrain_crop);
   MixHash(hash, spec.layers.size());
   for (const auto& layer : spec.layers) {
     MixU32(hash, static_cast<std::uint32_t>(layer.kind));

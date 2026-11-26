@@ -203,7 +203,7 @@ TEST_F(ProjectServiceUUIDTests, CopyPreservesUUID) {
   }
 }
 
-/// A new project saves the current metadata version (0.12.0) and its database has no legacy
+/// A new project saves the current metadata version (0.13.0) and its database has no legacy
 /// edit-history or recovery-metadata table. The Mini-Git tables are still created.
 TEST_F(ProjectServiceUUIDTests, NewProjectWritesCurrentVersionAndHasNoEditHistoryTable) {
   {
@@ -216,9 +216,9 @@ TEST_F(ProjectServiceUUIDTests, NewProjectWritesCurrentVersionAndHasNoEditHistor
   nlohmann::json metadata;
   in >> metadata;
   in.close();
-  EXPECT_EQ(metadata.at("project_file_version").get<std::string>(), "0.12.0");
+  EXPECT_EQ(metadata.at("project_file_version").get<std::string>(), "0.13.0");
   EXPECT_EQ(metadata.at("project_file_min_supported_version").get<std::string>(), "0.10.0");
-  EXPECT_EQ(metadata.at("project_file_max_supported_version").get<std::string>(), "0.12.0");
+  EXPECT_EQ(metadata.at("project_file_max_supported_version").get<std::string>(), "0.13.0");
 
   // Split literals keep the archived type names out of the source tree.
   const std::string legacy_tables = std::string("('Edit") + "History', 'EditorRecovery" +
@@ -233,23 +233,24 @@ TEST_F(ProjectServiceUUIDTests, NewProjectWritesCurrentVersionAndHasNoEditHistor
             5);
 }
 
-/// #983: a project of a newer file version than this build writes (0.13.0) is refused on open,
+/// #983: a project of a newer file version than this build writes (0.14.0) is refused on open,
 /// from the workspace and from a packed `.alcd`, and its files stay unchanged.
 TEST_F(ProjectServiceUUIDTests, ProjectFileVersionAboveTheSupportedRangeIsRefusedOnOpen) {
   {
     ProjectService project(db_path_, meta_path_, ProjectOpenMode::kCreateNew);
     project.SaveProject(meta_path_);
   }
-  RewriteProjectFileVersion(meta_path_, "0.13.0");
+  RewriteProjectFileVersion(meta_path_, "0.14.0");
   std::string meta_before;
   ASSERT_TRUE(project_pack::ReadFileBytes(meta_path_, &meta_before));
 
   try {
     ProjectService project(db_path_, meta_path_);
-    FAIL() << "a 0.13.0 project opened";
+    FAIL() << "a 0.14.0 project opened";
   } catch (const std::runtime_error& error) {
-    EXPECT_NE(std::string(error.what()).find("'0.13.0' is not supported (supported 0.10.0 to "
-                                             "0.12.0)"),
+    EXPECT_NE(std::string(error.what())
+                  .find("'0.14.0' is not supported (supported 0.10.0 to "
+                        "0.13.0)"),
               std::string::npos)
         << error.what();
   }
@@ -257,8 +258,8 @@ TEST_F(ProjectServiceUUIDTests, ProjectFileVersionAboveTheSupportedRangeIsRefuse
   ASSERT_TRUE(project_pack::ReadFileBytes(meta_path_, &meta_after));
   EXPECT_EQ(meta_after, meta_before);
 
-  const auto      packed    = temp_dir_ / "project_version_0130.alcd";
-  const auto      workspace = temp_dir_ / "project_version_0130_workspace";
+  const auto      packed    = temp_dir_ / "project_version_0140.alcd";
+  const auto      workspace = temp_dir_ / "project_version_0140_workspace";
   std::error_code ec;
   std::filesystem::remove(packed, ec);
   std::filesystem::remove_all(workspace, ec);

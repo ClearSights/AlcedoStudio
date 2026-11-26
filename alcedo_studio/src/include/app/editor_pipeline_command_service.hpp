@@ -36,7 +36,8 @@ namespace alcedo {
  * @return false for an invalid target or parameter; no history or persistence is performed.
  */
 auto ApplyEditorParameterPatch(PipelineDocument& document, const EditorParameterTarget& target,
-                               const nlohmann::json& params, std::string* error) -> bool;
+                               const nlohmann::json& params, std::string* error,
+                               Extent2D source_extent = {}) -> bool;
 
 /**
  * @brief Apply a complete stored value of one field to the live document owner, as a history head

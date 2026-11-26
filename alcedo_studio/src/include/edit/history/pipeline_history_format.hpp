@@ -12,9 +12,8 @@ namespace alcedo {
 /**
  * @brief Published format identities for pipeline-document history.
  *
- * One incompatible project release. Loaders accept only these values. Older
- * project, document, history, root, checkpoint, WAL, and transfer identities
- * are rejected without conversion.
+ * Readers accept the revisions declared below. Project metadata 0.13.0 and document revision 8
+ * add manual transforms and the crop constraint. Older documents keep their canonical encoding.
  *
  * Project metadata 0.10.0 stores no DNG color profile tables: the Image metadata
  * and the Develop JSON keep only a profile fingerprint, and the pipeline service
@@ -36,26 +35,26 @@ namespace alcedo {
  *
  * | Identity | Constant | Value |
  * | --- | --- | --- |
- * | Project metadata | @ref kProjectFileVersion | 0.12.0 |
+ * | Project metadata | @ref kProjectFileVersion | 0.13.0 |
  * | Packed project header | @ref kPackedProjectFormatVersion | 7 |
- * | Pipeline document JSON | @ref kPipelineDocumentFormatVersion | 7 |
+ * | Pipeline document JSON | @ref kPipelineDocumentFormatVersion | 8 |
  * | Image edit schema | @ref kImageEditSchemaVersion | 5 |
  * | Commit hash input | @ref kCommitFormatVersion | 5 |
  * | Chain-fold hash input | @ref kChainFormatVersion | 5 |
  * | Typed batch payload | @ref kPipelineEditBatchFormatVersion | 4 |
  * | Immutable root serialized pipeline state | @ref kRootStateFormatVersion | 5 |
  * | Checkpoint serialized pipeline state | @ref kCheckpointStateFormatVersion | 5 |
- * | Mini-Git WAL record | @ref kMiniGitJournalRecordFormatVersion | 6 |
+ * | Mini-Git WAL record | @ref kMiniGitJournalRecordFormatVersion | 7 |
  * | Transfer package schema | @ref kAdjustmentTransferSchema | alcedo.adjustment_transfer.v7 |
  */
 
 /// Project metadata version written by SaveProject and required on open.
-inline constexpr std::string_view kProjectFileVersion = "0.12.0";
+inline constexpr std::string_view kProjectFileVersion              = "0.13.0";
 /// Inclusive lower bound of accepted project metadata: 0.10.0 opens and gains the mark columns
 /// and the mounted folder records.
 inline constexpr std::string_view kMinSupportedProjectFileVersion = "0.10.0";
 /// Inclusive upper bound of accepted project metadata. Equals @ref kProjectFileVersion.
-inline constexpr std::string_view kMaxSupportedProjectFileVersion = "0.12.0";
+inline constexpr std::string_view kMaxSupportedProjectFileVersion  = kProjectFileVersion;
 /// Packed `.alcd` header version. Independent of the metadata string.
 inline constexpr std::uint32_t kPackedProjectFormatVersion = 7;
 
@@ -63,12 +62,12 @@ inline constexpr std::uint32_t kPackedProjectFormatVersion = 7;
 inline constexpr std::uint32_t    kCropRotateDocumentFormatVersion = 7;
 
 /// `PipelineDocument` JSON `format_version` for newly created documents.
-inline constexpr std::uint32_t    kPipelineDocumentFormatVersion = kCropRotateDocumentFormatVersion;
+inline constexpr std::uint32_t    kPipelineDocumentFormatVersion   = 8;
 
 /// True if the document reader supports the stored revision. Compare before narrowing from JSON.
 [[nodiscard]] constexpr auto      IsSupportedPipelineDocumentFormatVersion(std::uint64_t version)
     -> bool {
-  return version == kCropRotateDocumentFormatVersion;
+  return version == kCropRotateDocumentFormatVersion || version == kPipelineDocumentFormatVersion;
 }
 
 /// Per-image history schema stored on `ImageEditState.project_schema_version`.

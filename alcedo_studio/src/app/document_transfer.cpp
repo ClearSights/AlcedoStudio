@@ -81,7 +81,6 @@ constexpr DevelopFieldSlot kDevelopFieldSlots[] = {
     {"lens_calib", &TransferDevelopValue::lens_calib},
 };
 
-constexpr const char* kGeometryFieldKey = "crop_rotate";
 
 auto DevelopEntryJson(const TransferDevelopValue& develop) -> nlohmann::json {
   nlohmann::json json = nlohmann::json::object();
@@ -238,7 +237,7 @@ auto DevelopEntryFromJson(const nlohmann::json& json) -> TransferDevelopValue {
 
 /// Checks each present Develop value by applying it to a clean default document
 /// through the same parameter write path Paste uses.
-void ValidateDevelopEntry(const TransferDevelopValue& develop) {
+void ValidateDevelopEntry(const TransferDevelopValue& develop, std::uint32_t document_version) {
   if (develop.Empty()) {
     return;
   }
@@ -279,8 +278,9 @@ void ValidateDevelopEntry(const TransferDevelopValue& develop) {
   if (develop.geometry.has_value()) {
     EditorParameterTarget target;
     target.owner_kind = EditorParameterOwnerKind::Document;
-    target.field_key  = kGeometryFieldKey;
-    if (!ApplyEditorParameterPatch(document, target, *develop.geometry, &error)) {
+    target.field_key =
+        document_version == kCropRotateDocumentFormatVersion ? "crop_rotate" : "geometry_transform";
+    if (!ApplyEditorParameterValue(document, target, *develop.geometry, &error)) {
       Fail("transfer geometry failed to load: " + error);
     }
   }
@@ -331,7 +331,7 @@ void ValidateDocumentTransfer(const AdjustmentTransferPackage& package) {
   if (package.Empty()) {
     Fail("transfer package requires at least one selected item");
   }
-  ValidateDevelopEntry(package.develop_);
+  ValidateDevelopEntry(package.develop_, package.document_format_version_);
 
   std::set<std::string> identities;
   const auto            claim = [&identities](const std::string& id, const char* kind) {

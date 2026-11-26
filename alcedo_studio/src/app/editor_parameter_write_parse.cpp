@@ -17,6 +17,7 @@
 #include <vector>
 
 #include "app/dcp_camera_profile_binding.hpp"
+#include "edit/geometry/render_request.hpp"
 #include "edit/graph/develop_node_model.hpp"
 #include "edit/graph/drt_node_model.hpp"
 #include "edit/graph/film_format.hpp"
@@ -682,6 +683,59 @@ auto ParseGeometryUpdate(const nlohmann::json& params) -> ImageGeometryUpdate {
   return update;
 }
 
+/// Read a partial transform write or a complete accepted geometry value from history.
+auto ParseGeometryTransformUpdate(const nlohmann::json& params, ParseForm form)
+    -> ImageGeometryUpdate {
+  constexpr std::string_view field  = "geometry_transform";
+  const auto&                object = UnwrapObject(params, {field}, field);
+  if (form == ParseForm::Value) {
+    RejectUnknownKeys(
+        object,
+        {"crop_rect", "rotation_degrees", "aspect_preset", "aspect_ratio", "horizontal", "vertical",
+         "aspect", "scale", "offset_x", "offset_y", "constrain_crop"},
+        field);
+  } else {
+    RejectUnknownKeys(
+        object,
+        {"horizontal", "vertical", "aspect", "scale", "offset_x", "offset_y", "constrain_crop"},
+        field);
+  }
+  const auto read = [&](const char* key, double minimum = kManualTransformMinimum,
+                        double maximum = kManualTransformMaximum) {
+    return ReadOptionalValue(
+        object, {key}, field, [&](const nlohmann::json& value, std::string_view name) {
+          const double number = value.is_number() ? value.get<double>() : NAN;
+          if (!std::isfinite(number) || number < minimum || number > maximum) {
+            throw std::invalid_argument(std::string{name} +
+                                        " is outside the supported numeric range");
+          }
+          return number;
+        });
+  };
+  ImageGeometryUpdate update;
+  update.horizontal     = read("horizontal");
+  update.vertical       = read("vertical");
+  update.aspect         = read("aspect");
+  update.scale          = read("scale", kManualTransformScaleMinimum, kManualTransformScaleMaximum);
+  update.offset_x       = read("offset_x");
+  update.offset_y       = read("offset_y");
+  update.constrain_crop = ReadOptionalBool(object, {"constrain_crop"}, field);
+  if (form == ParseForm::Value) {
+    update.crop_rect = ParseNormalizedRect(object.at("crop_rect"), "geometry_transform.crop_rect");
+    update.rotation_degrees =
+        ReadFiniteFloat(object.at("rotation_degrees"), "geometry_transform.rotation_degrees");
+    update.aspect_preset =
+        ReadString(object.at("aspect_preset"), "geometry_transform.aspect_preset");
+    update.aspect_ratio =
+        ParseCropAspectRatio(object.at("aspect_ratio"), "geometry_transform.aspect_ratio");
+    if (!update.horizontal || !update.vertical || !update.aspect || !update.scale ||
+        !update.offset_x || !update.offset_y || !update.constrain_crop) {
+      throw std::invalid_argument("geometry_transform history value requires all transform fields");
+    }
+  }
+  return update;
+}
+
 auto ParseSharpenUpdate(const nlohmann::json& params) -> SharpenUpdate {
   const auto& object = (params.contains("sharpen") && params.at("sharpen").is_object())
                            ? UnwrapObject(params, {"sharpen"}, "sharpen")
@@ -1075,6 +1129,9 @@ auto ParseWriteOrThrow(std::string_view field, const nlohmann::json& params, Par
   }
   if (field == "crop_rotate") {
     return ParseGeometryUpdate(params);
+  }
+  if (field == "geometry_transform") {
+    return ParseGeometryTransformUpdate(params, form);
   }
   RequireObject(params, field);
   if (params.contains("index") && params.contains("value") && params.at("value").is_string()) {

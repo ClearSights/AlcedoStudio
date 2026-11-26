@@ -499,6 +499,54 @@ TEST(EditorPipelineCommandServiceTest, GeometryWriteRejectsSourceSizeAndRemovedP
   }
 }
 
+TEST(EditorPipelineCommandServiceTest, TransformWritePreservesUnspecifiedGeometryFields) {
+  auto                        document = CreateDefaultPipelineDocument();
+  const EditorParameterTarget crop{.owner_kind = EditorParameterOwnerKind::Document,
+                                   .field_key  = "crop_rotate"};
+  const EditorParameterTarget transform{.owner_kind = EditorParameterOwnerKind::Document,
+                                        .field_key  = "geometry_transform"};
+  constexpr Extent2D          source{1200, 800};
+  std::string                 error;
+  ASSERT_TRUE(ApplyEditorParameterPatch(document, crop,
+                                        {{"crop_rect", {0.2, 0.2, 0.6, 0.6}},
+                                         {"rotation_degrees", 8.0},
+                                         {"aspect_preset", "custom"},
+                                         {"aspect_ratio", {3.0, 2.0}}},
+                                        &error))
+      << error;
+  const auto before = document.Geometry().ToJson(false);
+  ASSERT_TRUE(ApplyEditorParameterPatch(
+      document, transform, {{"vertical", 22.3}, {"constrain_crop", false}}, &error, source))
+      << error;
+  ASSERT_TRUE(
+      ApplyEditorParameterPatch(document, transform, {{"horizontal", -12.7}}, &error, source))
+      << error;
+  EXPECT_EQ(document.Geometry().ToJson(false), before);
+  EXPECT_DOUBLE_EQ(document.Geometry().RenderParams().vertical, 22.3);
+  EXPECT_DOUBLE_EQ(document.Geometry().RenderParams().horizontal, -12.7);
+  EXPECT_DOUBLE_EQ(document.Geometry().RenderParams().scale, 100.0);
+  EXPECT_FALSE(document.Geometry().RenderParams().constrain_crop);
+}
+
+TEST(EditorPipelineCommandServiceTest, RejectedTransformLeavesDocumentUnchanged) {
+  auto document = CreateDefaultPipelineDocument();
+  document.Geometry().SetCropRect({0.0f, 0.0f, 1.0f, kGeometryMinNormalizedSize});
+  const EditorParameterTarget target{.owner_kind = EditorParameterOwnerKind::Document,
+                                     .field_key  = "geometry_transform"};
+  const auto                  before = document.ToJson();
+  std::string                 error;
+  EXPECT_FALSE(ApplyEditorParameterPatch(document, target, {{"scale", 50.0}}, &error, {1200, 800}));
+  EXPECT_NE(error.find("empty constrained crop frame"), std::string::npos) << error;
+  EXPECT_EQ(document.ToJson(), before);
+  EXPECT_FALSE(
+      ApplyEditorParameterPatch(document, target, {{"scale", 49.99}}, &error, {1200, 800}));
+  EXPECT_NE(error.find("scale"), std::string::npos) << error;
+  EXPECT_EQ(document.ToJson(), before);
+  EXPECT_FALSE(ApplyEditorParameterPatch(document, target, {{"vertical", 25.0}}, &error));
+  EXPECT_NE(error.find("source image dimensions"), std::string::npos) << error;
+  EXPECT_EQ(document.ToJson(), before);
+}
+
 TEST(EditorPipelineCommandServiceTest, StoredGeometryWithLegacyExpandToFitStillReplays) {
   // History stored before the crop-frame semantics carries expand_to_fit.
   auto                  document = CreateDefaultPipelineDocument();

@@ -36,6 +36,7 @@ enum class EditorAdjustmentField {
   FilmGrain,
   Halation,
   CropRotate,
+  GeometryTransform,
   RawDecode,
   LensCalibration,
   ColorTemperature,

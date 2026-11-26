@@ -100,6 +100,43 @@ TEST_F(AutomationEditorE2ETest, UndoRestoresPreviousUiValue) {
   Stop();
 }
 
+TEST_F(AutomationEditorE2ETest, SavedTransformsRestoreAfterReopen) {
+  const auto project = StartWithOnePhoto(QStringLiteral("saved_transform"));
+  ASSERT_FALSE(project.isEmpty());
+  OpenPhoto();
+  const auto before    = Result(QStringLiteral("editor.get")).value("values").toObject();
+  const auto commits   = CommitCount();
+  const auto applied   = Result(QStringLiteral("editor.set"),
+                                QJsonObject{{"field", "geometry_transform"},
+                                            {"value", QJsonObject{{"vertical", 23.4},
+                                                                  {"horizontal", -18.7},
+                                                                  {"aspect", 15.0},
+                                                                  {"scale", 75.0},
+                                                                  {"offset_x", 10.0},
+                                                                  {"offset_y", -12.0}}}});
+  const auto head      = applied.value("head_commit");
+  const auto after     = Result(QStringLiteral("editor.get")).value("values").toObject();
+  const auto transform = after.value("geometry_transform").toObject();
+  EXPECT_DOUBLE_EQ(transform.value("vertical").toDouble(), 23.4);
+  EXPECT_DOUBLE_EQ(transform.value("horizontal").toDouble(), -18.7);
+  EXPECT_DOUBLE_EQ(transform.value("scale").toDouble(), 75.0);
+  EXPECT_TRUE(transform.value("constrain_crop").toBool());
+  EXPECT_NE(after.value("crop_rotate"), before.value("crop_rotate"));
+  EXPECT_EQ(CommitCount(), commits + 1);
+  EXPECT_EQ(Head(), head);
+  EXPECT_TRUE(Result(QStringLiteral("editor.close")).value("closed").toBool());
+  Stop();
+
+  ASSERT_TRUE(StartWithProject(project));
+  OpenPhoto();
+  const auto reopened = Result(QStringLiteral("editor.get")).value("values").toObject();
+  EXPECT_EQ(reopened.value("geometry_transform"), after.value("geometry_transform"));
+  EXPECT_EQ(reopened.value("crop_rotate"), after.value("crop_rotate"));
+  EXPECT_EQ(Head(), head);
+  EXPECT_EQ(CommitCount(), commits + 1);
+  Stop();
+}
+
 TEST_F(AutomationEditorE2ETest, BatchStopsAtFirstInvalidValueAndReportsApplied) {
   ASSERT_FALSE(StartWithOnePhoto(QStringLiteral("batch_project")).isEmpty());
   OpenPhoto();

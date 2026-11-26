@@ -108,6 +108,13 @@ void ProjectDocumentEdit(HistoryWorkingState&                          state,
   if (alcedo::ReadEditorPanelField(state.document->Document(), edit.target, &field, &ignore)) {
     alcedo::UpsertEditorPanelField(&state.panel_projection, std::move(field));
   }
+  if (edit.target.field_key == "geometry_transform") {
+    auto crop_target      = edit.target;
+    crop_target.field_key = "crop_rotate";
+    if (alcedo::ReadEditorPanelField(state.document->Document(), crop_target, &field, &ignore)) {
+      alcedo::UpsertEditorPanelField(&state.panel_projection, std::move(field));
+    }
+  }
 }
 
 /// Restore local before-values in reverse order. Each one is a complete stored Model value, so a
@@ -367,17 +374,12 @@ auto EditorHistoryMutation::CaptureAdjustmentBeforePreview(
     edit = sequence->second;
   }
   // The document is the only parameter store. A rejected write leaves it unchanged.
-  if (!ApplyEditorParameterWrite(state->document->Document(), edit.target, *patch.write, error)) {
+  if (!ApplyEditorParameterWrite(state->document->Document(), edit.target, *patch.write, error,
+                                 patch.source_extent)) {
     return false;
   }
-  {
-    alcedo::EditorPanelFieldPresentation field;
-    std::string                          ignore;
-    if (PanelFieldMatchesProjectionNode(state->document->Document(),
-                                        state->panel_projection_node_id, edit.target) &&
-        alcedo::ReadEditorPanelField(state->document->Document(), edit.target, &field, &ignore)) {
-      alcedo::UpsertEditorPanelField(&state->panel_projection, std::move(field));
-    }
+  if (!patch.settled || patch.field_key != "geometry_transform") {
+    ProjectDocumentEdit(*state, edit);
   }
   // Only the first successful patch locks a target. Rejected input does not capture state.
   if (sequence == state->pending_document_sequence.end()) {

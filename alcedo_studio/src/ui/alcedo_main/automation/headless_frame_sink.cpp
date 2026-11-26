@@ -87,7 +87,7 @@ void HeadlessFrameSink::NotifyFrameReady(const FrameCompletionSubmission& submis
   ready_frame_count_.fetch_add(1, std::memory_order_acq_rel);
 }
 
-auto HeadlessFrameSink::presented_source_extent() const -> Extent2D {
+auto HeadlessFrameSink::GetPresentedSourceExtent() const -> Extent2D {
   std::lock_guard lock(mutex_);
   return presented_source_extent_;
 }

@@ -11,6 +11,11 @@
 
 namespace alcedo {
 
+inline constexpr double kManualTransformMinimum      = -100.0;
+inline constexpr double kManualTransformMaximum      = 100.0;
+inline constexpr double kManualTransformScaleMinimum = 50.0;
+inline constexpr double kManualTransformScaleMaximum = 150.0;
+
 /**
  * @brief Which rectangle of the rotated source becomes the edit space.
  */
@@ -27,8 +32,8 @@ enum class GeometryOutputFrame : std::uint8_t {
 /**
  * @brief Geometry inputs in pre-orientation reference axes. Manual fields use UI units.
  *
- * The manual controls and crop constraint are internal render inputs until the document and
- * sampling paths support them. Viewport and dynamic resolution are separate requests.
+ * The document supplies the crop, straightening, manual controls, and crop constraint.
+ * Viewport and dynamic resolution are separate requests.
  */
 struct ImageGeometryParams {
   NormalizedRect      crop_rect{};
@@ -41,6 +46,7 @@ struct ImageGeometryParams {
   double              offset_x         = 0.0;
   double              offset_y         = 0.0;
   bool                constrain_crop   = true;
+  auto                operator==(const ImageGeometryParams&) const -> bool = default;
 };
 
 /**

@@ -193,12 +193,12 @@ auto HasIdentityManualTransform(const ImageGeometryParams& image) -> bool {
 }
 
 auto ResolveCropPlaneTransform(const ImageGeometryParams& image) -> CropPlaneTransform {
-  ValidateControl(image.horizontal, -100.0, 100.0, "horizontal");
-  ValidateControl(image.vertical, -100.0, 100.0, "vertical");
-  ValidateControl(image.aspect, -100.0, 100.0, "aspect");
-  ValidateControl(image.scale, 50.0, 150.0, "scale");
-  ValidateControl(image.offset_x, -100.0, 100.0, "offset_x");
-  ValidateControl(image.offset_y, -100.0, 100.0, "offset_y");
+  ValidateControl(image.horizontal, kManualTransformMinimum, kManualTransformMaximum, "horizontal");
+  ValidateControl(image.vertical, kManualTransformMinimum, kManualTransformMaximum, "vertical");
+  ValidateControl(image.aspect, kManualTransformMinimum, kManualTransformMaximum, "aspect");
+  ValidateControl(image.scale, kManualTransformScaleMinimum, kManualTransformScaleMaximum, "scale");
+  ValidateControl(image.offset_x, kManualTransformMinimum, kManualTransformMaximum, "offset_x");
+  ValidateControl(image.offset_y, kManualTransformMinimum, kManualTransformMaximum, "offset_y");
   const double aspect = std::exp2(image.aspect / 200.0);
   const double scale  = image.scale / 100.0;
   return {Perspective(image.horizontal, image.vertical),

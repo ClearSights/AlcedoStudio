@@ -184,6 +184,7 @@ auto EditorPendingInputQueue::AdmitFieldChangeLocked(EditorSessionIdentity ident
   }
   change.write   = std::move(*patch.write);
   change.enabled = patch.enabled;
+  change.source_extent = patch.source_extent;
 
   const auto existing = open_field_index_.find(patch.field_key);
   if (existing != open_field_index_.end()) {

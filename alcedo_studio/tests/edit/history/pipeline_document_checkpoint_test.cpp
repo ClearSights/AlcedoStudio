@@ -25,6 +25,7 @@
 #include "edit/graph/develop_node_model.hpp"
 #include "edit/graph/drt_node_model.hpp"
 #include "edit/graph/film_format.hpp"
+#include "edit/graph/film_print_model.hpp"
 #include "edit/graph/image_geometry_model.hpp"
 #include "edit/graph/pipeline_document.hpp"
 #include "edit/graph/pipeline_graph_commands.hpp"
@@ -39,6 +40,7 @@
 #include "edit/operators/models/builtin_type_ids.hpp"
 #include "edit/operators/models/color_wheel_model.hpp"
 #include "edit/operators/models/curve_model.hpp"
+#include "edit/operators/models/hls_model.hpp"
 #include "edit/operators/models/lmt_model.hpp"
 #include "edit/operators/models/scalar_operator_model.hpp"
 #include "grade_owned_mask_support.hpp"
@@ -77,6 +79,14 @@ void LoadVersionOneNeutralColorWheels(PipelineDocument& document) {
   EXPECT_TRUE(wheels->IsDefault());
 }
 
+/// Recreate the HLS values written before the model defaults were aligned with the panel (#553).
+void LoadPriorHlsDefaults(PipelineDocument& document) {
+  auto* hls =
+      dynamic_cast<HlsModel*>(document.PrimaryGrade()->FindAdjustmentByType(type_ids::Hls()));
+  ASSERT_NE(hls, nullptr);
+  hls->ApplyUpdate({.target_hls = HlsVec3{0.0f, 0.5f, 1.0f}, .l_range = 0.1f, .s_range = 0.1f});
+}
+
 /// Sets the RAW import look of the code before #891 on the default Color Grade of @p document:
 /// contrast 15 and the identity RGB curve (the Film-like curve replaced it). The stored files of
 /// this test were written with that look.
@@ -90,8 +100,17 @@ void ApplyImportLookBeforeFilmLike(PipelineDocument& document) {
   curve->SetPoints(IdentityCurvePoints());
 }
 
+/// Use the crop-only encoding for fixtures whose saved bytes and root IDs predate transforms.
+auto CropOnlyDefaultDocument() -> PipelineDocument {
+  const auto document    = CreateDefaultPipelineDocument();
+  auto       json        = document.ToJson();
+  json["format_version"] = kCropRotateDocumentFormatVersion;
+  json["geometry"]       = document.Geometry().ToJson(false);
+  return PipelineDocument::FromJson(json);
+}
+
 auto MultiGradeDocument() -> PipelineDocument {
-  auto document = CreateDefaultPipelineDocument();
+  auto document = CropOnlyDefaultDocument();
   ApplyImportLookBeforeFilmLike(document);
   EXPECT_TRUE(AddCleanColorGrade(document, NodeId{"drt"}, NodeId{"grade.look"}).empty());
   grade_mask_test::AddRadialMask(document, MaskId{"mask.radial"});
@@ -128,7 +147,7 @@ void RecordParameterEntry(PipelineDocument& document, std::string_view field,
 auto MakeFilmGrainHistoryCase(std::string_view name) -> FilmGrainHistoryCase {
   FilmGrainHistoryCase result;
   result.raw_json = nlohmann::json{{"CameraModel", "RootStateCamera"}};
-  auto document   = CreateDefaultPipelineDocument();
+  auto document   = CropOnlyDefaultDocument();
   ApplyImportLookBeforeFilmLike(document);
   gpu_dag_test::EnsureTestCameraProfile(document);
   std::string error;
@@ -136,13 +155,16 @@ auto MakeFilmGrainHistoryCase(std::string_view name) -> FilmGrainHistoryCase {
     result.element_id = 42;
     const auto odt    = CompleteCurrentPanelParameterTarget(document, "odt", &error);
     EXPECT_TRUE(odt.has_value()) << error;
-    EXPECT_TRUE(ApplyEditorParameterPatch(document, *odt,
-                                          {{"method", "film_print"},
-                                           {"film_print",
-                                            {{"negative", "kodak_5207"},
-                                             {"print_material", "kodak_2383"},
-                                             {"scene_light", "reference"}}}},
-                                          &error))
+    EXPECT_TRUE(
+        ApplyEditorParameterPatch(document, *odt,
+                                  {{"method", "film_print"},
+                                   {"film_print",
+                                    {{"negative", "kodak_5207"},
+                                     {"print_material", "kodak_2383"},
+                                     {"scene_light", "reference"},
+                                     {"auto", std::string{kFilmScanAutoStoredDefault}},
+                                     {"auto_strength", kFilmScanAutoStrengthStoredDefault}}}},
+                                  &error))
         << error;
   } else {
     result.element_id = 43;
@@ -185,11 +207,11 @@ auto FilmGrainHistoryChainHash(const root_id_t& root_id, const std::vector<EditC
 }  // namespace
 
 TEST(PipelineHistoryFormatTable, PublishedConstantsIdentifyTheDocumentHistoryCutover) {
-  EXPECT_EQ(kProjectFileVersion, "0.12.0");
+  EXPECT_EQ(kProjectFileVersion, "0.13.0");
   EXPECT_EQ(kMinSupportedProjectFileVersion, "0.10.0");
   EXPECT_EQ(kMaxSupportedProjectFileVersion, kProjectFileVersion);
   EXPECT_EQ(kPackedProjectFormatVersion, 7u);
-  EXPECT_EQ(kPipelineDocumentFormatVersion, 7u);
+  EXPECT_EQ(kPipelineDocumentFormatVersion, 8u);
   EXPECT_EQ(kImageEditSchemaVersion, 5u);
   EXPECT_EQ(kCommitFormatVersion, 5u);
   EXPECT_EQ(kChainFormatVersion, 5u);
@@ -290,10 +312,11 @@ TEST(PipelineDocumentCheckpointFormat,
   // the document code of main (abdb000c8) before raster input existed: the default document with
   // a bound camera profile, element 42. The same RAW document must encode to the same bytes, keep
   // its root id, and never gain the Develop "input" key. Its color wheels are version 1 JSON.
-  auto document = CreateDefaultPipelineDocument();
+  auto document = CropOnlyDefaultDocument();
   ApplyImportLookBeforeFilmLike(document);
   gpu_dag_test::EnsureTestCameraProfile(document);
   LoadVersionOneNeutralColorWheels(document);
+  LoadPriorHlsDefaults(document);
   const auto raw_json   = nlohmann::json{{"CameraModel", "RootStateCamera"}};
   const auto root_bytes = LoadExpectedBytes("raw_root_before_raster_input.json");
   EXPECT_EQ(EncodePipelineRootState(42, document, raw_json).dump(), root_bytes);
@@ -331,7 +354,7 @@ TEST(PipelineDocumentCheckpointFormat,
   // JSON of the code before the red, green, and blue curves: {"points": [...]} only. The same
   // document must encode to the same bytes (so it keeps its root id), read identity channel
   // curves, and never gain the channel keys (tone_curve_editor_plan.md, TC2).
-  auto document = CreateDefaultPipelineDocument();
+  auto document = CropOnlyDefaultDocument();
   ApplyImportLookBeforeFilmLike(document);
   gpu_dag_test::EnsureTestCameraProfile(document);
   LoadVersionOneNeutralColorWheels(document);
@@ -378,10 +401,11 @@ TEST(PipelineDocumentCheckpointFormat,
   // same document must encode to the same bytes, keep its root id, read both encodings as
   // ACEScc, and never gain the encoding keys (lut_color_encoding_plan.md, section 6.1). Its color
   // wheels are version 1 JSON.
-  auto document = CreateDefaultPipelineDocument();
+  auto document = CropOnlyDefaultDocument();
   ApplyImportLookBeforeFilmLike(document);
   gpu_dag_test::EnsureTestCameraProfile(document);
   LoadVersionOneNeutralColorWheels(document);
+  LoadPriorHlsDefaults(document);
   auto* lmt =
       dynamic_cast<LmtModel*>(document.PrimaryGrade()->FindAdjustmentByType(type_ids::Lmt()));
   ASSERT_NE(lmt, nullptr);
@@ -651,6 +675,39 @@ TEST(PipelineDocumentCheckpointFormat, OldDocumentFormatIsRejectedWithoutConvers
   auto json = CreateDefaultPipelineDocument().ToJson();
   json["format_version"] = 3;
   EXPECT_THROW((void)PipelineDocument::FromJson(json), std::runtime_error);
+}
+
+TEST(PipelineDocumentCheckpointFormat, OldGeometryLoadsIdentityTransforms) {
+  const auto bytes = LoadExpectedBytes("pipeline_root.json");
+  const auto root  = DecodePipelineRootState(nlohmann::json::parse(bytes));
+  EXPECT_EQ(root.document.FormatVersion(), kCropRotateDocumentFormatVersion);
+  EXPECT_FALSE(root.document.Geometry().HasManualTransformSettings());
+  EXPECT_EQ(root.document.Geometry().RenderParams(), ImageGeometryParams{});
+  EXPECT_EQ(EncodePipelineRootState(root.element_id, root.document, root.raw_color_context).dump(),
+            bytes);
+
+  auto live = ClonePipelineDocument(root.document);
+  live.Geometry().ApplyResolvedUpdate({.vertical = 32.5, .constrain_crop = false}, {1200, 800});
+  const auto root_id = ComputeRootId(root.element_id, root.document, root.raw_color_context);
+  const auto encoded =
+      EncodePipelineDocumentCheckpoint(root_id, std::nullopt, ComputeRootChainHash(root_id), live);
+  EXPECT_EQ(encoded.at("pipeline_document_format_version"), kPipelineDocumentFormatVersion);
+  const auto checkpoint = DecodePipelineDocumentCheckpoint(encoded);
+  EXPECT_EQ(checkpoint.root_id, root_id);
+  EXPECT_EQ(checkpoint.document.ToJson(), live.ToJson());
+  EXPECT_EQ(checkpoint.document.Geometry().RenderParams(), live.Geometry().RenderParams());
+  EXPECT_EQ(EncodePipelineRootState(root.element_id, root.document, root.raw_color_context).dump(),
+            bytes);
+}
+
+TEST(PipelineDocumentCheckpointFormat, StoredTransformRejectsInvalidTypesAndRanges) {
+  const auto           document = CreateDefaultPipelineDocument();
+  const nlohmann::json invalid_values{{"scale", 150.01}, {"vertical", "30"}, {"constrain_crop", 0}};
+  for (const auto& [field, invalid] : invalid_values.items()) {
+    auto stored               = document.ToJson();
+    stored["geometry"][field] = invalid;
+    EXPECT_THROW((void)PipelineDocument::FromJson(stored), std::exception) << field;
+  }
 }
 
 TEST(PipelineDocumentCheckpointFormat, DocumentRejectsFutureAndOutOfRangeVersions) {

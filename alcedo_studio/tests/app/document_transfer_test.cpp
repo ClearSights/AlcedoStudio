@@ -125,6 +125,57 @@ TEST(DocumentTransferTest, ExportImportRoundTripPreservesFingerprint) {
   EXPECT_EQ(ExportDocumentTransfer(imported).dump(), exported.dump());
 }
 
+TEST(DocumentTransferTest, TransformTransferRestoresAcceptedCropAndCanBeUndone) {
+  auto source = CreateDefaultPipelineDocument();
+  source.Geometry().ApplyResolvedUpdate({.horizontal = -33.5, .scale = 68.0, .offset_x = 12.3},
+                                        {1200, 800});
+  const auto package =
+      ImportDocumentTransfer(ExportDocumentTransfer(CaptureDocumentTransfer(source)));
+  EXPECT_EQ(package.document_format_version_, kPipelineDocumentFormatVersion);
+  ASSERT_TRUE(package.develop_.geometry);
+  EXPECT_EQ(*package.develop_.geometry, source.Geometry().ToJson());
+
+  auto target = CreateDefaultPipelineDocument();
+  target.Geometry().ApplyResolvedUpdate({.vertical = 17.25, .constrain_crop = false}, {1200, 800});
+  const auto                     before = target.Geometry().ToJson();
+  CountingTransferIdentitySource identities;
+  DocumentTransferPasteOptions   options;
+  options.identity_source = &identities;
+  const auto  paste       = DocumentTransferPlanner::Plan(package, target, options);
+  std::string error;
+  ASSERT_TRUE(
+      ApplyPipelineEditBatch(target, paste.batch, PipelineEditApplyDirection::Forward, &error))
+      << error;
+  EXPECT_EQ(target.Geometry().ToJson(), source.Geometry().ToJson());
+  ASSERT_TRUE(
+      ApplyPipelineEditBatch(target, paste.batch, PipelineEditApplyDirection::Inverse, &error))
+      << error;
+  EXPECT_EQ(target.Geometry().ToJson(), before);
+}
+
+TEST(DocumentTransferTest, CropOnlyTransferRestoresIdentityManualTransforms) {
+  const auto defaults                         = CreateDefaultPipelineDocument();
+  auto       legacy_json                      = defaults.ToJson();
+  legacy_json["format_version"]               = kCropRotateDocumentFormatVersion;
+  legacy_json["geometry"]                     = defaults.Geometry().ToJson(false);
+  legacy_json["geometry"]["rotation_degrees"] = 12.5;
+  const auto source                           = PipelineDocument::FromJson(legacy_json);
+  const auto encoded = ExportDocumentTransfer(CaptureDocumentTransfer(source));
+  const auto package = ImportDocumentTransfer(encoded);
+  EXPECT_EQ(ExportDocumentTransfer(package), encoded);
+  EXPECT_EQ(package.document_format_version_, kCropRotateDocumentFormatVersion);
+
+  auto target = CreateDefaultPipelineDocument();
+  target.Geometry().ApplyResolvedUpdate({.horizontal = -20.0}, {1200, 800});
+  const auto  paste = DocumentTransferPlanner::Plan(package, target, {});
+  std::string error;
+  ASSERT_TRUE(
+      ApplyPipelineEditBatch(target, paste.batch, PipelineEditApplyDirection::Forward, &error))
+      << error;
+  EXPECT_FALSE(target.Geometry().HasManualTransformSettings());
+  EXPECT_FLOAT_EQ(target.Geometry().RotationDegrees(), 12.5f);
+}
+
 TEST(DocumentTransferTest, ImportRejectsFutureAndOutOfRangeDocumentVersion) {
   auto encoded = ExportDocumentTransfer(test::MakeDefaultDocumentTransferPackage());
   encoded.erase("fingerprint");  // The revision check must also protect packages without a hash.
@@ -638,12 +689,17 @@ TEST(DocumentTransferTest, TransferPackageCarriesOnlyOwnedDevelopKeysAndNoCaches
             (std::set<std::string>{"color_grades", "default_grade_id", "develop",
                                    "document_format_version", "drt_post", "fingerprint",
                                    "schema"}));
+  // Color Wheel parameters have their own format version. History Version data belongs
+  // to neither the package nor a Grade entry.
+  for (const auto& grade : json.at("color_grades")) {
+    EXPECT_FALSE(grade.contains("version"));
+  }
 
   std::set<std::string> all_keys;
   JsonKeys(json, &all_keys);
-  for (const char* banned : {"camera_profile", "as_shot_cct", "as_shot_tint", "cam_mul",
-                             "dng_profile_fingerprint", "history", "version", "root_id",
-                             "operators", "cache", "ui_state"}) {
+  for (const char* banned :
+       {"camera_profile", "as_shot_cct", "as_shot_tint", "cam_mul", "dng_profile_fingerprint",
+        "history", "root_id", "operators", "cache", "ui_state"}) {
     EXPECT_EQ(all_keys.count(banned), 0u) << banned;
   }
 }

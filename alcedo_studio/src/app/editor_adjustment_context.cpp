@@ -55,7 +55,8 @@ auto IsDrtPostField(std::string_view field) -> bool {
 
 auto IsDevelopField(std::string_view field) -> bool {
   return field == "raw_decode" || field == "lens_calib" || field == "color_temp" ||
-         field == "input_profile" || field == "camera_profile_file" || field == "crop_rotate";
+         field == "input_profile" || field == "camera_profile_file" || field == "crop_rotate" ||
+         field == "geometry_transform";
 }
 
 auto IsColorGradeField(std::string_view field) -> bool {
@@ -247,7 +248,7 @@ auto AdjustmentFieldIsSupported(EditorNodeKind kind, std::string_view field_key)
 
 auto PanelWriteOwnerNode(const PipelineDocument& document, const NodeId& selected_node_id,
                          std::string_view field_key) -> NodeId {
-  if (field_key == "crop_rotate") {
+  if (field_key == "crop_rotate" || field_key == "geometry_transform") {
     if (const auto* develop = document.Develop(); develop != nullptr) {
       return develop->Id();
     }
@@ -291,7 +292,7 @@ auto CompleteSelectedNodeParameterTarget(const PipelineDocument& document,
 
   EditorParameterTarget target;
   target.field_key = std::move(field_key);
-  if (target.field_key == "crop_rotate") {
+  if (target.field_key == "crop_rotate" || target.field_key == "geometry_transform") {
     target.owner_kind = EditorParameterOwnerKind::Document;
     return target;
   }

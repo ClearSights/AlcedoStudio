@@ -28,6 +28,7 @@ Item {
     property bool controlsEnabled: true
     property bool panelActive: false
     property bool restoring: false
+    property bool useProjectiveCrop: false
     property bool overlayInputActive: false
     property var aspectEntries: []
 
@@ -151,7 +152,8 @@ Item {
     function applyConstraints(driver) {
         const state = parameterCatalog.constrainCrop(root.cropState(), driver,
                                                      root.sourceImageWidth,
-                                                     root.sourceImageHeight)
+                                                     root.sourceImageHeight,
+                                                     root.useProjectiveCrop)
         if (state.x !== undefined)
             root.setStateModels(state)
         root.wireEnabled()
@@ -204,6 +206,7 @@ Item {
     function loadCropSnapshot(snapshot) {
         const raw = snapshot ? snapshot["crop_rotate"] : undefined
         const entry = raw && raw["crop_rotate"] !== undefined ? raw["crop_rotate"] : raw
+        root.useProjectiveCrop = entry ? entry["use_projective_crop"] === true : false
         if (!entry) {
             root.resetModelsToDefaults()
             return

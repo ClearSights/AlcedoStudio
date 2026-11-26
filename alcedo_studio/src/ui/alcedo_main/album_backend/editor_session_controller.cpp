@@ -1674,6 +1674,17 @@ auto EditorSessionController::presentation_viewport() const -> QObject* {
   return presentation_viewport_.data();
 }
 
+auto EditorSessionController::PresentedSourceExtent() const -> alcedo::Extent2D {
+  if (headless_presentation_sink_) {
+    return headless_presentation_sink_->GetPresentedSourceExtent();
+  }
+  if (const auto* viewport =
+          qobject_cast<const editor_rhi::EditorViewportItem*>(presentation_viewport_.data())) {
+    return viewport->presentedMaskGeometry().full_reference_extent;
+  }
+  return {};
+}
+
 auto EditorSessionController::presentation_frame_sink() const -> alcedo::IFrameSink* {
   if (headless_presentation_sink_ != nullptr) {
     return headless_presentation_sink_;
@@ -1998,6 +2009,9 @@ auto EditorSessionController::EnqueueAdjustmentPatch(
                              .reason;
     }
     return rejected;
+  }
+  if (patch->target.owner_kind == alcedo::EditorParameterOwnerKind::Document) {
+    patch->source_extent = PresentedSourceExtent();
   }
   if (viewport) {
     if (settled) {

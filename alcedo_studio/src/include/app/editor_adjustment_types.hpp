@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "app/editor_parameter_write.hpp"
+#include "edit/geometry/types.hpp"
 #include "edit/graph/graph_ids.hpp"
 #include "edit/history/edit_commit_attribution.hpp"
 
@@ -128,6 +129,8 @@ struct EditorAdjustmentPatch {
   /// Author of the commit of a settled write; nullopt for the user. Only a settled write can
   /// carry it.
   std::optional<EditCommitAttribution> attribution;
+  /// Full reference extent of the active presentation when the geometry write was queued.
+  Extent2D                             source_extent{};
 };
 
 }  // namespace alcedo

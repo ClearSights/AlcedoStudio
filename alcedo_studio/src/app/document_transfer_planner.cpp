@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "app/document_transfer.hpp"
+#include "app/editor_parameter_write.hpp"
 #include "app/editor_pipeline_command_service.hpp"
 #include "app/pipeline_document_history.hpp"
 #include "app/pipeline_history_applier.hpp"
@@ -21,6 +22,7 @@
 #include "edit/graph/color_grade_node_model.hpp"
 #include "edit/graph/drt_node_model.hpp"
 #include "edit/graph/film_format.hpp"
+#include "edit/graph/image_geometry_model.hpp"
 #include "edit/graph/pipeline_graph_commands.hpp"
 #include "edit/mask/mask_model.hpp"
 #include "edit/operators/models/builtin_type_ids.hpp"
@@ -381,10 +383,23 @@ void AppendDevelopParameterChanges(const PipelineDocument& root, const TransferD
     AppendParameterChange(root, target, **value, changes);
   }
   if (develop.geometry.has_value()) {
+    // A crop-only package replaces the selected geometry with identity manual transforms.
+    const char* source_field =
+        develop.geometry->contains("constrain_crop") ? "geometry_transform" : "crop_rotate";
+    std::string error;
+    const auto  write = ParseEditorParameterValue(source_field, *develop.geometry, &error);
+    if (!write) {
+      Fail("transfer geometry failed to load: " + error);
+    }
+    ImageGeometryModel transferred;
+    transferred.ApplyUpdate(std::get<ImageGeometryUpdate>(*write));
+    // Keep the existing history bytes when neither side uses manual transforms.
+    const bool manual_settings =
+        root.Geometry().HasManualTransformSettings() || transferred.HasManualTransformSettings();
     EditorParameterTarget target;
     target.owner_kind = EditorParameterOwnerKind::Document;
-    target.field_key  = "crop_rotate";
-    AppendParameterChange(root, target, *develop.geometry, changes);
+    target.field_key  = manual_settings ? "geometry_transform" : "crop_rotate";
+    AppendParameterChange(root, target, transferred.ToJson(manual_settings), changes);
   }
 }
 

@@ -2,10 +2,9 @@
 
 Date: 2026-11-14
 
-Revised: 2026-11-18
+Revised: 2026-11-22
 
-Status: UI layout approved from the standalone QML preview. F1 is complete.
-The later numerical design and new geometry fields remain proposals.
+Status: The standalone QML layout is approved. A1 and T5 have local verification records below.
 
 Parent: Standalone extension to the editor workspace roadmap.
 
@@ -14,7 +13,7 @@ Implementation base and revision audit: upstream `main`, `d587167860c03aaf338fa2
 This base includes PR #943 at `f599ab8c9ed3a51d73babbd57c33cd2700cc6a5a`.
 Source inspection and upstream test reports do not supply local execution evidence.
 
-Implementation branch for F1: `feature/geometry-crop-transform-f1`.
+Implementation branch: `feature/geometry-crop-transform`.
 Design branch: `docs/geometry-crop-transform-improvements`.
 Tracking issues: [manual transforms, composition guides, and aspect controls #954](https://github.com/zidage/AlcedoStudio/issues/954)
 and [whole-image orientation #459](https://github.com/zidage/AlcedoStudio/issues/459).
@@ -31,7 +30,9 @@ Preserve the existing crop and rotation workflow.
 - Add Horizontal, Vertical, Aspect, Scale, X Offset, and Y Offset image transforms.
   Horizontal and Vertical change perspective. They are not image flips or crop coordinates.
   Add Constrain Crop to keep the output frame inside valid transformed coverage.
-- Move `1.5:1 (native or VistaVision)` directly after `Custom` and before `2.35:1 (35mm)`.
+- Put Original after Free and Custom. Use it to restore the source image's crop frame.
+- Put common photo and video ratios before cinema ratios. Label the fixed 1.5:1 preset `3:2`.
+  Preserve the identifiers and numeric values of all existing presets.
 - Add Lock aspect ratio and preserve the effective ratio after Swap Aspect and reopen.
 - Include [issue #459](https://github.com/zidage/AlcedoStudio/issues/459): rotate the image and
   canvas together without losing content. Preserve the result on reopen and export.
@@ -137,8 +138,10 @@ Paths in this section start at `alcedo_studio/`.
 | Area | Current owner and file | Verified behavior and required extension |
 | --- | --- | --- |
 | Panel | `src/ui/alcedo_main/qml/EditorGeometryPanel.qml` | Reads crop ranges and aspect options from the catalog. Loads saved crop fields without submitting an edit. Add Crop actions and a distinct Transform section. |
-| Aspect order | `src/ui/alcedo_main/editor_support/modules/geometry.cpp`, `CropAspectPresetOptions()` | Twelve options. The 1.5:1 option is eleventh. Move the option record without changing its identifier or ratio. |
-| Aspect orientation | `src/app/editor_parameter_catalog.cpp`, `CropLockedAspectRatio()` and `ConstrainCrop()` | Fixed presets select landscape or portrait from source dimensions. Custom uses its stored width and height. Lock and Swap Aspect must retain the accepted effective ratio. |
+| Aspect order | `src/ui/alcedo_main/editor_support/modules/geometry.cpp`, `CropAspectPresetOptions()` | Twelve options. The fixed 1.5:1 option is eleventh. The catalog projects the option table to the panel. The table has no source-dependent option. |
+| Aspect orientation | `src/app/editor_parameter_catalog.cpp`, `CropLockedAspectRatio()` and `ConstrainCrop()` | Fixed presets select landscape or portrait from source dimensions. Custom uses its stored width and height. The aspect driver refits a fixed preset to source bounds. `CropConstrain()` derives the driver from changed values. Selecting the same identifier does not start a reset through this path. |
+| Aspect display and restore | `src/ui/alcedo_main/qml/EditorGeometryPanel.qml`, `src/ui/alcedo_main/qml/AdjustmentCombo.qml` | The panel reads labels from the catalog, restores the option by identifier, and builds crop parameters for the selected item. The combo reports user activation. |
+| Crop source size | `src/include/ui/editor_rhi/editor_interaction_controller.hpp`, `sourceImageWidth()` and `sourceImageHeight()` | The panel reads the full reference extent from presented geometry. The reset needs the full reference extent for the active source. |
 | Guides | `src/ui/editor_rhi/editor_overlay_item.cpp`, `BuildOverlaySceneGeometry()` | The overlay generates Thirds and the automatic fine rotation grid. Add selectable composition paths through the same overlay owner. |
 | Interaction | `src/ui/edit_viewer/crop_interaction_controller.cpp`, `src/ui/editor_rhi/editor_interaction_controller.cpp` | The merged code uses corner rotation zones and guarded drag behavior. Extend the coordinate mappings for orientation and perspective through these owners. |
 | Parameters | `src/app/editor_parameter_catalog.cpp` | Owns the `crop_rotate` object, UI defaults, validation, conversion, and crop constraints. Add transform metadata and focused writes. |
@@ -237,25 +240,77 @@ Do not shrink labels until they become unreadable.
 
 ### 5.2 Aspect menu order
 
-The proposed complete order is:
+| Position | Label | Preset identifier | Fixed width, height |
+| ---: | --- | --- | --- |
+| 1 | Free | `free` | None |
+| 2 | Custom | `custom` | None |
+| 3 | Original | `original` (new) | Uses the source dimensions |
+| 4 | 1:1 | `ratio_1_1` | `1.0, 1.0` |
+| 5 | 3:2 | `ratio_1_5_1_native_vistavision` | `1.5, 1.0` |
+| 6 | 4:3 | `ratio_4_3_35mm` | `4.0, 3.0` |
+| 7 | 16:9 | `ratio_16_9` | `16.0, 9.0` |
+| 8 | 1.43:1 (70mm IMAX) | `ratio_1_43_1_70mm_imax` | `1.43, 1.0` |
+| 9 | 1.85:1 (DCI Flat) | `ratio_1_85_1_dci` | `1.85, 1.0` |
+| 10 | 1.90:1 (IMAX) | `ratio_1_9_1_imax` | `1.9, 1.0` |
+| 11 | 2.20:1 (70 mm) | `ratio_2_2_1_70mm` | `2.2, 1.0` |
+| 12 | 2.35:1 (CinemaScope) | `ratio_2_35_1_35mm` | `2.35, 1.0` |
+| 13 | 2.76:1 (Ultra Panavision 70) | `ratio_2_76_1_panavision_ultra` | `2.76, 1.0` |
 
-1. Free
-2. Custom
-3. 1.5:1 (native or VistaVision)
-4. 2.35:1 (35mm)
-5. 1:1
-6. 16:9
-7. 1.9:1 (IMAX)
-8. 1.85:1 (DCI)
-9. 2.2:1 (70mm)
-10. 1.43:1 (70mm IMAX)
-11. 4:3 (35mm)
-12. 2.76:1 (Panavision Ultra)
+Keep each existing preset identifier and its numeric values. Restore the selection by identifier.
+When the user first selects `3:2`, use 3:2 for landscape and 2:3 for portrait.
 
-Preserve `ratio_1_5_1_native_vistavision` and all other saved option identifiers.
-Restore selection by identifier, never by the old list index.
-The label retains the current wording. Its nominal shape is always 3:2.
-Landscape uses 3:2 and portrait uses 2:3. It does not detect an arbitrary native source ratio.
+#### 5.2.1 Menu rationale and references
+
+Free and Custom describe how to set a crop. Place Original next for fast access to the source frame.
+Lightroom shows Original beside its fixed presets and uses it to reset a crop.
+Capture One mobile also lists Free and Original as separate choices.
+[Lightroom crop reset](https://www.adobe.com/learn/lightroom-cc/web/crop-straighten-photos-lightroom-cc),
+[Capture One mobile crop menu](https://support.captureone.com/hc/en-us/articles/11141770256797-Editing-Images-mobile).
+
+Use width-first integer labels for the common photo and video ratios. Place these before the cinema presets.
+Lightroom uses `3 × 2`, and Capture One mobile uses `2 × 3`. The label `3:2` follows the order
+of the existing `4:3` and `16:9` labels. The plain `4:3` label also applies to phone photos.
+[Adobe Lightroom crop menu](https://www.adobe.com/content/dam/cc/hk_en/newsroom/pdf/2021/Adobe_Adds_Collaboration_Features_and_Premium_Presets_to_Lightroom_HK_EN_17062021.pdf#page=4),
+[Apple camera aspect ratios](https://support.apple.com/en-ie/guide/iphone/iph3dc593597/ios).
+
+Keep the decimal form for cinema ratios and order them from narrowest to widest.
+The cinema sources below use decimal names. Equivalent integer pairs give the same Alcedo crop values.
+
+| Label | Integer equivalent | Reason and reference |
+| --- | ---: | --- |
+| 1.43:1 (70mm IMAX) | 143:100 | IMAX identifies 1.43:1 as the expanded ratio for 15-perforation 70 mm film presentations of *Oppenheimer*. The film name distinguishes the two IMAX presets in the menu. Some IMAX laser presentations also use 1.43:1. [IMAX 70 mm film](https://www.imax.com/news/oppenheimer-in-imax-70mm), [IMAX film and laser presentations](https://www.imax.com/news/sinners-imax) |
+| 1.85:1 (DCI Flat) | 37:20 | Digital Cinema Initiatives specifies 1.85:1 for its DCI Flat Transition Sequence. The DCI name identifies the digital cinema format in the menu. [DCI compliance test plan, section A.2.23](https://ctp.dcimovies.com/a4cfc7b0e4f82e3598ef4ce277d756aa5e59cc38/ctp.html) |
+| 1.90:1 (IMAX) | 19:10 | IMAX lists this ratio as `1.90:1`. Keep both decimal places and the IMAX name. [Filmed for IMAX](https://www.imax.com/filmed-for-imax) |
+| 2.20:1 (70 mm) | 11:5 | Sony Pictures uses `2.20:1` for flat 65 mm features presented on 70 mm film. [Sony Pictures master and archive specifications](https://partnerzone.sonypictures.com/imf-specification.html) |
+| 2.35:1 (CinemaScope) | 47:20 | This is the historical 35 mm anamorphic ratio. Modern Scope uses 2.39:1. A 2.39:1 option is outside this menu revision. [ARRI anamorphic white paper](https://www.arri.com/resource/blob/178026/228c1a0523ed25947174567833cd8fb4/anamorphic-de-squeeze-white-paper-data.pdf) |
+| 2.76:1 (Ultra Panavision 70) | 69:25 | Use the published name of the 70 mm anamorphic format. [American Society of Cinematographers](https://theasc.com/post/feature/ultra-panavision-70/) |
+
+#### 5.2.2 Original crop reset
+
+Use the full editable source extent before crop, straightening, and manual transforms.
+For RAW with an in-camera crop stored as metadata, use the full editable RAW frame.
+For JPEG or HEIC, use the pixels available in the file.
+Lightroom lists As Shot and Original separately. Some cameras record the selected aspect ratio as
+metadata in the full RAW frame. [Adobe Lightroom crop menu](https://www.adobe.com/content/dam/cc/hk_en/newsroom/pdf/2021/Adobe_Adds_Collaboration_Features_and_Premium_Presets_to_Lightroom_HK_EN_17062021.pdf#page=4),
+[Canon RAW and JPEG aspect behavior](https://cam.start.canon/en/C015/manual/html/UG-06_Shooting-1_0050.html).
+
+When the user selects Original, request the full source crop rectangle `[0, 0, 1, 1]`.
+Use the source width-to-height ratio in the stored axes. Project the resulting ratio into the
+current displayed orientation. A quarter turn exchanges the displayed width and height.
+Preserve the current orientation, straightening, manual transforms, and Constrain Crop setting.
+With default geometry, the result covers the full source image. With straightening alone, use the
+existing rotated-source constraint. With manual transforms, apply Section 5.4.3. When active
+coverage rules limit framing, keep the source ratio and use the largest frame at the selected center.
+
+Keep Original selected after reset. Lock crop resizing to the source ratio.
+The user can move or resize the crop while Original remains selected.
+Activating Original again resets that crop. Activating it on the accepted reset frame adds no history entry.
+On save, store the accepted frame, the `original` identifier, and the effective ratio in the existing
+geometry fields. Reopen, Undo, Redo, and version selection restore these values without performing a reset.
+If the source extent is unavailable or a valid frame cannot fit, return the existing edit error.
+Keep the previous crop, selected preset, and history on rejection.
+
+#### 5.2.3 Aspect lock and stored ratios
 
 Use the existing `aspect_ratio` width and height to store the effective ratio in pre-orientation axes.
 The fixed preset identifier names the nominal shape. Its stored ratio selects that shape or its reciprocal.
@@ -267,11 +322,10 @@ Do not change the stored crop rectangle during that conversion.
 The catalog projects the effective ratio into displayed axes after whole-image orientation.
 Custom width and height show that displayed ratio and convert writes back to the stored axes.
 
-The Lock control is a projection of the preset, not a second persisted Boolean.
-Free is unlocked. Custom and fixed presets are locked.
+The preset determines the Lock state. Free is unlocked. Custom, Original, and fixed presets are locked.
 Unlocking selects Free and keeps the current frame.
 Locking Free selects Custom with the current frame's displayed pixel ratio and keeps that frame.
-Selecting a fixed preset or entering Custom dimensions enables the lock.
+Selecting Original or a fixed preset enables the lock. Entering Custom dimensions also enables the lock.
 Each action uses one validated crop-owner update and one settled history edit.
 
 ### 5.3 Composition guides
@@ -485,9 +539,11 @@ Project crop dimensions and effective aspect ratio into displayed coordinates th
 Keep continuous straightening in its stored axes; only its UI projection changes under reflection.
 
 Swap Aspect changes framing only. It does not rotate or flip the image.
-Preserve the selected preset identifier and exchange its effective displayed ratio.
-Write the reciprocal back through the catalog to the existing stored `aspect_ratio` fields.
-For Custom, exchange the effective width and height. Preserve the frame center when possible.
+For fixed presets, keep the identifier and exchange the effective displayed ratio.
+For Original, select Custom and use the reciprocal of the source ratio.
+For Custom, keep Custom and exchange the effective width and height.
+Write the accepted ratio through the catalog to the existing stored `aspect_ratio` fields.
+Preserve the frame center when possible.
 In Free mode, exchange the current displayed frame dimensions and remain in Free mode.
 Apply the existing crop coverage constraint to the new frame through its owner.
 A square frame produces no edit. An impossible frame produces a validation error before mutation.
@@ -520,6 +576,7 @@ F1 prepares the shared readers and keeps current output versions and encodings.
 O2 advances the document and project metadata versions for exact orientation.
 O3 uses O2's eight-state representation for flips.
 A2 advances them for effective fixed-aspect semantics.
+A3 advances them for the `original` preset identifier. Use the existing geometry fields.
 T5 advances them for manual transforms and Constrain Crop.
 Each release must reject a later revision that it cannot interpret.
 Use the existing project and document versions to distinguish these encodings.
@@ -557,6 +614,8 @@ The catalog exposes a proposed `geometry_transform` field beside the compatible 
 Both write to the same document owner. The new field returns only the requested change description.
 Expose proposed `geometry.rotate_left`, `geometry.rotate_right`, `geometry.flip_horizontal`,
 `geometry.flip_vertical`, and `geometry.swap_aspect` commands through the existing command service.
+Route user activation of Original through the same owner path, including reactivation of the current item.
+Use a focused reset operation with no caller-supplied crop rectangle or ratio.
 Use focused owner operations such as `RotateImageQuarterTurn(direction)`, `FlipImage(axis)`,
 and `SwapCropAspect()`; their input is the operation, not a copied geometry object.
 Each operation returns the existing command success or error result after validation.
@@ -608,7 +667,7 @@ Reread `AGENTS.md`, `CONTRIBUTING.md`, and the applicable skills before each PR.
 Use `alcedo-qml-ui`, `alcedo-msvc-cmake`, and `opencl-program-registry` where their scopes apply.
 Review and merge one row per PR. Base each PR on the preceding merged work in the order shown.
 The dependency column records the work each PR needs. The review order also keeps shared files
-and format revisions easy to review. See each PR's completion record for its status.
+and format revisions easy to review. Use the phase completion records for implementation status.
 
 | PR | Result | Main owners | Required prior PRs | Expected changed lines | Review scope |
 | --- | --- | --- | --- | ---: | --- |
@@ -617,8 +676,9 @@ and format revisions easy to review. See each PR's completion record for its sta
 | O1 | Exact orientation mapping | Resolver, rendering and coordinate consumers | None | 900–1650 | Prove the mapping before adding storage and controls. |
 | O2 | Rotate Left and Rotate Right | Geometry document, commands, Crop panel | F1, O1 | 1050–1750 | Deliver lossless whole-image quarter turns under #459. |
 | O3 | Flip Horizontal and Flip Vertical | Geometry commands, Crop panel | O2 | 350–850 | Add flips through the same exact orientation path. |
-| A1 | Crop preset menu order | Aspect option table, catalog, Crop panel test | None | 80–300 | Review the menu order and stable identifiers. |
+| A1 | Crop preset order and labels | Aspect option table, catalog, Crop panel test | None | 100–350 | Review the labels and order of existing presets. Preserve their identifiers and values. |
 | A2 | Lock aspect ratio and Swap Aspect | Crop owner, catalog, commands, history, Crop panel | F1, F2 | 1000–1750 | Deliver crop framing and its saved effective ratio. |
+| A3 | Original aspect and crop reset | Crop owner, source extent, catalog, history, compatibility readers, Crop panel | A1, A2 | 750–1500 | Add the source-dependent option with an atomic reset and saved selection. Keep its owner and compatibility tests together. |
 | G1 | Selectable composition guides | Settings, shortcut registry, overlay, Crop panel | F2 | 1150–1750 | Deliver the guides without image or render-format changes. |
 | T1 | Projective equations and frame resolution | Geometry math and resolver | None | 950–1700 | Prove the numerical behavior. |
 | T2 | Projective sampling on each backend | CUDA, Metal, OpenCL geometry passes | T1 | 1000–1700 | Verify one coordinate convention on all backends. |
@@ -627,7 +687,7 @@ and format revisions easy to review. See each PR's completion record for its sta
 | T5 | Durable transform writes | Document, catalog, command service, history | F1, T1–T4 | 1100–1800 | Publish a complete owner write after all render consumers work. |
 | T6 | Transform controls and resets | Geometry panel, adjustment models, command service | T5 | 900–1650 | Complete the manual-transform workflow. |
 
-O1–O3, A1–A2, G1, and T1–T6 are separate review tracks. Aspect and guide controls need no
+O1–O3, A1–A3, G1, and T1–T6 are separate review tracks. Aspect and guide controls need no
 orientation commands. The guides use the merged crop overlay. The transform math and render
 consumers accept identity orientation and the current crop behavior when those are the only inputs.
 When the displayed-axis mapping from O1 is available, reuse it. Test the combined result whenever
@@ -635,9 +695,10 @@ a PR is the first to have both features. T4 owns guide placement with the transf
 when G1 is present. T6 owns visibility during transform input and the complete reset scopes.
 If G1 lands after T6, connect the transformed placement and input visibility in G1.
 
-O2, A2, and T5 publish successive format revisions in the order shown. Take the revision values
-and supported older revisions from the merged base of each writer PR. If the order changes,
-update Section 6.1 first and repeat the actual prior-reader checks. A1 and G1 require no new
+O2, A2, A3, and T5 each publish a format revision. T5 is based on upstream `f4d364746`,
+with F1 and T1–T4 applied. That base contains document revision 7 and project metadata 0.12.0.
+T5 writes revision 8 and metadata 0.13.0. Take each subsequent revision from its merged base,
+then repeat the actual prior-reader checks. A1 and G1 require no new
 document or project version. O2, O3, and A2 introduce UI actions only when their own commands work.
 Add each action to the common row in Section 5.6. Show the Transform section first in T6.
 Use the tracker links for partial work. Use a closing reference for #954 only after all its
@@ -669,9 +730,8 @@ accepted revision set limited to the formats already supported.
 **Success and failure**
 
 Project or transfer open → stored version and bytes checked → current document published.
-An unsupported project version, invalid immutable root, or invalid transfer stops that load.
-A checkpoint decoder rejects a revision mismatch or noncanonical document before publication.
-The existing history loader reconstructs an unusable checkpoint from the verified root and commits.
+A future version, a nested mismatch, or invalid canonical data returns the existing load error
+before active state changes.
 
 **Verification and exit**
 
@@ -681,7 +741,6 @@ Add `AcceptedProjectKeepsCanonicalRootBytesAndCommitHash`,
 Build `ProjectCompatibilityTest`, `PipelineDocumentCheckpointTest`,
 `EditorMiniGitMaterializerTest`, and `DocumentTransferTest`. Compare current written bytes against
 the same fixture on the base revision. Verify that replay, reopen, and transfer retain their current behavior.
-
 #### F1 completion record (2026-11-18)
 
 **Status** Implemented on `feature/geometry-crop-transform-f1` from `a993eaa5`.
@@ -873,17 +932,17 @@ with an existing crop and through export. Build `GpuDagGeometryTest`,
 that exercise flip writes. Confirm both accessible names and manual button order.
 Completion record pending. Use Section 9.
 
-### A1. Crop preset menu order
+### A1. Crop preset order and labels
 
 **Deliverable and inputs**
 
-Move the VistaVision option to the position in Section 5.2 using the current catalog.
+Apply the order and labels in Section 5.2 to the existing entries. A3 adds Original with its reset.
 
 **Owners and steps**
 
-Move the existing record in `CropAspectPresetOptions()`. Keep its identifier, translation key,
-and nominal dimensions. Confirm that `EditorGeometryPanel.qml` selects and restores the record
-by identifier through the catalog.
+Reorder the entries in `CropAspectPresetOptions()` and update their visible labels.
+Keep every existing identifier and width and height pair. Update label translations where available.
+Keep `EditorGeometryPanel.qml` on the catalog option list and restore selection by identifier.
 
 **Success and failure**
 
@@ -892,11 +951,71 @@ continues through the existing validation path.
 
 **Verification and exit**
 
-Add `AspectMenuPlacesVistaVisionBetweenCustomAnd235` and
-`SavedPresetSelectionSurvivesMenuReorder`. Build `EditorGeometryMathTest`,
-`EditorParameterCatalogTest`, and `EditorGeometryPanelQmlTest`. Check the full menu order and
-one restore without a submitted edit.
-Completion record pending. Use Section 9.
+Add `AspectMenuUsesReviewedLabelsAndOrderForExistingPresets` and
+`SavedPresetSelectionSurvivesLabelAndOrderChanges`. Assert each stable identifier and width and
+height pair. Restore the saved `ratio_1_5_1_native_vistavision` as `3:2` without a submitted edit.
+Build `EditorGeometryMathTest`, `EditorParameterCatalogTest`, and `EditorGeometryPanelQmlTest`.
+Use Section 8 to discover and run their focused cases.
+#### A1 completion record (2026-11-21)
+
+**Status** Complete and verified locally.
+
+Branch `feature/geometry-crop-transform-a1` starts at upstream `main`
+revision `61d59bc98afad3be7b0d855bebdb86d7b9225e62`.
+The phase changes the preset table and its tests. All twelve identifiers and numeric pairs match
+the base revision. The English and Chinese catalogs contain no previous keys for the renamed labels.
+
+**Success, restore, and failure paths**
+
+```text
+CropAspectPresetOptions -> EditorParameterCatalog -> catalog adapter -> Geometry Aspect menu
+Saved identifier -> panel state projection -> indexOfAspect -> ComboBox selection, with no write
+Preset selection -> catalog crop constraint -> typed geometry update with the same stored identifier
+Invalid identifier -> catalog option validation -> error before a model write
+```
+
+**Verification**
+
+| Behavior | Executed tests | Result |
+| --- | --- | --- |
+| All current labels, order, IDs, and numeric pairs | `AspectMenuUsesReviewedLabelsAndOrderForExistingPresets`, `CatalogJsonListsEveryEntryWithUiRange` | Pass |
+| A saved 3:2 ID restores the new label and the same crop without a write | `SavedPresetSelectionSurvivesLabelAndOrderChanges` | Pass |
+| Stable IDs remain valid and display labels are rejected as input | `CropPresetWriteRequiresIdentifierInsteadOfDisplayLabel` | Pass |
+| A preset selection makes one settled crop write and fits the source orientation | `SelectingAspectPresetSubmitsOneSettledCropOfThatShape`, `SelectingLandscapePresetOrientsCropForPortraitImage` | Pass |
+
+Build, discovery, and test exits were all 0 after matching the local MSVC and Qt runtime.
+CTest found 68 cases. All 68 passed, with zero failures or skips.
+`EditorGeometryMathTest` passed 5, `EditorParameterCatalogTest` passed 53, and
+`EditorGeometryPanelQmlTest` passed 10.
+
+```powershell
+$env:VCVARS_USER_VERSION = '14.44.35207'
+cmd /c scripts\msvc_env.cmd --build --preset win_debug --target EditorGeometryMathTest EditorParameterCatalogTest EditorGeometryPanelQmlTest --parallel 4
+$alcedoDebugBins = (Resolve-Path 'vcpkg/installed/x64-windows/debug/bin').Path
+$env:PATH = "C:/Qt/6.12.0/msvc2022_64/bin;$alcedoDebugBins;$env:PATH"
+ctest --test-dir build/debug -N -R '^(EditorGeometryMathTest|EditorParameterCatalogTest|EditorGeometryPanelQmlTest)\.'
+ctest --test-dir build/debug -R '^(EditorGeometryMathTest|EditorParameterCatalogTest|EditorGeometryPanelQmlTest)\.' --output-on-failure -j 1
+```
+
+**Review**
+
+Two selection tests used row numbers. They now find entries by identifier. A separate test checks
+the exact order. The catalog still constructs its option projection once. The table change
+adds no work to crop edits and introduces no new function or data owner.
+
+| Changed source or test | Total lines | Added | Removed |
+| --- | ---: | ---: | ---: |
+| `geometry.cpp` | 221 | 9 | 10 |
+| `editor_geometry_math_test.cpp` | 116 | 34 | 7 |
+| `editor_parameter_catalog_test.cpp` | 1853 | 27 | 3 |
+| `editor_geometry_panel_qml_test.cpp` | 560 | 50 | 6 |
+
+The catalog test file covers several parameter families. Its crop projection helper and crop
+write cases form a separate test responsibility under the existing CMake target.
+A1 keeps the current test sources and target registration.
+
+The restore test starts from the panel projection of a saved crop. QML coverage uses an
+offscreen component. The phase verification covers the revised menu, crop selection, and restore.
 
 ### A2. Aspect lock and Swap Aspect
 
@@ -932,6 +1051,56 @@ legacy portrait and landscape, Undo and Redo, and the actual prior reader. If O2
 verify reciprocal ratios after quarter turns and reflections. Build the F1 targets,
 `EditorParameterCatalogTest`, `EditorGeometryPanelQmlTest`, and `ShortcutRegistryTest`.
 Confirm `X` retains text entry and mask-tool priority.
+Completion record pending. Use Section 9.
+
+### A3. Original aspect and crop reset
+
+**Deliverable and inputs**
+
+Add Original as the third option. Use A1's menu and A2's stored effective ratio and Lock behavior.
+Implement the reset and restore behavior in Section 5.2.2. Use the current displayed-axis projection
+when whole-image orientation is available.
+
+**Owners and steps**
+
+1. Add `original` to `CropAspectPresetOptions()` and the catalog option projection.
+   Classify it separately from fixed presets in `CropLockedAspectRatio()` and `ConstrainCrop()`.
+2. Read the active image's full reference extent through the editor source owner.
+   Pass the dimensions through `EditorParameterSource`. Validate both dimensions before reset.
+   Convert the source ratio in the catalog. Store it in the existing `aspect_ratio` fields.
+3. Route explicit Original activation in `EditorGeometryPanel.qml` to the existing editor command owner.
+   Handle reactivation independently of a changed-index signal. Keep `AdjustmentCombo` input and styling.
+   Use `ParseGeometryUpdate()` and `ImageGeometryModel::ApplyUpdate()` for one focused geometry update.
+   Write the resolved crop rectangle, effective ratio, and preset together.
+4. Advance the versions in Section 6.1. Validate `original` with its accepted ratio and frame.
+   Restore from those fields through the same history and panel projection paths as the other presets.
+5. For Swap Aspect from Original, use the Custom behavior in Section 5.6.
+   When T5 adds Constrain Crop, verify Original against the projective coverage rules in its owner.
+
+**Success and failure**
+
+Original activation → editor command and full source extent → catalog and crop coverage validation
+→ one complete `ImageGeometryUpdate` → one settled history edit → panel and render publication.
+If the accepted state already matches the current state, return success with no history edit.
+Missing extent or impossible coverage returns the corresponding edit error before mutation.
+Saved state → version-aware reader → panel selection and accepted frame, with no new edit.
+
+**Verification and exit**
+
+- `OriginalFitsLandscapeAndPortraitSourcesWithoutChangingOrientation` verifies full-frame reset for
+  3:2, 4:3, and nonstandard source dimensions. Include a quarter turn when that feature is present.
+- `OriginalFitsSourceRatioWithStraighteningPreserved` verifies maximum framing inside rotated coverage.
+- `OriginalReactivationResetsResizedCropOnce` verifies one settled edit, then no edit for an identical reset.
+- `OriginalWithMissingSourceExtentKeepsCropSelectionAndHistory` verifies the edit error and unchanged state.
+  Verify the same result when coverage has no valid frame.
+- `OriginalSelectionAndAcceptedCropSurviveUndoRedoAndReopen` verifies the stored ratio and frame.
+  Verify that Swap Aspect selects Custom for a nonsquare source and creates no edit for a square source.
+- `AspectMenuPlacesOriginalAfterFreeAndCustom` verifies all thirteen options in order.
+  Check keyboard activation and reactivation with the existing combo.
+
+Build `EditorGeometryMathTest`, `EditorParameterCatalogTest`, `EditorSessionEditControllerTest`,
+`EditorGeometryPanelQmlTest`, and the F1 compatibility targets. Discover and run focused cases
+with Section 8. Test the actual prior reader against a project that contains `original`.
 Completion record pending. Use Section 9.
 
 ### G1. Selectable composition guides
@@ -1115,7 +1284,75 @@ Add `TransformWritePreservesUnspecifiedGeometryFields`,
 `OldGeometryLoadsIdentityTransforms`. Exercise transfer, version selection, journal replay,
 old canonical bytes, and the actual prior reader. Build the F1 targets,
 `EditorParameterCatalogTest`, and registered owner and automation write tests.
-Completion record pending. Use Section 9.
+With A3 present, add `OriginalUsesProjectiveCoverageAndPreservesTransformSettings`.
+Check that enabled Constrain Crop limits the source-ratio frame. Check that disabled Constrain Crop
+keeps the requested full frame with the existing border policy. Verify the transform values in both cases.
+
+#### T5 completion record (2026-11-26)
+
+T5 is complete on `feature/geometry-crop-transform-t5`. The branch starts at upstream
+`f4d364746` and includes T1–T4 through `96a8b10ae` and F1 at `4eba9df14`.
+
+The `geometry_transform` catalog field accepts partial writes in UI units. The document
+owner validates the combined mapping using the presented source extent and stores the accepted
+transform and crop together. The same render parameters feed the preview, final frame, and
+mask thumbnails. Crop-only transfers keep their existing history field.
+
+New documents write revision 8. Revision 7 documents load identity transforms and keep their
+canonical root bytes and history hashes. Workspace metadata advances to 0.13.0 before the
+editor can write a recovery journal. The packed project header stays at revision 7.
+
+Primary success path
+
+```text
+editor.set geometry_transform
+  -> EditorParameterCatalog::ToModelJson -> ParseEditorParameterWrite
+  -> EditorSessionEditController -> EditorSessionHistoryPort
+  -> ImageGeometryModel::ApplyResolvedUpdate -> geometry resolver
+  -> journal commit -> publish accepted crop and transforms
+  -> GraphCompiler::BindFrameGeometry -> render and readback
+```
+
+Failure and restore paths
+
+```text
+Invalid field or impossible crop -> return the validation error -> retain the document and head
+Journal write fails -> restore the before-values -> retain the published document and head
+Undo, Redo, Version selection, or journal replay -> restore the recorded crop and transforms
+Accepted edit followed by a render error -> report the render error through the editor session
+```
+
+The Windows Release build used `cmd /c scripts\msvc_env.cmd --preset win_release
+-DALCEDO_BUILD_TESTS=ON` and `--build --preset win_release --target` with the affected
+targets below and `--parallel 4`. The focused discovery and serial run used
+`ctest --test-dir build/release -N -R <selection>` and
+`ctest --test-dir build/release -R <selection> --no-tests=error --output-on-failure -j 1`.
+The final run passed all 491 selected cases in 65.83 seconds, with zero failures or skips.
+
+| Verification area | Executed targets and assertions |
+| --- | --- |
+| Partial writes and rejection | `EditorParameterCatalogTest`, `EditorPipelineCommandServiceTest`, and `EditorSessionEditControllerTest` |
+| History, rollback, Versions, and journal replay | `EditorSessionHistoryPortTest`, `EditorMiniGitMaterializerTest`, `CommitGraphTest`, and `PipelineEditBatchTest` |
+| Legacy bytes, transfer, and project metadata | `PipelineDocumentCheckpointTest`, `DocumentTransferTest`, `ProjectCompatibilityTest`, and `ProjectServiceTest` |
+| Constrained output, uncovered borders, and the editing view | `GpuDagGeometryTest`, `MaskThumbnailServiceTest`, `EditorGeometryOverlayPipelineTest`, and `EditorGeometryPanelQmlTest` |
+| Automation and CUDA reopen | `AutomationEditorCommandsTest` and the `SavedTransformsRestoreAfterReopen` and `EveryValueReadByGetIsAcceptedBySetAndKeepsItsValue` cases of `AutomationEditorE2ETest` |
+
+The previous Release executable opened a legacy fixture and wrote metadata 0.12.0. Its build
+worktree revision was `bc3aaa1035f0`, whose project reader matches upstream `f4d364746`.
+That executable rejected a 0.13.0 project with a CUDA-rendered transform commit before its
+automation session started. The CLI returned exit code 3 and reported an incompatible project
+format. Temporary evidence was stored under `build/tmp/geometry_crop_transform_t5/`.
+
+The verification also corrected the fixture setup and assertions documented in
+[#553](https://github.com/zidage/AlcedoStudio/issues/553),
+[#554](https://github.com/zidage/AlcedoStudio/issues/554), and
+[#555](https://github.com/zidage/AlcedoStudio/issues/555). The stored compatibility samples
+retain their original bytes. The pinned new-paste test uses the hashes recorded on clean upstream.
+The new document geometry model implementation is 149 lines. The changes in the existing larger
+session and catalog files use their current ownership and dispatch paths.
+
+A3 is on a separate branch. Its Original reset case is conditional on A3. The verification
+covered Windows CUDA, with the macOS backend and full-suite run outside this run.
 
 ### T6. Transform controls and product acceptance
 
@@ -1196,6 +1433,7 @@ Do not format untouched lines or rename unrelated roadmap files.
 | Composition | Every selected guide has correct paths, orientation, clipping, and preference persistence. Guides never enter exports. |
 | PR #943 integration | Inherited hit zones, rotation guards, brackets, cursors, angle badge, and automatic grid remain intact. Composition preferences do not suppress the active rotation aid. Coincident Thirds strokes appear once. |
 | Aspect selection | The complete sequence matches Section 5.2. Reopen restores both preset identity and effective ratio. Lock and Swap Aspect keep their specified states through further edits. |
+| Original crop reset | Activation restores the source-ratio frame within active coverage. Orientation, straightening, and transforms keep their values. Reactivation, Undo, Redo, and reopen follow Section 5.2.2. A rejected reset preserves the crop, selection, and history. |
 | Whole-image orientation / #459 | With default manual transforms and no crop, quarter turns preserve every source pixel and swap dimensions. With an existing crop or transform, they preserve the accepted framed result. Two right turns give 180 degrees. Reopen and export preserve orientation. |
 | Crop shorthand | All five actions are visible and accessible. Flips use displayed axes. Swap Aspect and scoped `X` change framing without image rotation. |
 | Boundaries and invalid input | Combined limits either produce valid finite geometry or a specific rejection before mutation. |
