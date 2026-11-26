@@ -44,10 +44,9 @@ class GraphCompiler {
   /**
    * @brief Fill @p plan.geometry from the document crop/rotation and the per-frame request.
    *
-   * With `request.document_geometry == RotatedUncroppedSource` the frame uses a full-frame crop,
-   * the document rotation, and the bounding box of the rotated source. With `ReferenceSource` the
-   * frame uses a full-frame crop and no rotation (EditSpace is ReferenceSpace). The document is
-   * only read.
+   * GeometryEditingSource fits the transformed source without final crop or straightening.
+   * ReferenceSource uses identity geometry so EditSpace is ReferenceSpace. The document is read
+   * without mutation.
    * Does not change @p plan.static_key or the pass list. Must run before execute.
    */
   static void               BindFrameGeometry(ExecutionPlan& plan, const PipelineDocument& document,

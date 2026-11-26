@@ -39,35 +39,22 @@ void ExpectSameMatrix(const Matrix3x3& actual, const Matrix3x3& expected) {
 
 }  // namespace
 
-TEST(GpuDagGeometry, RotatedUncroppedSourceRequestIgnoresCropAndKeepsRotation) {
-  auto cropped = CreateDefaultPipelineDocument();
-  cropped.Geometry().SetCropRect({0.2f, 0.1f, 0.5f, 0.6f});
-  cropped.Geometry().SetRotationDegrees(7.0f);
-  const auto cropped_json_before = cropped.ToJson();
+TEST(GpuDagGeometry, GeometryEditingSourceOmitsCropAndStraightening) {
+  auto document = CreateDefaultPipelineDocument();
+  document.Geometry().SetCropRect({0.2f, 0.1f, 0.5f, 0.6f});
+  document.Geometry().SetRotationDegrees(7.0f);
+  const auto before  = document.ToJson();
 
-  auto       rotated_only        = CreateDefaultPipelineDocument();
-  rotated_only.Geometry().SetRotationDegrees(7.0f);
+  const auto preview = BindGeometry(document, DocumentGeometryUse::GeometryEditingSource);
+  EXPECT_EQ(preview.edit_extent, (Extent2D{600, 400}));
+  ASSERT_TRUE(preview.editing_crop_plane);
+  ExpectSameMatrix(preview.reference_to_edit, Matrix3x3::Identity());
+  ExpectSameMatrix(preview.render_to_reference, Matrix3x3::Scale(2.0f, 2.0f));
 
-  const auto preview  = BindGeometry(cropped, DocumentGeometryUse::RotatedUncroppedSource);
-  const auto expected = BindGeometry(rotated_only, DocumentGeometryUse::RotatedUncroppedSource);
-
-  // The crop does not change the preview frame; the rotation does.
-  EXPECT_EQ(preview.edit_extent, expected.edit_extent);
-  ExpectSameMatrix(preview.reference_to_edit, expected.reference_to_edit);
-  ExpectSameMatrix(preview.render_to_decoded, expected.render_to_decoded);
-  // The preview frames the whole rotated source: its bounding box is larger than the source.
-  EXPECT_GT(preview.edit_extent.width, 600u);
-  EXPECT_GT(preview.edit_extent.height, 400u);
-
-  // Without rotation the preview is the plain source.
-  const auto identity = CreateDefaultPipelineDocument();
-  EXPECT_EQ(BindGeometry(identity, DocumentGeometryUse::RotatedUncroppedSource).edit_extent,
-            (Extent2D{600, 400}));
-
-  // The default request still applies the document crop, and binding never edits the document.
-  const auto applied = BindGeometry(cropped, DocumentGeometryUse::ApplyCropAndRotation);
-  EXPECT_LT(applied.edit_extent.width, 600u);
-  EXPECT_EQ(cropped.ToJson(), cropped_json_before);
+  const auto applied = BindGeometry(document, DocumentGeometryUse::ApplyCropAndRotation);
+  EXPECT_LT(applied.edit_extent.width, preview.edit_extent.width);
+  EXPECT_FALSE(applied.editing_crop_plane);
+  EXPECT_EQ(document.ToJson(), before);
 }
 
 TEST(GpuDagGeometry, ReferenceSourceRequestIgnoresCropAndRotation) {

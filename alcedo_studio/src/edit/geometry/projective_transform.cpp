@@ -192,19 +192,38 @@ auto HasIdentityManualTransform(const ImageGeometryParams& image) -> bool {
          image.scale == 100.0 && image.offset_x == 0.0 && image.offset_y == 0.0;
 }
 
-auto ResolveProjectiveImageFrame(const ImageGeometryParams& image, Extent2D source)
-    -> ProjectiveImageFrame {
+auto ResolveCropPlaneTransform(const ImageGeometryParams& image) -> CropPlaneTransform {
   ValidateControl(image.horizontal, -100.0, 100.0, "horizontal");
   ValidateControl(image.vertical, -100.0, 100.0, "vertical");
   ValidateControl(image.aspect, -100.0, 100.0, "aspect");
   ValidateControl(image.scale, 50.0, 150.0, "scale");
   ValidateControl(image.offset_x, -100.0, 100.0, "offset_x");
   ValidateControl(image.offset_y, -100.0, 100.0, "offset_y");
-  if (source.Empty() || !std::isfinite(image.rotation_degrees)) {
+  const double aspect = std::exp2(image.aspect / 200.0);
+  const double scale  = image.scale / 100.0;
+  return {Perspective(image.horizontal, image.vertical),
+          {scale / aspect, scale * aspect},
+          {0.005 * image.offset_x, -0.005 * image.offset_y},
+          image.constrain_crop};
+}
+
+auto CropPlaneTransform::PivotShift(float rotation_degrees) const -> ProjectiveTransform {
+  const auto rotation = ProjectiveTransform::Rotate(NormalizeRotationDegrees(rotation_degrees) *
+                                                    (std::numbers::pi / 180.0));
+  // B * (I - R) gives the change in coverage when the crop's straightening pivot moves.
+  return {{scale.x * (1.0 - rotation.m[0]), -scale.x * rotation.m[1], 0.0, -scale.y * rotation.m[3],
+           scale.y * (1.0 - rotation.m[4]), 0.0, 0.0, 0.0, 1.0}};
+}
+
+namespace {
+
+/// Resolves crop and full-source bounds with the same perspective and straightening equations.
+auto ResolveImageFrame(const CropPlaneTransform& transform, NormalizedRect crop,
+                       float rotation_degrees, Extent2D source, bool source_bounds_only)
+    -> ProjectiveImageFrame {
+  if (source.Empty() || !std::isfinite(rotation_degrees)) {
     throw std::runtime_error("ResolveRenderGeometry: source extent and rotation must be valid");
   }
-
-  const auto& crop = image.crop_rect;
   if (!std::isfinite(crop.x) || !std::isfinite(crop.y)) {
     throw std::runtime_error("ResolveRenderGeometry: crop position must be finite");
   }
@@ -217,34 +236,25 @@ auto ResolveProjectiveImageFrame(const ImageGeometryParams& image, Extent2D sour
   const Rectangle2d source_bounds{-0.5 * w, -0.5 * h, w, h};
   Rectangle2d       frame{(crop.x - 0.5) * w, (crop.y - 0.5) * h, crop.w * w, crop.h * h};
   const Point2d     center{frame.x + 0.5 * frame.width, frame.y + 0.5 * frame.height};
-  const double      theta =
-      image.output_frame == GeometryOutputFrame::TransformedSourceBounds
-          ? 0.0
-          : NormalizeRotationDegrees(image.rotation_degrees) * (std::numbers::pi / 180.0);
-  const auto    rotation = ProjectiveTransform::Rotate(theta);
-  const double  k        = std::exp2(image.aspect / 200.0);
-  const double  sx       = (image.scale / 100.0) / k;
-  const double  sy       = (image.scale / 100.0) * k;
-
-  // B * (I - R) gives the change in coverage when the crop's straightening pivot moves.
-  const Point2d coverage_dx{sx * (1.0 - rotation.m[0]), -sy * rotation.m[3]};
-  const Point2d coverage_dy{-sx * rotation.m[1], sy * (1.0 - rotation.m[4])};
-  const Point2d offset{0.005 * image.offset_x, -0.005 * image.offset_y};
-  const auto    pivot_translation = [&](Point2d pivot) {
-    return ProjectiveTransform::Translate(
-        offset.x + coverage_dx.x * pivot.x + coverage_dy.x * pivot.y,
-        offset.y + coverage_dx.y * pivot.x + coverage_dy.y * pivot.y);
+  const auto rotation    = ProjectiveTransform::Rotate(NormalizeRotationDegrees(rotation_degrees) *
+                                                       (std::numbers::pi / 180.0));
+  const auto pivot_shift = transform.PivotShift(rotation_degrees);
+  const auto pivot_translation = [&](Point2d pivot) {
+    const auto shift = pivot_shift.Map(pivot);
+    return ProjectiveTransform::Translate(transform.offset.x + shift.x,
+                                          transform.offset.y + shift.y);
   };
-  const auto linear =
-      ProjectiveTransform::Scale(sx, sy) * rotation * Perspective(image.horizontal, image.vertical);
+  const auto linear = ProjectiveTransform::Scale(transform.scale.x, transform.scale.y) * rotation *
+                      transform.perspective;
   auto       source_to_plane = pivot_translation(center) * linear;
   const auto coverage        = source_to_plane.MapQuad(source_bounds.Corners());
-  if (image.output_frame != GeometryOutputFrame::CropFrame) {
+  if (source_bounds_only) {
     frame = QuadBounds(coverage);
-  } else if (image.constrain_crop) {
+  } else if (transform.constrain_crop) {
     const double minimum_scale = kGeometryMinNormalizedSize / std::min(crop.w, crop.h);
-    frame =
-        ConstrainCropToTransformedSource(frame, coverage, minimum_scale, coverage_dx, coverage_dy);
+    frame = ConstrainCropToTransformedSource(frame, coverage, minimum_scale,
+                                             {pivot_shift.m[0], pivot_shift.m[3]},
+                                             {pivot_shift.m[1], pivot_shift.m[4]});
     source_to_plane =
         pivot_translation({frame.x + 0.5 * frame.width, frame.y + 0.5 * frame.height}) * linear;
   }
@@ -252,6 +262,25 @@ auto ResolveProjectiveImageFrame(const ImageGeometryParams& image, Extent2D sour
   const auto plane_to_source = source_to_plane.Inverse();
   (void)plane_to_source.MapQuad(frame.Corners());
   return {source_to_plane, plane_to_source, frame};
+}
+
+}  // namespace
+
+auto ResolveProjectiveImageFrame(const ImageGeometryParams& image, Extent2D source)
+    -> ProjectiveImageFrame {
+  if (!std::isfinite(image.rotation_degrees)) {
+    throw std::runtime_error("ResolveRenderGeometry: rotation must be finite");
+  }
+  const float rotation = image.output_frame == GeometryOutputFrame::TransformedSourceBounds
+                             ? 0.0f
+                             : image.rotation_degrees;
+  return ResolveImageFrame(ResolveCropPlaneTransform(image), image.crop_rect, rotation, source,
+                           image.output_frame != GeometryOutputFrame::CropFrame);
+}
+
+auto ResolveProjectiveCropFrame(const CropPlaneTransform& transform, NormalizedRect crop,
+                                float rotation_degrees, Extent2D source) -> ProjectiveImageFrame {
+  return ResolveImageFrame(transform, crop, rotation_degrees, source, false);
 }
 
 }  // namespace alcedo

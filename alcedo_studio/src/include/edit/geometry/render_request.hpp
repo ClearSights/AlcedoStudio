@@ -79,13 +79,14 @@ struct SamplingFootprint {
 /**
  * @brief How one render reads the document crop and rotation.
  *
- * Only editor viewport requests set @ref RotatedUncroppedSource, while the Geometry panel is
+ * Only editor viewport requests set @ref GeometryEditingSource, while the Geometry panel is
  * open. Only the AI Mask analysis render sets @ref ReferenceSource. The document is never
  * changed; the value selects which user geometry the frame binds.
  */
 enum class DocumentGeometryUse : std::uint8_t {
-  ApplyCropAndRotation,    ///< Default: every product render applies the document geometry.
-  RotatedUncroppedSource,  ///< Geometry panel open: the whole source with the document rotation.
+  ApplyCropAndRotation,   ///< Default: every product render applies the document geometry.
+  GeometryEditingSource,  ///< Geometry panel open: manual transforms, without crop or
+                          ///< straightening.
   /// AI Mask analysis render: the whole source without crop and rotation. EditSpace is
   /// ReferenceSpace, so `render_to_reference` is a pure scale.
   ReferenceSource,
@@ -97,7 +98,7 @@ struct RenderRequest {
   SamplingFootprint   footprint{};
   DocumentGeometryUse document_geometry = DocumentGeometryUse::ApplyCropAndRotation;
   /// Explicit internal final-frame input before manual transforms are stored in the document.
-  /// Valid only with ApplyCropAndRotation and a CropFrame output.
+  /// Valid with ApplyCropAndRotation or GeometryEditingSource and a CropFrame input.
   std::optional<ImageGeometryParams> final_frame_geometry;
 };
 

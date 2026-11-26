@@ -206,6 +206,7 @@ Item {
                         id: editorInteraction
                         objectName: "editorInteractionController"
                         interactionEnabled: root.viewportInputEnabled
+                        cropFitMargin: appTheme.spaceXl
                     }
 
                     EditorViewportItem {
@@ -764,7 +765,7 @@ Item {
                         }
                     }
 
-                    // Phase 5D: TapHandler.gesturePolicy uses DragThreshold so a left-button drag
+                    // The tap handler uses a drag threshold so a left-button drag
                     // (now owned by viewportPanDrag above) cancels the tap instead
                     // of being held as a would-be double-tap. A clean double-click
                     // (two clicks without a drag) still fires onDoubleTapped and

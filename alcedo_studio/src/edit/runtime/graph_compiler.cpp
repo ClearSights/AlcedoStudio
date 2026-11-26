@@ -71,9 +71,8 @@ auto EstimatePeakTransientBytes(const DevelopCompileSource& source) -> std::size
 }
 
 /**
- * @brief User geometry that this frame binds. RotatedUncroppedSource keeps the document rotation,
- *        uses a full-frame crop, and frames the bounding box of the rotated source.
- *        ReferenceSource uses a full-frame crop and no rotation. The document is not changed.
+ * @brief Reads the document geometry for the frame. ReferenceSource uses identity geometry.
+ *        The editing view resolves its placement from the same crop and rotation as the product.
  */
 auto ImageParamsForRequest(const PipelineDocument& document, DocumentGeometryUse use)
     -> ImageGeometryParams {
@@ -82,10 +81,6 @@ auto ImageParamsForRequest(const PipelineDocument& document, DocumentGeometryUse
     return params;
   }
   params.rotation_degrees = document.Geometry().RotationDegrees();
-  if (use == DocumentGeometryUse::RotatedUncroppedSource) {
-    params.output_frame = GeometryOutputFrame::RotatedSourceBounds;
-    return params;
-  }
   params.crop_rect = document.Geometry().CropRect();
   return params;
 }
@@ -549,16 +544,20 @@ void GraphCompiler::BindFrameGeometry(ExecutionPlan& plan, const PipelineDocumen
       MakeSourceGeometry(plan.source.develop_output_extent, plan.source.full_reference_extent,
                          plan.source.sensor_active_area, plan.source.downsample_passes);
   if (request.final_frame_geometry &&
-      (request.document_geometry != DocumentGeometryUse::ApplyCropAndRotation ||
+      (request.document_geometry == DocumentGeometryUse::ReferenceSource ||
        request.final_frame_geometry->output_frame != GeometryOutputFrame::CropFrame)) {
     throw std::invalid_argument(
-        "GraphCompiler: explicit final-frame geometry requires a crop render");
+        "GraphCompiler: explicit final-frame geometry requires crop input and an editing or "
+        "product render");
   }
   const auto params = request.final_frame_geometry
                           ? *request.final_frame_geometry
                           : ImageParamsForRequest(document, request.document_geometry);
-  plan.geometry     = ResolveRenderGeometry(geom_source, params, request.view, request.resolution,
-                                            request.footprint);
+  plan.geometry = request.document_geometry == DocumentGeometryUse::GeometryEditingSource
+                      ? ResolveGeometryEditingView(geom_source, params, request.view,
+                                                   request.resolution, request.footprint)
+                      : ResolveRenderGeometry(geom_source, params, request.view, request.resolution,
+                                              request.footprint);
   plan.encode_geometry_resample = !IsIdentityResample(plan.geometry);
 }
 

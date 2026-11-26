@@ -127,8 +127,8 @@ struct EditorRenderIntent {
   EditorRenderPriority                           priority = EditorRenderPriority::Normal;
   std::shared_ptr<EditorRenderCancellationToken> cancellation;
   PresentationSinkId                             presentation_sink_id  = 0;
-  // Geometry-panel previews show the whole rotated source while the crop frame is
-  // edited. The port maps this to DocumentGeometryUse::RotatedUncroppedSource; the
+  // Geometry-panel previews show the uncropped editing image while the crop frame is
+  // edited. The port maps this to DocumentGeometryUse::GeometryEditingSource; the
   // overlay maps the crop frame through the presented frame's geometry. The
   // document is not changed.
   bool                                           geometry_overlay_only = false;

@@ -1241,11 +1241,11 @@ TEST(EditorSessionRenderSchedulerPortTest, ShutdownCancelsAndWaitsForTheInFlight
 }
 
 TEST(EditorSessionRenderSchedulerPortTest,
-     GeometryOverlayIntentSetsRotatedUncroppedSourceOnlyForEditorRequests) {
+     GeometryOverlayIntentSetsGeometryEditingSourceOnlyForEditorRequests) {
   auto overlay                         = MakeRequest(91, 5);
   overlay.intent.geometry_overlay_only = true;
   const auto overlay_desc              = MakeEditorRenderDesc(overlay);
-  EXPECT_EQ(overlay_desc.document_geometry_, alcedo::DocumentGeometryUse::RotatedUncroppedSource);
+  EXPECT_EQ(overlay_desc.document_geometry_, alcedo::DocumentGeometryUse::GeometryEditingSource);
   EXPECT_EQ(overlay_desc.frame_metadata_.presentation_request_id, 91u);
 
   const auto closed_desc = MakeEditorRenderDesc(MakeRequest(92, 5));
@@ -1257,7 +1257,7 @@ TEST(EditorSessionRenderSchedulerPortTest,
       std::make_shared<alcedo::PipelineExecutor>(alcedo::ExecutorRole::Interactive);
   editor_task.options_.render_desc_ = overlay_desc;
   EXPECT_EQ(editor_task.MakeApplyRequest().geometry.document_geometry,
-            alcedo::DocumentGeometryUse::RotatedUncroppedSource);
+            alcedo::DocumentGeometryUse::GeometryEditingSource);
 
   // Thumbnail and export descriptions are built by their services from a default RenderDesc.
   for (const auto type : {alcedo::RenderType::THUMBNAIL, alcedo::RenderType::FULL_RES_EXPORT}) {

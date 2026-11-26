@@ -2,6 +2,8 @@
 //  SPDX-License-Identifier: GPL-3.0-only
 //  Additional permission under GPLv3 section 7 applies; see the LICENSE file.
 
+#include "ui/edit_viewer/overlay_cursor.hpp"
+
 #include <gtest/gtest.h>
 
 #include <QCursor>
@@ -9,9 +11,8 @@
 #include <QRectF>
 #include <array>
 
+#include "edit/geometry/render_geometry_resolver.hpp"
 #include "ui/edit_viewer/crop_geometry.hpp"
-#include "ui/edit_viewer/mask_edit_geometry.hpp"
-#include "ui/edit_viewer/overlay_cursor.hpp"
 #include "ui/editor_rhi/editor_interaction_controller.hpp"
 #include "ui/editor_rhi/editor_overlay_item.hpp"
 
@@ -25,8 +26,9 @@ const QRectF    kCropRect(0.25, 0.25, 0.5, 0.5);
 void ConfigureCrop(editor_rhi::EditorInteractionController& controller, float rotation_degrees) {
   controller.setInteractionEnabled(true);
   controller.setViewportMetrics(800.0, 600.0, 1.0);
+  constexpr Extent2D extent{kImageWidth, kImageHeight};
   controller.setDisplayedMaskGeometry(
-      MaskEditGeometry::MakeIdentityPhotographGeometry(Extent2D{kImageWidth, kImageHeight}));
+      ResolveGeometryEditingView(MakeSourceGeometry(extent, extent), {}, {}, {}, {}));
   controller.setRenderReferenceSize(kImageWidth, kImageHeight);
   controller.setCropToolEnabled(true);
   controller.setCropOverlayVisible(true);

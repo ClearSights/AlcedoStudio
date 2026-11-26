@@ -76,6 +76,7 @@ class EditorInteractionController : public QObject {
   Q_PROPERTY(bool hasCustomCursor READ hasCustomCursor NOTIFY cursorChanged)
   Q_PROPERTY(float rotationLabelDegrees READ rotationLabelDegrees NOTIFY cropChanged)
   Q_PROPERTY(QPointF angleBadgeItemPos READ angleBadgeItemPos NOTIFY overlayGeometryChanged)
+  Q_PROPERTY(qreal cropFitMargin MEMBER crop_fit_margin_ WRITE setCropFitMargin)
   Q_PROPERTY(bool overlayGeometryValid READ overlayGeometryValid NOTIFY overlayGeometryChanged)
   Q_PROPERTY(bool interactionEnabled READ interactionEnabled WRITE setInteractionEnabled NOTIFY
                  interactionEnabledChanged)
@@ -139,6 +140,8 @@ class EditorInteractionController : public QObject {
   [[nodiscard]] auto rotationLabelDegrees() const -> float { return cropRotationDegrees(); }
   [[nodiscard]] auto angleBadgeItemPos() const -> QPointF;
   [[nodiscard]] auto overlayGeometryValid() const -> bool;
+  /// Reserves logical pixels around the photograph for crop controls when locked to fit.
+  void                setCropFitMargin(qreal margin);
   [[nodiscard]] auto interactionEnabled() const -> bool { return interaction_enabled_; }
 
   Q_INVOKABLE void setCropToolEnabled(bool enabled);
@@ -295,6 +298,7 @@ class EditorInteractionController : public QObject {
   // source pixels), not the 2K render reference, because 100% is defined
   // against real image pixels.
   [[nodiscard]] auto fitFraction() const -> float;
+  [[nodiscard]] auto             cropFitZoom() const -> float;
   // Zoom-field ceiling that maps to kMaxTrueZoom at the current image/viewport.
   [[nodiscard]] auto maxZoomField() const -> float;
   // Recompute maxZoomField() and push it to the view transform controller. Call
@@ -322,6 +326,7 @@ class EditorInteractionController : public QObject {
   ViewerState viewer_state_{};
   ViewTransformController view_transform_controller_{};
   CropInteractionController crop_interaction_controller_{};
+  qreal                          crop_fit_margin_ = 0.0;
   ViewportWidgetInfo             widget_info_{1, 1, 1.0f};
   ResolvedRenderGeometry         displayed_mask_geometry_{};
   FramePresentationMode          presentation_mode_            = FramePresentationMode::FullFrame;

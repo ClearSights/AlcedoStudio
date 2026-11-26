@@ -21,10 +21,11 @@
 #include <cmath>
 #include <vector>
 
+#include "edit/geometry/render_geometry_resolver.hpp"
 #include "ui/edit_viewer/crop_geometry.hpp"
 #include "ui/edit_viewer/edit_viewer_overlay_geometry.hpp"
-#include "ui/edit_viewer/mask_edit_geometry.hpp"
 #include "ui/edit_viewer/frame_sink.hpp"
+#include "ui/edit_viewer/mask_edit_geometry.hpp"
 #include "ui/edit_viewer/view_transform_controller.hpp"
 #include "ui/editor_rhi/direct_frame_sink.hpp"
 #include "ui/editor_rhi/direct_present_queue.hpp"
@@ -56,8 +57,9 @@ auto ExtentOf(int width, int height) -> Extent2D {
 // Presents an uncropped, unrotated frame of a width x height source, as the
 // session does when a frame reaches the viewport.
 void ConfigureImage(EditorInteractionController& controller, int width = 4000, int height = 3000) {
+  const auto extent = ExtentOf(width, height);
   controller.setDisplayedMaskGeometry(
-      MaskEditGeometry::MakeIdentityPhotographGeometry(ExtentOf(width, height)));
+      ResolveGeometryEditingView(MakeSourceGeometry(extent, extent), {}, {}, {}, {}));
   controller.setRenderReferenceSize(width, height);
 }
 

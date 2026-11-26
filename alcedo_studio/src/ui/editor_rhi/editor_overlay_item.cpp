@@ -353,20 +353,19 @@ auto BuildOverlaySceneGeometry(const CropOverlayWidgetGeometry& geometry, bool c
   append_edge_grip(geometry.crop_corners_widget[2], geometry.crop_corners_widget[3]);
   append_edge_grip(geometry.crop_corners_widget[3], geometry.crop_corners_widget[0]);
 
+  const auto crop_point = [&](double u, double v) {
+    const auto widget = geometry.crop_uv_to_widget.Map({u, v});
+    return QPointF(widget.x, widget.y);
+  };
+
   // Dashed thirds (legacy Qt::DashLine).
   constexpr float kDash = 6.0f;
   constexpr float kGap = 4.0f;
   for (const float t : {1.0f / 3.0f, 2.0f / 3.0f}) {
-    AppendDashedStroke(
-        scene.grid_triangles,
-        CropGeometry::LerpPoint(geometry.crop_corners_widget[0], geometry.crop_corners_widget[1], t),
-        CropGeometry::LerpPoint(geometry.crop_corners_widget[3], geometry.crop_corners_widget[2], t),
-        1.0f, kDash, kGap);
-    AppendDashedStroke(
-        scene.grid_triangles,
-        CropGeometry::LerpPoint(geometry.crop_corners_widget[0], geometry.crop_corners_widget[3], t),
-        CropGeometry::LerpPoint(geometry.crop_corners_widget[1], geometry.crop_corners_widget[2], t),
-        1.0f, kDash, kGap);
+    AppendDashedStroke(scene.grid_triangles, crop_point(t, 0.0), crop_point(t, 1.0), 1.0f, kDash,
+                       kGap);
+    AppendDashedStroke(scene.grid_triangles, crop_point(0.0, t), crop_point(1.0, t), 1.0f, kDash,
+                       kGap);
   }
 
   // Fine grid while a rotate drag is active: about kCropFineGridSpacingPx cells, each third
@@ -389,16 +388,14 @@ auto BuildOverlaySceneGeometry(const CropOverlayWidgetGeometry& geometry, bool c
         continue;
       }
       const float t = static_cast<float>(i) / static_cast<float>(lines_x);
-      AppendThickLine(scene.fine_grid_triangles, CropGeometry::LerpPoint(c[0], c[1], t),
-                      CropGeometry::LerpPoint(c[3], c[2], t), 1.0f);
+      AppendThickLine(scene.fine_grid_triangles, crop_point(t, 0.0), crop_point(t, 1.0), 1.0f);
     }
     for (int i = 1; i < lines_y; ++i) {
       if (i % split_y == 0) {
         continue;
       }
       const float t = static_cast<float>(i) / static_cast<float>(lines_y);
-      AppendThickLine(scene.fine_grid_triangles, CropGeometry::LerpPoint(c[0], c[3], t),
-                      CropGeometry::LerpPoint(c[1], c[2], t), 1.0f);
+      AppendThickLine(scene.fine_grid_triangles, crop_point(0.0, t), crop_point(1.0, t), 1.0f);
     }
   }
 
@@ -531,7 +528,7 @@ void EditorOverlayItem::rebuildSceneGeometry() {
     return;
   }
   // Match legacy paint: draw crop chrome whenever overlay_visible is true.
-  // tool_enabled only gates hit-testing, not drawing.
+  // tool_enabled enables pointer input independently of drawing.
   last_scene_geometry_ = BuildOverlaySceneGeometry(interaction_->overlayGeometry(),
                                                    interaction_->cropOverlayVisible());
 }

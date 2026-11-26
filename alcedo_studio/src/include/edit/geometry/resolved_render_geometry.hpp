@@ -75,6 +75,11 @@ struct ResolvedRenderGeometry {
   /// The decoded-to-reference and edit-to-render steps are still affine.
   std::optional<ProjectiveRenderGeometry> projective;
 
+  /// Editing frames carry their resolved manual transform to the viewport with the pixels.
+  /// It describes the presented frame for its lifetime and lets the UI project live crop drags
+  /// with the same transform. The crop and angle themselves stay with the crop tool.
+  std::optional<CropPlaneTransform>       editing_crop_plane;
+
   /// Complete pixel-center maps. Use Map or MapQuad for point coordinates.
   [[nodiscard]] auto                      RenderToReferenceMap() const -> ProjectiveTransform {
     return projective ? projective->render_to_reference

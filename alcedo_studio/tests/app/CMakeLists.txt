@@ -342,21 +342,19 @@ gtest_discover_tests(AdjustmentTransferCatalogTest
     PROPERTIES LABELS "ci_core_flow;edit;history")
 alcedo_register_test_target(AdjustmentTransferCatalogTest app ci_core)
 
-# Geometry overlay preview: crop disable + bilinear GPU resize path that the
-# unified scheduler runs when the Geometry panel owns the source-frame overlay. The test calls the
-# CUDA geometry helper only, so it exists only in CUDA builds.
+# Geometry editing requests and final crop placement. CUDA builds also check the resize helper.
+add_executable(EditorGeometryOverlayPipelineTest
+    ${ALCEDO_TEST_ROOT}/app/editor_geometry_overlay_pipeline_test.cpp)
+target_include_directories(EditorGeometryOverlayPipelineTest PUBLIC ${ALCEDO_INCLUDE_DIR} ${ALCEDO_TEST_DIR})
+target_link_libraries(EditorGeometryOverlayPipelineTest PRIVATE GTest::gtest_main EditGeometry EditGraph EditRuntime)
 if(ALCEDO_CUDA_ENABLED)
-  add_executable(EditorGeometryOverlayPipelineTest
-      ${ALCEDO_TEST_ROOT}/app/editor_geometry_overlay_pipeline_test.cpp)
-  target_include_directories(EditorGeometryOverlayPipelineTest PUBLIC ${ALCEDO_INCLUDE_DIR} ${ALCEDO_TEST_DIR})
-  target_link_libraries(EditorGeometryOverlayPipelineTest
-      PRIVATE GTest::gtest_main EditorAdjustmentPipeline EditRuntimeLens EditPipeline JSON ThreadPool
-              ${ALCEDO_TEST_OPENCV_MIN_DEPS})
-  gtest_discover_tests(EditorGeometryOverlayPipelineTest
-      TEST_PREFIX "EditorGeometryOverlayPipelineTest."
-      PROPERTIES LABELS "app;geometry;gpu")
-  alcedo_register_test_target(EditorGeometryOverlayPipelineTest app)
+  target_compile_definitions(EditorGeometryOverlayPipelineTest PRIVATE ALCEDO_TEST_CUDA_GEOMETRY)
+  target_link_libraries(EditorGeometryOverlayPipelineTest PRIVATE EditRuntimeLens ${ALCEDO_TEST_OPENCV_MIN_DEPS})
 endif()
+gtest_discover_tests(EditorGeometryOverlayPipelineTest
+    TEST_PREFIX "EditorGeometryOverlayPipelineTest."
+    PROPERTIES LABELS "app;geometry")
+alcedo_register_test_target(EditorGeometryOverlayPipelineTest app)
 
 # Sleeve operations of the mount scan (mounted_folder_plan.md, MF4): the tree of a mount through
 # SleeveServiceImpl and a real project database.

@@ -16,8 +16,8 @@ import Alcedo.Main 1.0
 // patches and a settled patch on release; keyboard and field edits submit
 // through the model's debounce; overlay drags submit interactive patches while
 // moving and one settled patch on release. Each settled patch is one history
-// commit. While the panel is open the viewport shows the whole source with the
-// document rotation, locked to fit.
+// commit. While the panel is open the viewport fits the editing image and the
+// overlay shows the final crop and straightening.
 Item {
     id: root
     objectName: "editorAdjustmentPanel_geometry"

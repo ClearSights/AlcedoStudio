@@ -12,7 +12,7 @@ namespace alcedo {
 namespace {
 
 auto ResolveZoomPan(const EditViewerOverlaySnapshot& snapshot) -> std::pair<float, QVector2D> {
-  float     zoom = snapshot.viewer_state.view_transform.zoom;
+  float     zoom = snapshot.mapping.zoom;
   QVector2D pan  = snapshot.viewer_state.view_transform.pan;
   if (snapshot.presentation_mode == FramePresentationMode::RoiFrame) {
     zoom = 1.0f;
@@ -69,13 +69,14 @@ auto EditViewerOverlayGeometry::Build(const EditViewerOverlaySnapshot& snapshot)
   }
 
   const auto crop_corners =
-      CropInteractionController::CropCornersWidget(crop_state, snapshot.mapping);
+      CropInteractionController::MapCropToWidget(crop_state, snapshot.mapping);
   if (!crop_corners.has_value()) {
     return geometry;
   }
-  geometry.crop_corners_widget  = *crop_corners;
+  geometry.crop_corners_widget  = crop_corners->corners;
+  geometry.crop_uv_to_widget    = crop_corners->uv_to_widget;
   geometry.crop_corners_valid   = true;
-  geometry.angle_badge_widget   = CropGeometry::CropAngleBadgeWidgetPoint(*crop_corners);
+  geometry.angle_badge_widget   = CropGeometry::CropAngleBadgeWidgetPoint(crop_corners->corners);
   geometry.crop_rotation_active = snapshot.crop_rotation_active;
   return geometry;
 }
@@ -91,7 +92,7 @@ auto EditViewerOverlayGeometry::ComputeHover(const EditViewerOverlaySnapshot& sn
   const auto [zoom, pan] = ResolveZoomPan(snapshot);
   hover.image_uv = ViewportMapper::WidgetPointToImageUv(event_pos, snapshot.widget_info,
                                                         snapshot.image_info, zoom, pan);
-  hover.inside_image     = hover.image_uv.has_value();
+  hover.inside_image     = geometry.image_rect_valid && geometry.image_rect.contains(event_pos);
 
   const auto& crop_state = snapshot.viewer_state.crop_overlay;
   const bool  crop_tool  = crop_state.tool_enabled && crop_state.overlay_visible;
@@ -129,7 +130,7 @@ auto EditViewerOverlayGeometry::ComputeHover(const EditViewerOverlaySnapshot& sn
     hover.kind = EditViewerOverlayHitKind::OutsideImage;
     return hover;
   }
-  if (!crop_tool) {
+  if (!crop_tool || !geometry.crop_corners_valid) {
     hover.kind = EditViewerOverlayHitKind::BlankInImage;
     return hover;
   }

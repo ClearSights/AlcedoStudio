@@ -136,7 +136,7 @@ class CudaDocumentGeometryRequestFixture : public ::testing::Test {
 
   static auto GeometryPanelPreview() -> RenderRequest {
     RenderRequest request;
-    request.document_geometry = DocumentGeometryUse::RotatedUncroppedSource;
+    request.document_geometry = DocumentGeometryUse::GeometryEditingSource;
     return request;
   }
 
@@ -220,7 +220,7 @@ TEST_F(CudaDocumentGeometryRequestFixture, FullResolutionExportUsesSamePerspecti
 }
 
 TEST_F(CudaDocumentGeometryRequestFixture,
-       GeometryPanelFrameShowsRotatedUncroppedSourceAndReusesSensorDevelop) {
+       GeometryPanelFrameShowsUnstraightenedSourceAndReusesSensorDevelop) {
   const auto document_before = document_->ToJson();
   const auto cropped         = Render();
   ASSERT_FALSE(cropped.empty());
@@ -232,31 +232,50 @@ TEST_F(CudaDocumentGeometryRequestFixture,
   EXPECT_EQ(stats.pass.sensor_develop_execute, 0U);
   EXPECT_EQ(stats.pass.sensor_develop_skip, 1U);
   EXPECT_EQ(stats.pass.source_h2d_count, 0U);
+  // The pass binds the new geometry output even when it aliases the sensor texture.
   EXPECT_EQ(stats.pass.geometry_execute, 1U);
 
-  // Reference: a document with the same rotation and no crop. The preview ignores the crop.
-  auto rotated_only = std::make_shared<PipelineDocument>(CreateDefaultPipelineDocument());
-  gpu_dag_test::EnsureTestCameraProfile(*rotated_only);
-  rotated_only->Geometry().SetRotationDegrees(7.0f);
-  CudaProductRenderer reference_renderer(ExecutorRole::Interactive, MakeUnpacker());
-  const auto          expected = Render(reference_renderer,
-                                        *test::FreezeInNewLineage(*rotated_only),
-                                        GeometryPanelPreview());
-  ASSERT_FALSE(expected.empty());
-  EXPECT_EQ(preview.size(), expected.size());
-  EXPECT_FALSE(preview.size() == cropped.size());
-  // The preview frames the whole rotated source, so it is larger than the uncropped source.
   auto identity = std::make_shared<PipelineDocument>(CreateDefaultPipelineDocument());
   gpu_dag_test::EnsureTestCameraProfile(*identity);
-  CudaProductRenderer identity_renderer(ExecutorRole::Interactive, MakeUnpacker());
-  const auto          uncropped =
-      Render(identity_renderer, *test::FreezeInNewLineage(*identity), RenderRequest{});
-  ASSERT_FALSE(uncropped.empty());
-  EXPECT_GT(preview.cols, uncropped.cols);
-  EXPECT_GT(preview.rows, uncropped.rows);
+  CudaProductRenderer reference_renderer(ExecutorRole::Interactive, MakeUnpacker());
+  const auto expected = Render(reference_renderer, *test::FreezeInNewLineage(*identity), {});
+  ASSERT_FALSE(expected.empty());
+  EXPECT_EQ(preview.size(), expected.size());
+  EXPECT_NE(preview.size(), cropped.size());
   EXPECT_LE(MaxRgbDifference(preview, expected), kPixelTolerance);
-
   EXPECT_EQ(document_->ToJson(), document_before);
+}
+
+TEST_F(CudaDocumentGeometryRequestFixture,
+       GeometryEditingViewRendersTransformedBoundsWithoutCropOrStraightening) {
+  auto request                 = GeometryPanelPreview();
+  request.final_frame_geometry = ImageGeometryParams{
+      .crop_rect        = {0.29f, 0.26f, 0.39f, 0.42f},
+      .rotation_degrees = 12.0f,
+      .horizontal       = 48.0,
+      .vertical         = -32.0,
+      .aspect           = 44.0,
+      .scale            = 105.0,
+      .offset_x         = 9.0,
+      .offset_y         = -5.0,
+  };
+  const auto preview = Render(request);
+  ASSERT_FALSE(preview.empty());
+  // The spec's unstraightened homography maps the 88x56 reference to these rounded bounds.
+  EXPECT_EQ(preview.size(), cv::Size(87, 82));
+  const auto center = preview.at<cv::Vec4f>(preview.rows / 2, preview.cols / 2);
+  EXPECT_GT(center[1], 0.0f);
+
+  auto changed_crop                                   = request;
+  changed_crop.final_frame_geometry->crop_rect        = {0.33f, 0.36f, 0.28f, 0.31f};
+  changed_crop.final_frame_geometry->rotation_degrees = -18.0f;
+  EXPECT_LE(MaxRgbDifference(preview, Render(changed_crop)), kPixelTolerance);
+
+  request.document_geometry = DocumentGeometryUse::ApplyCropAndRotation;
+  const auto final          = Render(request);
+  ASSERT_FALSE(final.empty());
+  EXPECT_LT(final.cols, preview.cols);
+  EXPECT_LT(final.rows, preview.rows);
 }
 
 TEST_F(CudaDocumentGeometryRequestFixture,

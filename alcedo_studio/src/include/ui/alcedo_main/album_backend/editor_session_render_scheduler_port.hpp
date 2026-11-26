@@ -79,7 +79,7 @@ using EditorGpuResourceReleaseCompletion = std::function<void(EditorGpuResourceR
  * @brief Render description for one editor viewport request.
  *
  * Maps the intent to render type, viewport region, and frame metadata. Sets
- * `document_geometry_ = RotatedUncroppedSource` exactly when `intent.geometry_overlay_only` is true
+ * `document_geometry_ = GeometryEditingSource` exactly when `intent.geometry_overlay_only` is true
  * (Geometry panel open); otherwise the document crop and rotation apply. Copies the curve input
  * histogram request of the intent (issue #888). Pure value; reads no pipeline state.
  */

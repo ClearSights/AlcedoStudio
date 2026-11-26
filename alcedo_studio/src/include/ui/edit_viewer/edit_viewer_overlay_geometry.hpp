@@ -39,6 +39,7 @@ struct CropOverlayWidgetGeometry {
   QRectF                 image_rect{};
   bool                   image_rect_valid    = false;
   std::array<QPointF, 4> crop_corners_widget{};
+  ProjectiveTransform    crop_uv_to_widget;
   bool                   crop_corners_valid  = false;
   // Anchor of the crop angle badge (CropGeometry::CropAngleBadgeWidgetPoint).
   QPointF                angle_badge_widget{};

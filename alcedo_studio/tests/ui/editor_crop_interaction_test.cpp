@@ -5,7 +5,7 @@
 /// @file editor_crop_interaction_test.cpp
 /// @brief Geometry crop frame on the editor viewport (#221): the frame maps
 /// through the presented frame's geometry, the source size comes from that
-/// frame, pointer edits run in frame space under the rotated preview and are
+/// frame, pointer edits run in the crop plane and are
 /// constrained to the rotated source, and the view stays at fit while the crop
 /// tool is open.
 
@@ -40,8 +40,9 @@ auto ExtentOf(int width, int height) -> Extent2D {
 // Presents an uncropped, unrotated frame of a width x height source, as the
 // session does when a frame reaches the viewport.
 void ConfigureImage(EditorInteractionController& controller, int width = 4000, int height = 3000) {
+  const auto extent = ExtentOf(width, height);
   controller.setDisplayedMaskGeometry(
-      MaskEditGeometry::MakeIdentityPhotographGeometry(ExtentOf(width, height)));
+      ResolveGeometryEditingView(MakeSourceGeometry(extent, extent), {}, {}, {}, {}));
   controller.setRenderReferenceSize(width, height);
 }
 
@@ -55,13 +56,15 @@ void PresentResolvedFrame(EditorInteractionController& controller, int width, in
                                     static_cast<int>(geometry.render_extent.height));
 }
 
-// Presents the Geometry panel frame: the whole source rotated by the document rotation.
+// Presents the Geometry panel frame before placing the final crop.
 void PresentGeometryPanelFrame(EditorInteractionController& controller, int width, int height,
-                               float degrees) {
-  ImageGeometryParams image;
-  image.rotation_degrees = degrees;
-  image.output_frame     = GeometryOutputFrame::RotatedSourceBounds;
-  PresentResolvedFrame(controller, width, height, image);
+                               const ImageGeometryParams& image = {}) {
+  const auto extent = ExtentOf(width, height);
+  const auto geometry =
+      ResolveGeometryEditingView(MakeSourceGeometry(extent, extent), image, {}, {}, {});
+  controller.setDisplayedMaskGeometry(geometry);
+  controller.setRenderReferenceSize(static_cast<int>(geometry.render_extent.width),
+                                    static_cast<int>(geometry.render_extent.height));
 }
 
 void OpenCropTool(EditorInteractionController& controller) {
@@ -75,7 +78,8 @@ auto MakeIdentityMapping(const ViewportWidgetInfo& widget, int width, int height
   MaskEditViewMapping mapping;
   mapping.widget     = widget;
   mapping.photograph = {width, height};
-  mapping.geometry   = MaskEditGeometry::MakeIdentityPhotographGeometry(ExtentOf(width, height));
+  const auto extent  = ExtentOf(width, height);
+  mapping.geometry = ResolveGeometryEditingView(MakeSourceGeometry(extent, extent), {}, {}, {}, {});
   return mapping;
 }
 
@@ -83,7 +87,7 @@ auto MakeIdentityMapping(const ViewportWidgetInfo& widget, int width, int height
 // with the crop at (0.2, 0.2, 0.6, 0.6): widget corners (160, 120) to (640, 480).
 void OpenInsetCrop(EditorInteractionController& controller) {
   controller.setViewportMetrics(800, 600, 1.0);
-  PresentGeometryPanelFrame(controller, 400, 300, 0.0f);
+  PresentGeometryPanelFrame(controller, 400, 300);
   OpenCropTool(controller);
   controller.setCropRectNormalized(QRectF(0.2, 0.2, 0.6, 0.6));
 }
@@ -103,6 +107,23 @@ void Drag(EditorInteractionController& controller, const QPointF& from,
 auto PointOnCircle(const QPointF& center, double radius, double degrees) -> QPointF {
   const double radians = degrees * 3.14159265358979323846 / 180.0;
   return center + QPointF(radius * std::cos(radians), radius * std::sin(radians));
+}
+
+auto TransformedCrop() -> ImageGeometryParams {
+  return {.crop_rect        = {0.29f, 0.26f, 0.39f, 0.42f},
+          .rotation_degrees = 12.0f,
+          .horizontal       = 48.0,
+          .vertical         = -32.0,
+          .aspect           = 44.0,
+          .scale            = 105.0,
+          .offset_x         = 9.0,
+          .offset_y         = -5.0};
+}
+
+void SetCrop(EditorInteractionController& controller, const ImageGeometryParams& geometry) {
+  OpenCropTool(controller);
+  controller.setCropRectNormalized(CropGeometry::ToQRectF(geometry.crop_rect));
+  controller.setCropRotationDegrees(geometry.rotation_degrees);
 }
 
 }  // namespace
@@ -349,10 +370,10 @@ TEST(EditorCropInteractionTest, CropSourceSizeComesFromPresentedReferenceExtentA
   EXPECT_EQ(controller.sourceImageHeight(), 4000);
 }
 
-TEST(EditorCropInteractionTest, CropFrameIsAxisAlignedOnTheRotatedGeometryPanelFrame) {
+TEST(EditorCropInteractionTest, CropFrameStraightensOverTheUnrotatedEditingImage) {
   EditorInteractionController controller;
   controller.setViewportMetrics(800, 600, 1.0);
-  PresentGeometryPanelFrame(controller, 400, 300, 10.0f);
+  PresentGeometryPanelFrame(controller, 400, 300);
   OpenCropTool(controller);
   controller.setCropRotationDegrees(10.0f);
   controller.setCropRectNormalized(controller.clampCropRect(QRectF(0.3, 0.3, 0.4, 0.4), 10.0f));
@@ -360,19 +381,19 @@ TEST(EditorCropInteractionTest, CropFrameIsAxisAlignedOnTheRotatedGeometryPanelF
   const auto geometry = controller.overlayGeometry();
   ASSERT_TRUE(geometry.crop_corners_valid);
   const auto& c = geometry.crop_corners_widget;
-  // The source is rotated under the frame, so the frame's edges are screen-aligned.
-  EXPECT_NEAR(c[0].y(), c[1].y(), 0.05);
-  EXPECT_NEAR(c[1].x(), c[2].x(), 0.05);
-  EXPECT_NEAR(c[2].y(), c[3].y(), 0.05);
-  EXPECT_NEAR(c[3].x(), c[0].x(), 0.05);
-  EXPECT_LT(c[0].x(), c[1].x());
-  EXPECT_LT(c[0].y(), c[3].y());
+  const auto       top     = c[1] - c[0];
+  const auto       left    = c[3] - c[0];
+  constexpr double radians = 10.0 * 3.14159265358979323846 / 180.0;
+  EXPECT_NEAR(top.y() / top.x(), -std::tan(radians), 1.0e-5);
+  EXPECT_NEAR(left.x() / left.y(), std::tan(radians), 1.0e-5);
+  EXPECT_NEAR(geometry.image_rect.width(), 800.0, 1.0e-4);
+  EXPECT_NEAR(geometry.image_rect.height(), 600.0, 1.0e-4);
 }
 
 TEST(EditorCropInteractionTest, CropEdgeDragUnderRotationMovesOnlyThatFrameEdge) {
   EditorInteractionController controller;
   controller.setViewportMetrics(800, 600, 1.0);
-  PresentGeometryPanelFrame(controller, 400, 300, 10.0f);
+  PresentGeometryPanelFrame(controller, 400, 300);
   OpenCropTool(controller);
   controller.setCropRotationDegrees(10.0f);
   const QRectF initial = controller.clampCropRect(QRectF(0.3, 0.3, 0.3, 0.3), 10.0f);
@@ -383,8 +404,10 @@ TEST(EditorCropInteractionTest, CropEdgeDragUnderRotationMovesOnlyThatFrameEdge)
   const QPointF right_mid = CropGeometry::LerpPoint(corners[1], corners[2], 0.5f);
   QSignalSpy   edited(&controller, &EditorInteractionController::cropFrameEdited);
   controller.handlePress(right_mid.x(), right_mid.y(), static_cast<int>(Qt::LeftButton));
-  controller.handleMove(right_mid.x() + 30.0, right_mid.y(), static_cast<int>(Qt::LeftButton));
-  controller.handleRelease(right_mid.x() + 30.0, right_mid.y(), static_cast<int>(Qt::LeftButton));
+  const auto outward = CropGeometry::NormalizeVector(corners[1] - corners[0], {1.0, 0.0});
+  const auto target  = right_mid + 30.0 * outward;
+  controller.handleMove(target.x(), target.y(), static_cast<int>(Qt::LeftButton));
+  controller.handleRelease(target.x(), target.y(), static_cast<int>(Qt::LeftButton));
 
   ASSERT_EQ(edited.count(), 2);
   EXPECT_FALSE(edited.at(0).at(2).toBool());
@@ -402,7 +425,7 @@ TEST(EditorCropInteractionTest, CropEdgeDragUnderRotationMovesOnlyThatFrameEdge)
 TEST(EditorCropInteractionTest, RotationDragShrinksFrameToStayInsideSource) {
   EditorInteractionController controller;
   controller.setViewportMetrics(800, 600, 1.0);
-  PresentGeometryPanelFrame(controller, 400, 300, 0.0f);
+  PresentGeometryPanelFrame(controller, 400, 300);
   OpenCropTool(controller);
   controller.setCropRectNormalized(QRectF(0.2, 0.2, 0.6, 0.6));
 
@@ -525,6 +548,153 @@ TEST(EditorCropInteractionTest, TrueZoomFollowsThePresentedFrameExtent) {
   controller.zoomToActualPixels();
   EXPECT_NEAR(controller.zoom(), 2.5f, 1.0e-4f);
   EXPECT_NEAR(controller.trueZoom(), 1.0f, 1.0e-4f);
+}
+
+TEST(EditorCropInteractionTest, PointerRoundTripTargetsRenderedSourcePixel) {
+  constexpr Extent2D extent{903, 605};
+  const auto         image = TransformedCrop();
+  for (const double dpr : {1.0, 1.5, 2.0}) {
+    EditorInteractionController controller;
+    controller.setViewportMetrics(800, 600, dpr);
+    controller.setCropFitMargin(20.0);
+    PresentGeometryPanelFrame(controller, extent.width, extent.height, image);
+    SetCrop(controller, image);
+    const auto editing =
+        ResolveGeometryEditingView(MakeSourceGeometry(extent, extent), image, {}, {}, {});
+    const auto final = ResolveRenderGeometry(MakeSourceGeometry(extent, extent), image, {}, {}, {});
+    const auto overlay = controller.overlayGeometry();
+    ASSERT_TRUE(overlay.crop_corners_valid);
+    const Point2d uv{0.29, 0.64};
+    const auto    output_pixel =
+        Point2d{uv.x * final.render_extent.width, uv.y * final.render_extent.height};
+    const auto reference_pixel = final.RenderToReferenceMap().Map(output_pixel);
+    const auto render_pixel    = editing.ReferenceToRenderMap().Map(reference_pixel);
+    const auto widget_point    = overlay.crop_uv_to_widget.Map(uv);
+    const auto sample = controller.MapItemToMaskReference(widget_point.x, widget_point.y, false);
+    ASSERT_TRUE(sample);
+    const auto actual = editing.ReferenceToRenderMap().Map(
+        {sample->reference_pixels.x, sample->reference_pixels.y});
+    EXPECT_NEAR(actual.x, render_pixel.x, 0.25);
+    EXPECT_NEAR(actual.y, render_pixel.y, 0.25);
+    EXPECT_NEAR(widget_point.x,
+                overlay.image_rect.left() +
+                    overlay.image_rect.width() * render_pixel.x / editing.render_extent.width,
+                0.25);
+    EXPECT_NEAR(widget_point.y,
+                overlay.image_rect.top() +
+                    overlay.image_rect.height() * render_pixel.y / editing.render_extent.height,
+                0.25);
+  }
+}
+
+TEST(EditorCropInteractionTest, TransformedCornerDragKeepsOppositeCornerOnTheSamePixel) {
+  EditorInteractionController controller;
+  controller.setViewportMetrics(800, 600, 2.0);
+  const auto image = TransformedCrop();
+  PresentGeometryPanelFrame(controller, 903, 605, image);
+  SetCrop(controller, image);
+  const auto before = controller.overlayGeometry();
+  ASSERT_TRUE(before.crop_corners_valid);
+  const auto start  = before.crop_corners_widget[2];
+  const auto target = start + QPointF(20.0, 18.0);
+  Drag(controller, start, {target});
+  const auto after = controller.overlayGeometry();
+  ASSERT_TRUE(after.crop_corners_valid);
+  EXPECT_NEAR(after.crop_corners_widget[0].x(), before.crop_corners_widget[0].x(), 0.25);
+  EXPECT_NEAR(after.crop_corners_widget[0].y(), before.crop_corners_widget[0].y(), 0.25);
+  EXPECT_NEAR(after.crop_corners_widget[2].x(), target.x(), 0.25);
+  EXPECT_NEAR(after.crop_corners_widget[2].y(), target.y(), 0.25);
+}
+
+TEST(EditorCropInteractionTest, TransformedCropPreservesInheritedHitZonesAndRotationAid) {
+  EditorInteractionController controller;
+  controller.setViewportMetrics(800, 600, 1.5);
+  const auto image = TransformedCrop();
+  PresentGeometryPanelFrame(controller, 903, 605, image);
+  SetCrop(controller, image);
+  const auto overlay = controller.overlayGeometry();
+  ASSERT_TRUE(overlay.crop_corners_valid);
+  const auto& c     = overlay.crop_corners_widget;
+  const auto  scene = BuildOverlaySceneGeometry(overlay, true);
+  EXPECT_EQ(scene.handle_count, 4u);
+  EXPECT_FALSE(scene.grip_inner_triangles.empty());
+  EXPECT_EQ(overlay.angle_badge_widget, CropGeometry::CropAngleBadgeWidgetPoint(c));
+  EXPECT_TRUE(scene.fine_grid_triangles.empty());
+  controller.handleHoverMove(c[1].x(), c[1].y());
+  EXPECT_TRUE(controller.hasCustomCursor());
+  EXPECT_NE(controller.cursorShape(), static_cast<int>(Qt::BitmapCursor));
+
+  const auto top_edge = 0.5 * (c[0] + c[1]);
+  const auto top_out  = CropGeometry::NormalizeVector(top_edge - 0.5 * (c[0] + c[2]), {});
+  const auto top_hit  = CropGeometry::HitTestWidgetGeometry(c, top_edge + 12.0 * top_out);
+  EXPECT_EQ(top_hit.edge, CropEdge::Top);
+  EXPECT_FALSE(top_hit.rotate_hit);
+  const auto center = 0.5 * (c[0] + c[2]);
+  const auto radial = CropGeometry::NormalizeVector(c[1] - center, {});
+  const auto zone   = c[1] + 36.0 * radial;
+  ASSERT_TRUE(CropGeometry::HitTestWidgetGeometry(c, zone).rotate_hit);
+  controller.handleHoverMove(zone.x(), zone.y());
+  EXPECT_EQ(controller.cursorShape(), static_cast<int>(Qt::BitmapCursor));
+  const auto turned = zone + 18.0 * QPointF(-radial.y(), radial.x());
+  QSignalSpy edits(&controller, &EditorInteractionController::cropFrameEdited);
+  QSignalSpy repaint(&controller, &EditorInteractionController::overlayGeometryChanged);
+  controller.handlePress(zone.x(), zone.y(), static_cast<int>(Qt::LeftButton));
+  controller.handleMove(turned.x(), turned.y(), static_cast<int>(Qt::LeftButton));
+  EXPECT_LT(controller.cropRotationDegrees(), image.rotation_degrees);
+  ASSERT_EQ(edits.count(), 1);
+  EXPECT_FALSE(edits.first().at(2).toBool());
+  EXPECT_FALSE(
+      BuildOverlaySceneGeometry(controller.overlayGeometry(), true).fine_grid_triangles.empty());
+  const auto before_release = repaint.count();
+  controller.handleRelease(turned.x(), turned.y(), static_cast<int>(Qt::LeftButton));
+  ASSERT_EQ(edits.count(), 2);
+  EXPECT_TRUE(edits.last().at(2).toBool());
+  EXPECT_GT(repaint.count(), before_release);
+  EXPECT_TRUE(
+      BuildOverlaySceneGeometry(controller.overlayGeometry(), true).fine_grid_triangles.empty());
+}
+
+TEST(EditorCropInteractionTest, FullFrameFitLeavesAllFourOutsideRotateZonesReachable) {
+  for (const double dpr : {1.0, 1.5, 2.0}) {
+    EditorInteractionController controller;
+    controller.setViewportMetrics(800, 600, dpr);
+    PresentGeometryPanelFrame(controller, 400, 300);
+    OpenCropTool(controller);
+    const QRectF viewport(0, 0, 800, 600);
+    const auto   flush_fit = controller.overlayGeometry();
+    ASSERT_TRUE(flush_fit.crop_corners_valid);
+    for (const auto& corner : flush_fit.crop_corners_widget) {
+      const auto out = CropGeometry::NormalizeVector(corner - flush_fit.image_rect.center(), {});
+      EXPECT_FALSE(viewport.contains(corner + 20.0 * out));
+    }
+
+    controller.setCropFitMargin(20.0);
+    const auto overlay = controller.overlayGeometry();
+    ASSERT_TRUE(overlay.crop_corners_valid);
+    EXPECT_LT(controller.viewerViewState().snapshot.view_transform.zoom, 1.0f);
+    EXPECT_FLOAT_EQ(controller.zoom(), 1.0f);
+    for (const auto& corner : overlay.crop_corners_widget) {
+      const auto out   = CropGeometry::NormalizeVector(corner - overlay.image_rect.center(), {});
+      const auto point = corner + 20.0 * out;
+      EXPECT_TRUE(viewport.contains(point));
+      controller.handleHoverMove(point.x(), point.y());
+      EXPECT_EQ(controller.cursorShape(), static_cast<int>(Qt::BitmapCursor));
+    }
+  }
+}
+
+TEST(EditorCropInteractionTest, ProductFrameDoesNotExposeEditingInputBeforeTheEditingFrameArrives) {
+  EditorInteractionController controller;
+  controller.setViewportMetrics(800, 600, 1.0);
+  PresentResolvedFrame(controller, 400, 300, {});
+  OpenCropTool(controller);
+  EXPECT_FALSE(controller.overlayGeometry().crop_corners_valid);
+  QSignalSpy edits(&controller, &EditorInteractionController::cropFrameEdited);
+  Drag(controller, {400.0, 300.0}, {{440.0, 340.0}});
+  controller.handleDoubleTap(400.0, 300.0);
+  EXPECT_EQ(edits.count(), 0);
+  PresentGeometryPanelFrame(controller, 400, 300);
+  EXPECT_TRUE(controller.overlayGeometry().crop_corners_valid);
 }
 
 }  // namespace alcedo::editor_rhi

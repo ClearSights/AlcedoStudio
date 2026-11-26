@@ -49,7 +49,7 @@ struct RenderDesc {
   uint32_t             max_edge_            = 1024;       // max edge for thumbnail/export resize
   DecodeRes            decode_res_ = DecodeRes::QUARTER;  // RAW decode resolution for thumbnails
   // Copied unchanged into PipelineApplyRequest::geometry. Only the editor viewport port sets
-  // RotatedUncroppedSource (Geometry panel open); thumbnail, export, and the remote image analysis
+  // GeometryEditingSource (Geometry panel open); thumbnail, export, and the remote image analysis
   // rendition keep the default. The AI Mask analysis render does not use a PipelineTask.
   DocumentGeometryUse  document_geometry_ = DocumentGeometryUse::ApplyCropAndRotation;
   /// Explicit internal final frame for a render whose transform is not stored in the document.

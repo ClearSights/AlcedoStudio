@@ -427,4 +427,96 @@ auto ResolveRenderGeometry(const SourceGeometry& source, const ImageGeometryPara
   return geometry;
 }
 
+namespace {
+
+/// Resolves the live crop with the manual transform of the pixels currently being edited.
+auto ResolveEditingCropFrame(const ResolvedRenderGeometry& editing, NormalizedRect crop,
+                             float rotation_degrees) -> ProjectiveImageFrame {
+  if (!editing.editing_crop_plane || editing.full_reference_extent.Empty()) {
+    throw std::runtime_error("ResolveRenderGeometry: missing editing frame geometry");
+  }
+  if (!std::isfinite(crop.x) || !std::isfinite(crop.y) || !std::isfinite(crop.w) ||
+      !std::isfinite(crop.h)) {
+    throw std::runtime_error("ResolveRenderGeometry: crop coordinates must be finite");
+  }
+  const auto source    = editing.full_reference_extent;
+  auto       transform = *editing.editing_crop_plane;
+  if (!editing.projective && transform.constrain_crop) {
+    // The unchanged affine product render uses the original rotated-source constraint.
+    crop                     = ClampCropToRotatedSource(crop, rotation_degrees, source);
+    transform.constrain_crop = false;
+  }
+  return ResolveProjectiveCropFrame(transform, crop, rotation_degrees, source);
+}
+
+}  // namespace
+
+auto ResolveEditingCropPlacement(const ResolvedRenderGeometry& editing, NormalizedRect crop,
+                                 float rotation_degrees) -> EditingCropPlacement {
+  const auto [source_to_plane, plane_to_source, frame] =
+      ResolveEditingCropFrame(editing, crop, rotation_degrees);
+  const auto    source = editing.full_reference_extent;
+  const double  q      = 0.5 * std::max(source.width, source.height);
+  const Point2d origin{source.width * 0.5, source.height * 0.5};
+  const auto    to_reference =
+      ProjectiveTransform::Translate(origin.x, origin.y) * ProjectiveTransform::Scale(q, q);
+  const auto from_reference = ProjectiveTransform::Scale(1.0 / q, 1.0 / q) *
+                              ProjectiveTransform::Translate(-origin.x, -origin.y);
+  const auto uv_to_plane    = ProjectiveTransform::Translate(frame.x, frame.y) *
+                              ProjectiveTransform::Scale(frame.width, frame.height);
+  // Crop UVs are final-output coordinates before rounding. The inverse final map followed
+  // by the presented editing map keeps the boundary in the same place at every render scale.
+  const auto uv_to_render =
+      editing.ReferenceToRenderMap() * to_reference * plane_to_source * uv_to_plane;
+  (void)uv_to_render.MapQuad(Rectangle2d{0.0, 0.0, 1.0, 1.0}.Corners());
+
+  // Removing the pivot-induced translation keeps the drag plane fixed as a crop edge moves.
+  // A new box's center must be converted back to the requested pivot before validation.
+  const auto pivot_shift = editing.editing_crop_plane->PivotShift(rotation_degrees);
+  const auto shift = pivot_shift.Map({frame.x + 0.5 * frame.width, frame.y + 0.5 * frame.height});
+  const auto shift_at_origin = pivot_shift.Map(origin);
+  const ProjectiveTransform crop_center_to_drag_center{
+      {1.0 - pivot_shift.m[0], -pivot_shift.m[1], shift_at_origin.x, -pivot_shift.m[3],
+       1.0 - pivot_shift.m[4], shift_at_origin.y, 0.0, 0.0, 1.0}};
+  const auto render_to_drag = ProjectiveTransform::Translate(-q * shift.x, -q * shift.y) *
+                              to_reference * source_to_plane * from_reference *
+                              editing.RenderToReferenceMap();
+  return {uv_to_render,
+          render_to_drag,
+          crop_center_to_drag_center,
+          {(frame.x - shift.x) * q + origin.x, (frame.y - shift.y) * q + origin.y, frame.width * q,
+           frame.height * q}};
+}
+
+auto ResolveEditingCropRect(const ResolvedRenderGeometry& editing, NormalizedRect crop,
+                            float rotation_degrees) -> NormalizedRect {
+  const auto   frame  = ResolveEditingCropFrame(editing, crop, rotation_degrees).frame;
+  const auto   source = editing.full_reference_extent;
+  const double q      = 0.5 * std::max(source.width, source.height);
+  return {static_cast<float>(0.5 + frame.x * q / source.width),
+          static_cast<float>(0.5 + frame.y * q / source.height),
+          static_cast<float>(frame.width * q / source.width),
+          static_cast<float>(frame.height * q / source.height)};
+}
+
+auto ResolveGeometryEditingView(const SourceGeometry& source, const ImageGeometryParams& image,
+                                const ViewRequest& view, const ResolutionRequest& resolution,
+                                const SamplingFootprint& footprint) -> ResolvedRenderGeometry {
+  const ImageGeometryParams editing{
+      .output_frame = HasIdentityManualTransform(image)
+                          ? GeometryOutputFrame::CropFrame
+                          : GeometryOutputFrame::TransformedSourceBounds,
+      .horizontal   = image.horizontal,
+      .vertical     = image.vertical,
+      .aspect       = image.aspect,
+      .scale        = image.scale,
+      .offset_x     = image.offset_x,
+      .offset_y     = image.offset_y,
+  };
+  auto geometry               = ResolveRenderGeometry(source, editing, view, resolution, footprint);
+  geometry.editing_crop_plane = ResolveCropPlaneTransform(image);
+  (void)ResolveEditingCropPlacement(geometry, image.crop_rect, image.rotation_degrees);
+  return geometry;
+}
+
 }  // namespace alcedo

@@ -13,6 +13,7 @@ namespace alcedo {
 struct Point2d {
   double x = 0.0;
   double y = 0.0;
+  auto   operator==(const Point2d&) const -> bool = default;
 };
 
 struct Rectangle2d {
@@ -64,6 +65,23 @@ struct ProjectiveTransform {
 /// True when perspective, aspect, scale, and offsets have their identity values.
 [[nodiscard]] auto HasIdentityManualTransform(const ImageGeometryParams& image) -> bool;
 
+/// Manual transform of a presented editing frame, in the centered reference plane.
+struct CropPlaneTransform {
+  ProjectiveTransform perspective;
+  Point2d             scale{1.0, 1.0};
+  Point2d             offset;
+  bool                constrain_crop                                      = true;
+
+  auto                operator==(const CropPlaneTransform&) const -> bool = default;
+
+  /// Translation induced by changing the straightening pivot, in the same units as the pivot.
+  [[nodiscard]] auto  PivotShift(float rotation_degrees) const -> ProjectiveTransform;
+};
+
+/// Validates and converts the manual controls into the matrices used by the render and crop tools.
+[[nodiscard]] auto ResolveCropPlaneTransform(const ImageGeometryParams& image)
+    -> CropPlaneTransform;
+
 /**
  * @brief Resolves the reference-plane transform and frame together before pixel rounding.
  *
@@ -79,5 +97,11 @@ struct ProjectiveImageFrame {
 
 [[nodiscard]] auto ResolveProjectiveImageFrame(const ImageGeometryParams& image, Extent2D source)
     -> ProjectiveImageFrame;
+
+/// Resolves a crop against the given manual transform. The returned frame uses normalized plane
+/// units.
+[[nodiscard]] auto ResolveProjectiveCropFrame(const CropPlaneTransform& transform,
+                                              NormalizedRect crop, float rotation_degrees,
+                                              Extent2D source) -> ProjectiveImageFrame;
 
 }  // namespace alcedo

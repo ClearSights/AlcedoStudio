@@ -545,13 +545,14 @@ auto ExportRefusalMessage() -> std::string {
   return std::string(kPresentationSuspendedMessage) + "an export is running";
 }
 
-TEST_F(EditorSessionRenderControllerTest, EditRefusedDuringExportRendersOnceWhenTheExportEnds) {
+TEST_F(EditorSessionRenderControllerTest, GeometryEditRefusedDuringExportResumesInTheEditingView) {
   OpenImage();
   PresentFirstFrame();
   lifecycle_->MarkFirstFrameReady();
   auto* sched = dynamic_cast<EditorSessionBootstrapSchedulerPort*>(scheduler_.get());
   ASSERT_NE(sched, nullptr);
 
+  render_->SetGeometryOverlayActive(true);
   render_->SetSuspendedForGpuRelease(true, lifecycle_->identity(),
                                      lifecycle_->active_image_load_request(), lifecycle_->state());
   EXPECT_TRUE(render_->suspended_for_gpu_release());
@@ -577,6 +578,7 @@ TEST_F(EditorSessionRenderControllerTest, EditRefusedDuringExportRendersOnceWhen
   EXPECT_FALSE(render_->suspended_for_gpu_release());
   ASSERT_EQ(sched->scheduled().size(), scheduled_before + 1u);
   EXPECT_EQ(sched->scheduled().back().intent.frame_role, FrameRole::QualityBase);
+  EXPECT_TRUE(sched->scheduled().back().intent.geometry_overlay_only);
 }
 
 TEST_F(EditorSessionRenderControllerTest, ExportEndWhileMinimizedWaitsForTheRestoreToRender) {

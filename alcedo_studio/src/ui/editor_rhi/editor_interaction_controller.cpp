@@ -108,7 +108,15 @@ auto EditorInteractionController::angleBadgeItemPos() const -> QPointF {
 }
 
 auto EditorInteractionController::overlayGeometryValid() const -> bool {
-  return overlayGeometry().image_rect_valid;
+  return overlayGeometry().crop_corners_valid;
+}
+
+void EditorInteractionController::setCropFitMargin(qreal margin) {
+  if (crop_fit_margin_ == margin) {
+    return;
+  }
+  crop_fit_margin_ = margin;
+  emitViewAndOverlay();
 }
 
 void EditorInteractionController::setCropToolEnabled(bool enabled) {
@@ -441,7 +449,8 @@ void EditorInteractionController::handleDoubleTap(qreal x, qreal y) {
   }
   const auto crop_state = viewer_state_.GetCropOverlay();
   if (crop_state.tool_enabled && crop_state.overlay_visible) {
-    const auto crop_result = crop_interaction_controller_.HandleDoubleClick(viewer_state_);
+    const auto crop_result =
+        crop_interaction_controller_.HandleDoubleClick(viewer_state_, maskEditViewMapping());
     if (crop_result.consumed) {
       applyCropInteractionResult(crop_result);
       return;
@@ -573,7 +582,7 @@ void EditorInteractionController::resetCropToFull() {
 
 QPointF EditorInteractionController::itemPointToImageUv(qreal x, qreal y) const {
   const auto view = viewer_state_.GetViewTransform();
-  float      zoom = view.zoom;
+  float      zoom = view.zoom * cropFitZoom();
   QVector2D  pan  = view.pan;
   if (presentation_mode_ == FramePresentationMode::RoiFrame) {
     zoom = 1.0f;
@@ -586,7 +595,7 @@ QPointF EditorInteractionController::itemPointToImageUv(qreal x, qreal y) const 
 
 QPointF EditorInteractionController::imageUvToItemPoint(qreal u, qreal v) const {
   const auto view = viewer_state_.GetViewTransform();
-  float      zoom = view.zoom;
+  float      zoom = view.zoom * cropFitZoom();
   QVector2D  pan  = view.pan;
   if (presentation_mode_ == FramePresentationMode::RoiFrame) {
     zoom = 1.0f;
@@ -599,7 +608,7 @@ QPointF EditorInteractionController::imageUvToItemPoint(qreal u, qreal v) const 
 
 bool EditorInteractionController::isItemPointInsideImage(qreal x, qreal y) const {
   const auto view = viewer_state_.GetViewTransform();
-  float      zoom = view.zoom;
+  float      zoom = view.zoom * cropFitZoom();
   QVector2D  pan  = view.pan;
   if (presentation_mode_ == FramePresentationMode::RoiFrame) {
     zoom = 1.0f;
@@ -616,7 +625,7 @@ void EditorInteractionController::setDisplayedMaskGeometry(const ResolvedRenderG
       (current.projective && geometry.projective &&
        current.projective->render_to_reference == geometry.projective->render_to_reference &&
        current.projective->reference_to_render == geometry.projective->reference_to_render);
-  const bool same = same_projective &&
+  const bool same = same_projective && current.editing_crop_plane == geometry.editing_crop_plane &&
                     current.full_reference_extent == geometry.full_reference_extent &&
                     current.render_extent == geometry.render_extent &&
                     current.edit_extent == geometry.edit_extent &&
@@ -655,7 +664,7 @@ auto EditorInteractionController::maskEditViewMapping() const -> MaskEditViewMap
   mapping.geometry   = displayed_mask_geometry_;
   mapping.presentation = presentation_mode_;
   const auto view     = viewer_state_.GetViewTransform();
-  mapping.zoom        = view.zoom;
+  mapping.zoom         = view.zoom * cropFitZoom();
   mapping.pan         = view.pan;
   if (presentation_mode_ == FramePresentationMode::RoiFrame) {
     mapping.zoom = 1.0f;
@@ -707,6 +716,7 @@ auto EditorInteractionController::viewerViewState() const -> ViewerViewState {
   state.snapshot                   = viewer_state_.Snapshot();
   state.prefer_interactive_primary = state.snapshot.view_transform.zoom > 1.0f + 1.0e-4f;
   state.allow_detail_patch         = state.prefer_interactive_primary;
+  state.snapshot.view_transform.zoom *= cropFitZoom();
   return state;
 }
 
@@ -747,13 +757,28 @@ auto EditorInteractionController::viewLockedToFit() const -> bool {
   return crop.tool_enabled && crop.overlay_visible;
 }
 
+/// Fits the complete image inside the viewport with room for controls outside its corners.
+auto EditorInteractionController::cropFitZoom() const -> float {
+  if (!viewLockedToFit() || crop_fit_margin_ <= 0.0) {
+    return 1.0f;
+  }
+  const auto   widget = widgetInfo();
+  const auto   image  = interactionImageInfo();
+  const auto   scale  = ViewportMapper::ComputeLetterboxScale(widget, image);
+  const double width  = widget.widget_width;
+  const double height = widget.widget_height;
+  const double margin = std::min(crop_fit_margin_, 0.25 * std::min(width, height));
+  return static_cast<float>(std::min({1.0, (width - 2.0 * margin) / (width * scale.x),
+                                      (height - 2.0 * margin) / (height * scale.y)}));
+}
+
 auto EditorInteractionController::fitFraction() const -> float {
   const Extent2D displayed = displayed_mask_geometry_.edit_extent;
   if (displayed.Empty() || widget_info_.widget_width <= 0 || widget_info_.widget_height <= 0) {
     return 0.0f;
   }
   // The presented frame's edit extent is the displayed photograph in source
-  // pixels: the cropped output, or the rotated source while the Geometry panel
+  // pixels: the cropped output, or the editing image while the Geometry panel
   // is open. Letterbox scale is aspect-only, so it matches the render reference.
   const ViewportImageInfo effective{static_cast<int>(displayed.width),
                                     static_cast<int>(displayed.height)};
@@ -764,7 +789,7 @@ auto EditorInteractionController::fitFraction() const -> float {
   const float fx         = scale.x * viewport_w / static_cast<float>(effective.image_width);
   const float fy         = scale.y * viewport_h / static_cast<float>(effective.image_height);
   // fx and fy are equal (aspect preserved); min is robust to float rounding.
-  return std::min(fx, fy);
+  return std::min(fx, fy) * cropFitZoom();
 }
 
 auto EditorInteractionController::maxZoomField() const -> float {

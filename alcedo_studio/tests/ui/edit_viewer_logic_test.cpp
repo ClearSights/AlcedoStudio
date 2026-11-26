@@ -37,6 +37,7 @@ auto MakeMapping(const ViewportWidgetInfo& widget, const ViewportImageInfo& imag
   mapping.geometry   = MaskEditGeometry::MakeIdentityPhotographGeometry(
       Extent2D{static_cast<std::uint32_t>(image.image_width),
                static_cast<std::uint32_t>(image.image_height)});
+  mapping.geometry.editing_crop_plane.emplace();
   return mapping;
 }
 
@@ -363,7 +364,7 @@ TEST(EditViewerLogicTests, CropInteractionControllerDoubleClickResetsCropAndRota
   crop_state.rotation_degrees          = -180.0f;
   state.SetCropOverlayState(crop_state);
 
-  const auto result = controller.HandleDoubleClick(state);
+  const auto result = controller.HandleDoubleClick(state, MakeMapping(kWidgetInfo, kImageInfo));
   EXPECT_TRUE(result.consumed);
   ASSERT_TRUE(result.rect_changed.has_value());
   ASSERT_TRUE(result.rotation_changed.has_value());
@@ -381,11 +382,11 @@ TEST(EditViewerLogicTests, CropInteractionControllerDoubleClickResetsCropAndRota
 TEST(EditViewerLogicTests, CropGeometryHitTestPrefersCornersOverEdges) {
   CropOverlayState crop;
   crop.rect          = QRectF(0.2, 0.2, 0.4, 0.4);
-  const auto corners = CropInteractionController::CropCornersWidget(
-      crop, MakeMapping(kWidgetInfo, kImageInfo));
+  const auto corners =
+      CropInteractionController::MapCropToWidget(crop, MakeMapping(kWidgetInfo, kImageInfo));
   ASSERT_TRUE(corners.has_value());
 
-  const auto hit = CropGeometry::HitTestWidgetGeometry(*corners, (*corners)[0]);
+  const auto hit = CropGeometry::HitTestWidgetGeometry(corners->corners, corners->corners[0]);
   EXPECT_EQ(hit.corner_index, 0);
   EXPECT_EQ(hit.edge, CropEdge::None);
   EXPECT_FALSE(hit.rotate_hit);

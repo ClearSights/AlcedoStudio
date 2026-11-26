@@ -878,6 +878,12 @@ The History/Versions rail width (60 px) and rail-button hit (46 px) stay under
 Icon and action geometry; the rail width is not tokenized because it is locked to
 the rail-button optical balance.
 
+### Geometry viewport
+
+When the crop tool is active, fit the editing image with `spaceXl` logical pixels around
+the photograph so a full-frame crop leaves room for the outside corner controls.
+Use the same image placement for the photograph, crop overlay, and pointer input.
+
 ### Scope plot colors
 
 Scope plot colors are semantic AppTheme tokens so the scene-graph item does not

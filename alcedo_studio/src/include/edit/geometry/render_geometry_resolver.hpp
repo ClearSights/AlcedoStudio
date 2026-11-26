@@ -35,4 +35,32 @@ namespace alcedo {
                                          const SamplingFootprint&   footprint)
     -> ResolvedRenderGeometry;
 
+/// Resolves the full editing image without final crop or straightening. Also validates the
+/// final crop and its placement against the editing image before returning a frame to render.
+[[nodiscard]] auto ResolveGeometryEditingView(const SourceGeometry&      source,
+                                              const ImageGeometryParams& image,
+                                              const ViewRequest&         view,
+                                              const ResolutionRequest&   resolution,
+                                              const SamplingFootprint&   footprint)
+    -> ResolvedRenderGeometry;
+
+/// Placement of the final crop in the editing image, and the frame coordinates used by drags.
+struct EditingCropPlacement {
+  ProjectiveTransform crop_uv_to_render;
+  ProjectiveTransform render_to_drag_plane;
+  ProjectiveTransform crop_center_to_drag_center;
+  Rectangle2d         drag_frame;
+};
+
+/// Projects crop UVs through the inverse final map and the presented editing map. Throws if
+/// the frame, placement, or any of the mapped crop boundary points is invalid.
+[[nodiscard]] auto ResolveEditingCropPlacement(const ResolvedRenderGeometry& editing,
+                                               NormalizedRect crop, float rotation_degrees)
+    -> EditingCropPlacement;
+
+/// Returns the final frame after applying the same coverage rules used by the product render.
+[[nodiscard]] auto ResolveEditingCropRect(const ResolvedRenderGeometry& editing,
+                                          NormalizedRect crop, float rotation_degrees)
+    -> NormalizedRect;
+
 }  // namespace alcedo
