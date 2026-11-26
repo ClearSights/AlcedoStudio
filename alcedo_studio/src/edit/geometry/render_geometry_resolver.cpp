@@ -133,9 +133,12 @@ auto RequiredRegionFromAabb(const Aabb& box, float radius_x, float radius_y, Ext
   return ClampRectI(x0, y0, x1, y1, extent);
 }
 
+/// Packs the resolved inverse pixel map and sampling options for all GPU backends.
 void FillGpuData(ResolvedRenderGeometry& geometry) {
   for (int i = 0; i < 9; ++i) {
-    geometry.gpu_data.render_to_decoded[i] = geometry.render_to_decoded.m[i];
+    geometry.gpu_data.render_to_decoded[i] =
+        geometry.projective ? static_cast<float>(geometry.projective->render_to_decoded.m[i])
+                            : geometry.render_to_decoded.m[i];
   }
   geometry.gpu_data.decoded_width  = geometry.decoded_extent.width;
   geometry.gpu_data.decoded_height = geometry.decoded_extent.height;
@@ -270,6 +273,7 @@ auto ResolveProjectiveRenderGeometry(const SourceGeometry& source, const ImageGe
       ProjectiveRequiredRegion(render_to_reference, render_frame, footprint, reference);
   result.required_decoded_region =
       ProjectiveRequiredRegion(render_to_decoded, render_frame, footprint, decoded);
+  FillGpuData(result);
   return result;
 }
 

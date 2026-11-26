@@ -89,22 +89,32 @@ __device__ auto BicubicSample(const float4* src, int width, int height, float sx
   return acc;
 }
 
-__global__ void GeometryResampleKernel(const float4* src, float4* dst, int decoded_w, int decoded_h,
-                                       int render_w, int render_h, float m00, float m01, float m02,
-                                       float m10, float m11, float m12, float4 border,
-                                       int use_bicubic) {
-  const int x = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
-  const int y = static_cast<int>(blockIdx.y * blockDim.y + threadIdx.y);
-  if (x >= render_w || y >= render_h) {
+/// Samples the decoded image with the inverse map at each output pixel center.
+__global__ void GeometryResampleKernel(const float4* src, float4* dst, GpuRenderGeometry params) {
+  const unsigned x = blockIdx.x * blockDim.x + threadIdx.x;
+  const unsigned y = blockIdx.y * blockDim.y + threadIdx.y;
+  if (x >= params.render_width || y >= params.render_height) {
     return;
   }
   const float cx = static_cast<float>(x) + 0.5f;
   const float cy = static_cast<float>(y) + 0.5f;
-  const float sx = m00 * cx + m01 * cy + m02;
-  const float sy = m10 * cx + m11 * cy + m12;
-  const float4 pixel = use_bicubic ? BicubicSample(src, decoded_w, decoded_h, sx, sy, border)
-                                   : BilinearSample(src, decoded_w, decoded_h, sx, sy, border);
-  dst[y * render_w + x] = pixel;
+  const auto&  m           = params.render_to_decoded;
+  const float  w           = m[6] * cx + m[7] * cy + m[8];
+  const float  sx          = (m[0] * cx + m[1] * cy + m[2]) / w;
+  const float  sy          = (m[3] * cx + m[4] * cy + m[5]) / w;
+  const float4 border      = make_float4(params.border_rgba[0], params.border_rgba[1],
+                                         params.border_rgba[2], params.border_rgba[3]);
+  const int    width       = static_cast<int>(params.decoded_width);
+  const int    height      = static_cast<int>(params.decoded_height);
+  const bool   use_bicubic = params.filter == static_cast<unsigned>(TextureFilter::Bicubic);
+  const float  reach       = use_bicubic ? 1.5f : 0.5f;
+  // Test the filter's coverage before the sampler converts the source position to integers.
+  float4       pixel       = border;
+  if (sx > -reach && sx < width + reach && sy > -reach && sy < height + reach) {
+    pixel = use_bicubic ? BicubicSample(src, width, height, sx, sy, border)
+                        : BilinearSample(src, width, height, sx, sy, border);
+  }
+  dst[static_cast<std::size_t>(y) * params.render_width + x] = pixel;
 }
 
 }  // namespace
@@ -143,16 +153,9 @@ void GeometryResamplePass::Encode(const ResolvedRenderGeometry& geometry,
     throw std::runtime_error("GeometryResamplePass::Encode: invalid launch grid");
   }
 
-  const float4 border =
-      make_float4(gpu.border_rgba[0], gpu.border_rgba[1], gpu.border_rgba[2], gpu.border_rgba[3]);
-  const int use_bicubic = geometry.filter == TextureFilter::Bicubic ? 1 : 0;
-
   GeometryResampleKernel<<<grid, block, 0, command_context.Stream()>>>(
       static_cast<const float4*>(src.DevicePointer()), static_cast<float4*>(dst.DevicePointer()),
-      static_cast<int>(gpu.decoded_width), static_cast<int>(gpu.decoded_height),
-      static_cast<int>(gpu.render_width), static_cast<int>(gpu.render_height), gpu.render_to_decoded[0],
-      gpu.render_to_decoded[1], gpu.render_to_decoded[2], gpu.render_to_decoded[3],
-      gpu.render_to_decoded[4], gpu.render_to_decoded[5], border, use_bicubic);
+      gpu);
   cuda::CheckCuda(::cudaGetLastError(), "GeometryResamplePass::Encode launch");
   ++launch_count_;
 }

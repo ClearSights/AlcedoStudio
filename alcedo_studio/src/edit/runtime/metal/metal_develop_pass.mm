@@ -85,21 +85,6 @@ void ExecuteMetalLensCalibration(MetalRenderDevice& device, const ExecutionPlan&
   }
 }
 
-struct GeometryResampleParams {
-  float         m00;
-  float         m01;
-  float         m02;
-  float         m10;
-  float         m11;
-  float         m12;
-  std::uint32_t decoded_width;
-  std::uint32_t decoded_height;
-  std::uint32_t render_width;
-  std::uint32_t render_height;
-  float         border[4];
-  std::uint32_t use_bicubic;
-};
-
 auto AcquireRgba(MetalRenderWorkspace& workspace, const GraphValueId& id, std::uint32_t width,
                  std::uint32_t height) -> ResourceLease<MetalBackend>& {
   return workspace.AcquireImageForWrite(id, {width, height, TextureFormat::Rgba32f});
@@ -135,21 +120,7 @@ void DispatchGeometryResample(void* command_buffer, const ResolvedRenderGeometry
       ALCEDO_METAL_GEOMETRY_RESAMPLE_METALLIB_PATH, "geometry_resample_rgba32f",
       "Metal GeometryResample");
 #endif
-  const auto&            gpu = geometry.gpu_data;
-  GeometryResampleParams params{
-      .m00            = gpu.render_to_decoded[0],
-      .m01            = gpu.render_to_decoded[1],
-      .m02            = gpu.render_to_decoded[2],
-      .m10            = gpu.render_to_decoded[3],
-      .m11            = gpu.render_to_decoded[4],
-      .m12            = gpu.render_to_decoded[5],
-      .decoded_width  = gpu.decoded_width,
-      .decoded_height = gpu.decoded_height,
-      .render_width   = gpu.render_width,
-      .render_height  = gpu.render_height,
-      .border = {gpu.border_rgba[0], gpu.border_rgba[1], gpu.border_rgba[2], gpu.border_rgba[3]},
-      .use_bicubic = geometry.filter == TextureFilter::Bicubic ? 1U : 0U,
-  };
+  const auto& gpu     = geometry.gpu_data;
   auto* buffer  = static_cast<MTL::CommandBuffer*>(command_buffer);
   auto  compute = NS::RetainPtr(buffer->computeCommandEncoder());
   if (!compute) {
@@ -158,7 +129,7 @@ void DispatchGeometryResample(void* command_buffer, const ResolvedRenderGeometry
   compute->setComputePipelineState(pipeline.get());
   compute->setTexture(static_cast<MTL::Texture*>(src.Native()), 0);
   compute->setTexture(static_cast<MTL::Texture*>(dst.Native()), 1);
-  compute->setBytes(&params, sizeof(params), 0);
+  compute->setBytes(&gpu, sizeof(gpu), 0);
   const auto thread_width = std::max<NS::UInteger>(1, pipeline->threadExecutionWidth());
   const auto thread_height =
       std::max<NS::UInteger>(1, pipeline->maxTotalThreadsPerThreadgroup() / thread_width);

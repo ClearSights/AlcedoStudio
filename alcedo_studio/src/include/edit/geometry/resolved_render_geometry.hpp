@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 
@@ -15,7 +16,10 @@
 namespace alcedo {
 
 /**
- * @brief POD uniforms for GeometryResamplePass. No GPU resource types.
+ * @brief Parameters for the GPU geometry resamplers.
+ *
+ * The row-major inverse map takes output pixel centers to decoded pixel centers.
+ * The field order and scalar types must match the shader parameters.
  */
 struct GpuRenderGeometry {
   float         render_to_decoded[9] = {1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f};
@@ -26,6 +30,13 @@ struct GpuRenderGeometry {
   float         border_rgba[4]       = {0.0f, 0.0f, 0.0f, 1.0f};
   std::uint32_t filter               = 0;
 };
+
+static_assert(offsetof(GpuRenderGeometry, decoded_width) == 36);
+static_assert(offsetof(GpuRenderGeometry, border_rgba) == 52);
+static_assert(offsetof(GpuRenderGeometry, filter) == 68);
+static_assert(sizeof(GpuRenderGeometry) == 72);
+static_assert(static_cast<std::uint32_t>(TextureFilter::Bilinear) == 0);
+static_assert(static_cast<std::uint32_t>(TextureFilter::Bicubic) == 1);
 
 /** @brief Host-only mappings in pixel coordinates, including the accepted pre-rounding frame. */
 struct ProjectiveRenderGeometry {
@@ -60,8 +71,8 @@ struct ResolvedRenderGeometry {
   TextureFilter     filter = TextureFilter::Bilinear;
   GpuRenderGeometry gpu_data{};
 
-  /// When present, these maps own the image geometry. The affine image maps and GPU uniforms
-  /// above are unused. The decoded-to-reference and edit-to-render steps are still affine.
+  /// When present, these maps own the image geometry and supply the inverse map in gpu_data.
+  /// The decoded-to-reference and edit-to-render steps are still affine.
   std::optional<ProjectiveRenderGeometry> projective;
 };
 

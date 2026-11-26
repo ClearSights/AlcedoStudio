@@ -44,6 +44,7 @@
 #include "edit/runtime/texture_format.hpp"
 #include "image/metal_image.hpp"
 #include "metal/compute_pipeline_cache.hpp"
+#include "projective_resample_test_support.hpp"
 
 namespace alcedo {
 namespace {
@@ -445,6 +446,14 @@ auto ExpectFullNeuralMatchesStoredMetalPixels(const std::filesystem::path& path,
 }
 
 }  // namespace
+
+TEST_F(MetalDevelopFixture, ProjectiveResampleMatchesIndependentPixelOracle) {
+  gpu_dag_test::VerifyProjectiveResample<MetalRenderDevice>(ExecuteMetalGeometryResample);
+}
+
+TEST_F(MetalDevelopFixture, BackendFailureReportsErrorWithoutPublishingFrame) {
+  gpu_dag_test::VerifyGeometryAllocationFailure<MetalRenderDevice>();
+}
 
 TEST_F(MetalDevelopFixture, CanonDngProfileRendersAtFullResolutionAndInvalidatesOnlyColorCache) {
   gpu_dag_test::VerifyCanonDngProfile<MetalRenderDevice>("metal");
