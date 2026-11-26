@@ -36,9 +36,14 @@ inline constexpr std::uint32_t kRasterMaskMaximumSamplesPerAxis = 8;
  *
  * `2^mip_level` is the largest number of texels that one render pixel spans along a render axis.
  * The 1e-3 allowance keeps a footprint of exactly N texels at N samples despite float rounding.
+ * Returns zero when the shader must evaluate the projective footprint at each pixel center.
  */
 [[nodiscard]] inline auto      RasterMaskSamplesPerAxis(const TextureSamplingPlan& plan)
     -> std::uint32_t {
+  const auto& m = plan.render_to_texture_uv.m;
+  if (m[6] != 0.0f || m[7] != 0.0f) {
+    return 0;
+  }
   const float footprint = std::exp2(plan.mip_level);
   const auto  samples   = static_cast<std::int64_t>(std::ceil(footprint - 1.0e-3f));
   return static_cast<std::uint32_t>(

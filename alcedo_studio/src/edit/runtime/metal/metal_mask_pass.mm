@@ -127,7 +127,7 @@ void EncodeAnalytic(MetalRenderDevice& device, MetalBackend::Texture2D& output,
                                     ? Pipeline("mask_analytic", "Metal Mask analytic")
                                     : Pipeline("mask_analytic_ranged", "Metal Mask analytic ranged");
   MaskAnalyticParams params;
-  CopyMatrix(params.render_to_reference, plan.geometry.render_to_reference);
+  CopyMatrix(params.render_to_reference, plan.geometry.RenderToReferenceMap().ToFloatMatrix());
   params.width               = output.Width();
   params.height              = output.Height();
   params.reference_width     = plan.geometry.full_reference_extent.width;

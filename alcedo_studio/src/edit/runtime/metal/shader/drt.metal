@@ -381,7 +381,8 @@ struct DiffusionMixParams {
 };
 
 static inline float2 DiffusionTransform(constant float* m, float x, float y) {
-  return float2(m[0] * x + m[1] * y + m[2], m[3] * x + m[4] * y + m[5]);
+  const float w = m[6] * x + m[7] * y + m[8];
+  return float2(m[0] * x + m[1] * y + m[2], m[3] * x + m[4] * y + m[5]) / w;
 }
 
 static inline float4 DiffusionDecode(float4 value) {

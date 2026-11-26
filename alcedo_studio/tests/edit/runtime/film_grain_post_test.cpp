@@ -133,7 +133,8 @@ TEST(FilmGrainPostPlan, FieldParamsHoldTheKernelsTheMixAndTheReferenceMapping) {
 TEST(FilmGrainPostField, AggregateNoiseIsTheScaledSumOfTheReferenceGaussians) {
   // A render at half size from reference pixel (100, 40): render pixel (x, y) reads the reference
   // pixels 2x + 100 and 2x + 101, 2y + 40 and 2y + 41.
-  FilmGrainNoiseParams params{{2.0f, 0.0f, 100.0f, 0.0f, 2.0f, 40.0f}, kFilmGrainSeed, 2U, 0.5f};
+  FilmGrainNoiseParams params{
+      {2.0f, 0.0f, 100.0f, 0.0f, 2.0f, 40.0f, 0.0f, 0.0f, 1.0f}, kFilmGrainSeed, 2U, 0.5f};
   for (const int x : {-3, 0, 7}) {
     for (const int y : {-2, 0, 5}) {
       float sum = 0.0f;
@@ -148,7 +149,8 @@ TEST(FilmGrainPostField, AggregateNoiseIsTheScaledSumOfTheReferenceGaussians) {
     }
   }
   // At full size, a render pixel reads its own reference pixel.
-  FilmGrainNoiseParams full{{1.0f, 0.0f, 64.0f, 0.0f, 1.0f, 64.0f}, kFilmGrainSeed, 1U, 1.0f};
+  FilmGrainNoiseParams full{
+      {1.0f, 0.0f, 64.0f, 0.0f, 1.0f, 64.0f, 0.0f, 0.0f, 1.0f}, kFilmGrainSeed, 1U, 1.0f};
   const auto           bits = FilmGrainHash3(64U + 3U, 64U + 9U, kFilmGrainSeed);
   EXPECT_FLOAT_EQ(FilmGrainAggregateNoise(full, 3, 9).z, FilmGrainGaussian(bits.z));
 }
@@ -157,7 +159,7 @@ TEST(FilmGrainPostField, AggregateNoiseHasUnitVarianceAtEachK) {
   for (const std::uint32_t k : {1U, 2U, 3U, 4U}) {
     const float          scale = static_cast<float>(k);
     FilmGrainNoiseParams params{
-        {scale, 0.0f, 0.0f, 0.0f, scale, 0.0f}, kFilmGrainSeed, k, 1.0f / scale};
+        {scale, 0.0f, 0.0f, 0.0f, scale, 0.0f, 0.0f, 0.0f, 1.0f}, kFilmGrainSeed, k, 1.0f / scale};
     double        sum = 0.0, square = 0.0;
     constexpr int kSide = 300;
     for (int y = 0; y < kSide; ++y) {

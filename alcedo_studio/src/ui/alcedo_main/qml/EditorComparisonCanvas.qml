@@ -3,7 +3,7 @@ import QtQuick
 // One comparison image placed in the full source reference space.
 //
 // The canvas fits the reference extent of `placement` into its own size (aspect ratio kept,
-// centered) and draws the rendered image with one affine transform: fit * render_to_reference.
+// centered) and draws the rendered image with one homogeneous transform: fit * render_to_reference.
 // The Image item keeps the exact render pixel extent as its local size, so a cropped render
 // covers only its crop footprint and a rotated crop covers its source-space quadrilateral.
 // Areas without image pixels stay transparent; the parent paints the surface behind them.
@@ -41,10 +41,15 @@ Item {
             return Qt.matrix4x4(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1)
         const p = placement
         const s = fitScale
-        return Qt.matrix4x4(s * Number(p.m11), s * Number(p.m12), 0, s * Number(p.dx) + fitX,
-                            s * Number(p.m21), s * Number(p.m22), 0, s * Number(p.dy) + fitY,
+        const wx = Number(p.m31)
+        const wy = Number(p.m32)
+        const w0 = Number(p.m33)
+        return Qt.matrix4x4(s * Number(p.m11) + fitX * wx, s * Number(p.m12) + fitX * wy,
+                            0, s * Number(p.dx) + fitX * w0,
+                            s * Number(p.m21) + fitY * wx, s * Number(p.m22) + fitY * wy,
+                            0, s * Number(p.dy) + fitY * w0,
                             0, 0, 1, 0,
-                            0, 0, 0, 1)
+                            wx, wy, 0, w0)
     }
 
     readonly property int imageStatus: photo.status

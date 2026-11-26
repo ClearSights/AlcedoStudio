@@ -25,6 +25,7 @@
 #include <memory>
 #include <stdexcept>
 
+#include "../edit/geometry/perspective_frame_test_support.hpp"
 #include "editor_comparison_test_support.hpp"
 #include "ui/alcedo_main/album_backend/comparison_presentation_image.hpp"
 #include "ui/alcedo_main/app_theme.hpp"
@@ -216,6 +217,37 @@ TEST(EditorComparisonGeometryTest, PlacementRejectsEmptyOrNonInvertibleGeometry)
   auto not_finite                     = valid;
   not_finite.render_to_reference.m[2] = std::numeric_limits<float>::infinity();
   EXPECT_THROW((void)ComparisonPlacementFromGeometry(not_finite), std::invalid_argument);
+}
+
+TEST(EditorComparisonGeometryTest, PerspectiveComparisonAndExportUseResolvedGeometry) {
+  constexpr Extent2D source{64, 48};
+  const auto         geometry =
+      ResolveRenderGeometry(MakeSourceGeometry(source, source), gpu_dag_test::kTiltedFrame, {},
+                            {.quality = RenderQuality::Export}, {});
+  const auto presentation =
+      ConvertRenderedImageForComparison(MakeFilledRenderedImage(geometry, {0.2, 0.4, 0.6, 1.0}));
+  ASSERT_EQ(presentation.image.size(), QSize(64, 48));
+  constexpr double width  = 505.0;
+  constexpr double height = 290.0;
+  CanvasHarness    harness(presentation.placement, width, height);
+  ASSERT_NE(harness.canvas(), nullptr) << harness.errors().toStdString();
+  ASSERT_NE(harness.image(), nullptr);
+  const auto fit = FitReference(source, width, height);
+  for (const auto& point : gpu_dag_test::kTiltedFrameProbes) {
+    const auto reference = gpu_dag_test::InverseTiltedPosition(source, point.x, point.y);
+    ExpectNear(harness.MapRenderPoint(point.x, point.y),
+               {fit.x + reference.x * fit.scale, fit.y + reference.y * fit.scale},
+               "projective labeled point");
+  }
+}
+
+TEST(EditorComparisonGeometryTest, PlacementRejectsProjectiveHorizonAcrossFrame) {
+  constexpr Extent2D source{64, 48};
+  auto               geometry = ResolveRenderGeometry(MakeSourceGeometry(source, source),
+                                                      gpu_dag_test::kTiltedFrame, {}, {}, {});
+  ASSERT_TRUE(geometry.projective);
+  geometry.projective->render_to_reference.m = {1, 0, 0, 0, 1, 0, 1, 0, -32};
+  EXPECT_THROW((void)ComparisonPlacementFromGeometry(geometry), std::invalid_argument);
 }
 
 }  // namespace alcedo::ui::test

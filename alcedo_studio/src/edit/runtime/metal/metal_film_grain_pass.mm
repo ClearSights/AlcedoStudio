@@ -21,7 +21,7 @@ namespace alcedo {
 namespace {
 
 // film_grain_post.metal has the same sizes; a difference stops the build of the DRT library.
-static_assert(sizeof(FilmGrainFieldParams) == 388);
+static_assert(sizeof(FilmGrainFieldParams) == 400);
 static_assert(sizeof(FilmGrainPostParams) == 612);
 static_assert(sizeof(FilmGrainNegativeParams) == 616);
 

@@ -8,6 +8,7 @@
 #include <array>
 #include <cmath>
 #include <optional>
+#include <stdexcept>
 #include <utility>
 
 #ifdef ALCEDO_ENABLE_BRUSH_MASK
@@ -242,6 +243,38 @@ void PopulateRadialContours(MaskOverlayDisplay& display, const MaskEditViewMappi
   }
 }
 
+/// Columns of the normalized source-to-item Jacobian at a projective Mask control point.
+[[nodiscard]] auto ProjectiveItemJacobian(const MaskEditViewMapping& mapping, Vector2 point)
+    -> std::optional<std::array<QPointF, 2>> {
+  if (!MaskEditGeometry::IsValid(mapping)) {
+    return std::nullopt;
+  }
+  const auto& geometry = mapping.geometry;
+  const bool  roi      = mapping.presentation == FramePresentationMode::RoiFrame;
+  const float zoom     = roi ? 1.0f : mapping.zoom;
+  const auto  top_left = ViewportMapper::ImageUvToWidgetPoint({0.0, 0.0}, mapping.widget,
+                                                              mapping.photograph, zoom, {}, false);
+  const auto  bottom_right = ViewportMapper::ImageUvToWidgetPoint(
+      {1.0, 1.0}, mapping.widget, mapping.photograph, zoom, {}, false);
+  if (!top_left || !bottom_right) {
+    return std::nullopt;
+  }
+  const auto   span = *bottom_right - *top_left;
+  const double sx =
+      span.x() / geometry.render_extent.width / (roi ? mapping.displayed_roi.width : 1.0f);
+  const double sy =
+      span.y() / geometry.render_extent.height / (roi ? mapping.displayed_roi.height : 1.0f);
+  const double w = geometry.full_reference_extent.width;
+  const double h = geometry.full_reference_extent.height;
+  try {
+    const auto [dx, dy] =
+        geometry.projective->reference_to_render.Jacobian({w * point.x, h * point.y});
+    return std::array{QPointF{dx.x * w * sx, dx.y * w * sy}, QPointF{dy.x * h * sx, dy.y * h * sy}};
+  } catch (const std::runtime_error&) {
+    return std::nullopt;
+  }
+}
+
 void AppendClippedGuide(MaskOverlayDisplay& display, const MaskEditViewMapping& mapping,
                         const LinearGradientMaskSource& source, float signed_distance,
                         MaskOverlayHandleId id, bool dashed, const MaskOverlayStyle& style,
@@ -251,8 +284,28 @@ void AppendClippedGuide(MaskOverlayDisplay& display, const MaskEditViewMapping& 
   const Vector2 locus = LinearLocus(source, signed_distance);
   const Vector2 a{locus.x + perp.x * kGuideSpan, locus.y + perp.y * kGuideSpan};
   const Vector2 b{locus.x - perp.x * kGuideSpan, locus.y - perp.y * kGuideSpan};
-  const auto    item_a = MapNormalizedMaskPointToItem(mapping, a);
-  const auto    item_b = MapNormalizedMaskPointToItem(mapping, b);
+  std::optional<QPointF> item_a;
+  std::optional<QPointF> item_b;
+  if (mapping.geometry.projective) {
+    const auto origin   = MapNormalizedMaskPointToItem(mapping, locus);
+    const auto jacobian = ProjectiveItemJacobian(mapping, locus);
+    if (!origin || !jacobian) {
+      return;
+    }
+    const auto   direction = (*jacobian)[0] * perp.x + (*jacobian)[1] * perp.y;
+    const double length    = std::hypot(direction.x(), direction.y());
+    if (!std::isfinite(length) || length <= kMinRadius) {
+      return;
+    }
+    const auto unit   = direction / length;
+    const auto center = *origin + unit * QPointF::dotProduct(photograph.center() - *origin, unit);
+    const auto span   = unit * std::hypot(photograph.width(), photograph.height());
+    item_a            = center - span;
+    item_b            = center + span;
+  } else {
+    item_a = MapNormalizedMaskPointToItem(mapping, a);
+    item_b = MapNormalizedMaskPointToItem(mapping, b);
+  }
   if (!item_a || !item_b) {
     return;
   }
@@ -353,6 +406,24 @@ auto MapLinearLocusNormalPointToItem(const MaskEditViewMapping&      mapping,
   const Vector2 normal      = LinearNormal(source);
   const Vector2 tangent     = PerpNormalized(normal);
   const auto    item_origin = MapNormalizedMaskPointToItem(mapping, origin);
+  if (mapping.geometry.projective) {
+    const Vector2 locus{origin.x + normal.x * signed_distance,
+                        origin.y + normal.y * signed_distance};
+    const auto    item_locus = MapNormalizedMaskPointToItem(mapping, locus);
+    const auto    jacobian   = ProjectiveItemJacobian(mapping, locus);
+    if (!item_origin || !item_locus || !jacobian) {
+      return std::nullopt;
+    }
+    // A projective map sends a straight locus to a straight line. Its local tangent gives
+    // the line direction, so project the displayed origin onto it to place the handle.
+    const auto   along          = (*jacobian)[0] * tangent.x + (*jacobian)[1] * tangent.y;
+    const double length_squared = QPointF::dotProduct(along, along);
+    if (!std::isfinite(length_squared) || length_squared <= kMinRadius) {
+      return std::nullopt;
+    }
+    return *item_locus +
+           along * (QPointF::dotProduct(*item_origin - *item_locus, along) / length_squared);
+  }
   const auto    item_normal =
       MapNormalizedMaskPointToItem(mapping, Vector2{origin.x + normal.x, origin.y + normal.y});
   const auto item_tangent =
@@ -384,16 +455,27 @@ auto MapItemPointToLinearDirectionSample(const MaskEditViewMapping&      mapping
   }
   const Vector2 origin{source.origin_x, source.origin_y};
   const auto    item_origin = MapNormalizedMaskPointToItem(mapping, origin);
-  const auto    item_x = MapNormalizedMaskPointToItem(mapping, Vector2{origin.x + 1.0f, origin.y});
-  const auto    item_y = MapNormalizedMaskPointToItem(mapping, Vector2{origin.x, origin.y + 1.0f});
-  if (!item_origin || !item_x || !item_y) {
+  if (!item_origin) {
     return std::nullopt;
   }
+  std::array<QPointF, 2> axes;
+  if (mapping.geometry.projective) {
+    const auto jacobian = ProjectiveItemJacobian(mapping, origin);
+    if (!jacobian) {
+      return std::nullopt;
+    }
+    axes = *jacobian;
+  } else {
+    const auto item_x = MapNormalizedMaskPointToItem(mapping, {origin.x + 1.0f, origin.y});
+    const auto item_y = MapNormalizedMaskPointToItem(mapping, {origin.x, origin.y + 1.0f});
+    if (!item_x || !item_y) {
+      return std::nullopt;
+    }
+    axes = {*item_x - *item_origin, *item_y - *item_origin};
+  }
   const QPointF direction = item - *item_origin;
-  const QPointF mapped_x  = *item_x - *item_origin;
-  const QPointF mapped_y  = *item_y - *item_origin;
-  const float   nx        = static_cast<float>(QPointF::dotProduct(mapped_x, direction));
-  const float   ny        = static_cast<float>(QPointF::dotProduct(mapped_y, direction));
+  const float   nx        = static_cast<float>(QPointF::dotProduct(axes[0], direction));
+  const float   ny        = static_cast<float>(QPointF::dotProduct(axes[1], direction));
   const float   length    = std::hypot(nx, ny);
   if (!std::isfinite(length) || length <= kMinRadius) {
     return std::nullopt;

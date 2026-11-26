@@ -548,9 +548,17 @@ void GraphCompiler::BindFrameGeometry(ExecutionPlan& plan, const PipelineDocumen
   const auto geom_source =
       MakeSourceGeometry(plan.source.develop_output_extent, plan.source.full_reference_extent,
                          plan.source.sensor_active_area, plan.source.downsample_passes);
-  plan.geometry =
-      ResolveRenderGeometry(geom_source, ImageParamsForRequest(document, request.document_geometry),
-                            request.view, request.resolution, request.footprint);
+  if (request.final_frame_geometry &&
+      (request.document_geometry != DocumentGeometryUse::ApplyCropAndRotation ||
+       request.final_frame_geometry->output_frame != GeometryOutputFrame::CropFrame)) {
+    throw std::invalid_argument(
+        "GraphCompiler: explicit final-frame geometry requires a crop render");
+  }
+  const auto params = request.final_frame_geometry
+                          ? *request.final_frame_geometry
+                          : ImageParamsForRequest(document, request.document_geometry);
+  plan.geometry     = ResolveRenderGeometry(geom_source, params, request.view, request.resolution,
+                                            request.footprint);
   plan.encode_geometry_resample = !IsIdentityResample(plan.geometry);
 }
 

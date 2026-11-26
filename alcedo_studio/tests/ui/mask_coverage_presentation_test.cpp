@@ -55,6 +55,18 @@ class ImageChangeBeforePublicationSink final : public IMaskCoverageSink {
 
 class MaskCoveragePresentationTest : public CoverageChannelTest {};
 
+TEST_F(MaskCoveragePresentationTest, PerspectiveCoverageMatchesLocalSourceFootprint) {
+  const auto                       pixels = MakeCandidatePixels(0);
+  const MaskCoverageDisplayRequest request{
+      ResolveRenderGeometry(MakeSourceGeometry(kAnalysis, kAnalysis), gpu_dag_test::kTiltedFrame,
+                            {}, {.render_scale = 0.5f}, {}),
+      false, 1.0f};
+  ASSERT_TRUE(request.geometry.projective);
+  ASSERT_EQ(Present(Candidate(pixels), request, Identity(13)), MaskCoveragePublication::Published);
+  ASSERT_TRUE(Consume());
+  ExpectDisplayed(ExpectedCoverageR8(pixels, request), "projective coverage and footprint");
+}
+
 auto SlotStates(const DirectPresentQueue& queue) -> std::vector<std::string> {
   std::vector<std::string> states;
   for (int i = 0; i < DirectPresentQueue::kSlotCount; ++i) {

@@ -11,6 +11,7 @@
 #include <variant>
 #include <vector>
 
+#include "../geometry/perspective_frame_test_support.hpp"
 #include "../graph/grade_owned_mask_support.hpp"
 #include "../graph/test_camera_profile.hpp"
 #include "../input/prepared_raw_test_support.hpp"
@@ -129,6 +130,29 @@ TEST(GpuDagResultContentKey, GeometryKeyIncludesViewportAndCropAndIgnoresGrade) 
   EXPECT_EQ(after_grade.geometry_scene_source, base.geometry_scene_source);
   EXPECT_EQ(after_grade.develop_image, base.develop_image);
   EXPECT_NE(after_grade.primary_grade, base.primary_grade);
+}
+
+TEST(GpuDagResultContentKey, PerspectiveChangesCanonicalReferenceKeyAndRoiPreservesIt) {
+  const auto    prepared = MakePrepared();
+  auto          document = CreateDefaultPipelineDocument();
+  RenderRequest request;
+  request.final_frame_geometry = gpu_dag_test::kTiltedFrame;
+  auto       plan      = GraphCompiler::Compile(document, prepared.CompileSource(), request);
+  const auto full      = BuildFrameResultContentKeys(plan, prepared, document);
+  const auto reference = HashLlfReferenceKey(plan, prepared, document);
+  request.view.visible_rect_in_edit_space = {0.25f, 0.25f, 0.5f, 0.5f};
+  GraphCompiler::BindFrameGeometry(plan, document, request);
+  EXPECT_EQ(HashLlfReferenceKey(plan, prepared, document), reference);
+  EXPECT_NE(BuildFrameResultContentKeys(plan, prepared, document).geometry_scene_source,
+            full.geometry_scene_source);
+
+  request.view = {};
+  request.final_frame_geometry->horizontal *= -1.0;
+  GraphCompiler::BindFrameGeometry(plan, document, request);
+  const auto changed = BuildFrameResultContentKeys(plan, prepared, document);
+  EXPECT_EQ(changed.sensor_linear, full.sensor_linear);
+  EXPECT_NE(changed.geometry_scene_source, full.geometry_scene_source);
+  EXPECT_NE(HashLlfReferenceKey(plan, prepared, document), reference);
 }
 
 TEST(GpuDagResultContentKey, LlfReferenceKeyIgnoresViewportAndFollowsCropAndGrade) {

@@ -103,8 +103,9 @@ __device__ auto RemapDelta(float delta, float sigma, float alpha, float beta) ->
 }
 
 __device__ auto Transform(const float* matrix, float x, float y) -> float2 {
-  return make_float2(matrix[0] * x + matrix[1] * y + matrix[2],
-                     matrix[3] * x + matrix[4] * y + matrix[5]);
+  const float w = matrix[6] * x + matrix[7] * y + matrix[8];
+  return make_float2((matrix[0] * x + matrix[1] * y + matrix[2]) / w,
+                     (matrix[3] * x + matrix[4] * y + matrix[5]) / w);
 }
 
 __global__ void ExtractKernel(const float4* input, float* output, int input_width, int input_height,
@@ -431,7 +432,8 @@ struct CudaLocalToneOps {
                              device.CommandContext().Stream()>>>(
         static_cast<const float4*>(CudaSceneTexture(device, input).DevicePointer()), dest.ptr,
         static_cast<int>(width), static_cast<int>(height), decision.widths[0], decision.heights[0],
-        geometry.reference_to_render, static_cast<float>(geometry.full_reference_extent.width),
+        geometry.ReferenceToRenderMap().ToFloatMatrix(),
+        static_cast<float>(geometry.full_reference_extent.width),
         static_cast<float>(geometry.full_reference_extent.height));
     CheckLaunch("extract reference");
   }

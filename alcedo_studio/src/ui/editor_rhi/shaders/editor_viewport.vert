@@ -11,9 +11,11 @@ layout(std140, binding = 0) uniform ViewerUniforms {
   vec4 detailFlags;
   vec4 coverageU;
   vec4 coverageV;
+  vec4 coverageW;
   vec4 coverageTint;
   vec4 detailCoverageU;
   vec4 detailCoverageV;
+  vec4 detailCoverageW;
   vec4 displayLut;
 } ubo;
 

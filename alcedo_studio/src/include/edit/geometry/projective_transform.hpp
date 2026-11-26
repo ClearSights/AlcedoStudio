@@ -28,10 +28,15 @@ struct Rectangle2d {
 /** @brief Double-precision row-major homogeneous matrix for column vectors. */
 struct ProjectiveTransform {
   std::array<double, 9>     m{1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0};
+  auto                      operator==(const ProjectiveTransform&) const -> bool = default;
 
   [[nodiscard]] static auto Translate(double x, double y) -> ProjectiveTransform;
   [[nodiscard]] static auto Scale(double x, double y) -> ProjectiveTransform;
   [[nodiscard]] static auto Rotate(double radians) -> ProjectiveTransform;
+  /// Promotes the nine coefficients of a pixel-space matrix without changing its mapping.
+  [[nodiscard]] static auto FromMatrix(const Matrix3x3& matrix) -> ProjectiveTransform;
+  /// Converts the nine coefficients for float shader parameters. Consumers must divide by w.
+  [[nodiscard]] auto        ToFloatMatrix() const -> Matrix3x3;
 
   /** @brief Maps a point with homogeneous division. Throws at or near the projective horizon. */
   [[nodiscard]] auto        Map(Point2d point) const -> Point2d;
@@ -44,6 +49,9 @@ struct ProjectiveTransform {
 
   /** @brief Inverts in the matrix's coordinate system. Use normalized units for image maps. */
   [[nodiscard]] auto Inverse() const -> ProjectiveTransform;
+
+  /// Inverts a pixel-space mapping after scaling both coordinate systems to unit extents.
+  [[nodiscard]] auto InversePixelMap(Extent2D input, Extent2D output) const -> ProjectiveTransform;
 };
 
 /// Applies the right-hand map first, then the left-hand map.

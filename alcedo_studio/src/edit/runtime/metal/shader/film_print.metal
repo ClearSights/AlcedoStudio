@@ -88,7 +88,7 @@ static_assert(sizeof(FilmNarrowKernel) == 76, "FilmNarrowKernel differs from the
 static_assert(sizeof(FilmKernelParams) == 416, "FilmKernelParams differs from the host");
 static_assert(sizeof(FilmMatrix) == 36, "FilmMatrix differs from the host");
 static_assert(sizeof(FilmKernelRgb) == 12, "FilmKernelRgb differs from the host");
-static_assert(sizeof(FilmGrainFieldParams) == 388, "FilmGrainFieldParams differs from the host");
+static_assert(sizeof(FilmGrainFieldParams) == 400, "FilmGrainFieldParams differs from the host");
 static_assert(sizeof(FilmGrainNegativeParams) == 616,
               "FilmGrainNegativeParams differs from the host");
 

@@ -5,6 +5,7 @@
 #pragma once
 
 #include <cstdint>
+#include <optional>
 
 #include "edit/geometry/types.hpp"
 
@@ -95,6 +96,9 @@ struct RenderRequest {
   ResolutionRequest   resolution{};
   SamplingFootprint   footprint{};
   DocumentGeometryUse document_geometry = DocumentGeometryUse::ApplyCropAndRotation;
+  /// Explicit internal final-frame input before manual transforms are stored in the document.
+  /// Valid only with ApplyCropAndRotation and a CropFrame output.
+  std::optional<ImageGeometryParams> final_frame_geometry;
 };
 
 }  // namespace alcedo

@@ -270,10 +270,8 @@ auto MakeFilmGrainPlan(const ResolvedRenderGeometry& geometry, FilmFormat format
 auto MakeFilmGrainFieldParams(const FilmGrainPlan& plan, const ResolvedRenderGeometry& geometry)
     -> FilmGrainFieldParams {
   FilmGrainFieldParams params{};
-  const auto&          matrix = geometry.render_to_reference.m;
-  for (std::size_t entry = 0; entry < 6; ++entry) {
-    params.noise.render_to_reference[entry] = matrix[entry];
-  }
+  const auto           matrix = geometry.RenderToReferenceMap().ToFloatMatrix();
+  std::copy_n(matrix.m, 9, params.noise.render_to_reference);
   params.noise.seed              = kFilmGrainSeed;
   params.noise.aggregate         = plan.aggregate;
   params.noise.inverse_aggregate = static_cast<float>(1.0 / static_cast<double>(plan.aggregate));

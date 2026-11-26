@@ -19,6 +19,7 @@
 #include <utility>
 #include <vector>
 
+#include "../geometry/perspective_frame_test_support.hpp"
 #include "../graph/grade_owned_mask_support.hpp"
 #include "edit/geometry/render_request.hpp"
 #include "edit/geometry/resolved_render_geometry.hpp"
@@ -50,13 +51,16 @@ inline auto EvaluateAiMaskR8(const AiMaskCoverageTexture&  texture,
   const double full_h  = geometry.full_reference_extent.height;
   const double tex_w   = texture.descriptor.extent.width;
   const double tex_h   = texture.descriptor.extent.height;
-  // Texels per render pixel along each render axis.
-  const double du_dx   = m[0] / (full_w * bounds.w) * tex_w;
-  const double dv_dx   = m[3] / (full_h * bounds.h) * tex_h;
-  const double du_dy   = m[1] / (full_w * bounds.w) * tex_w;
-  const double dv_dy   = m[4] / (full_h * bounds.h) * tex_h;
-  const double rho     = std::max(std::hypot(du_dx, dv_dx), std::hypot(du_dy, dv_dy));
-  const int    samples = std::clamp(static_cast<int>(std::ceil(rho - 1.0e-3)), 1, 8);
+  const auto   reference = [&](double x, double y) -> Point2d {
+    if (geometry.projective) {
+      return geometry.projective->render_to_reference.Map({x, y});
+    }
+    return {m[0] * x + m[1] * y + m[2], m[3] * x + m[4] * y + m[5]};
+  };
+  const auto footprint = [&](Point2d before, Point2d after) {
+    return std::hypot((after.x - before.x) * tex_w / (full_w * bounds.w),
+                      (after.y - before.y) * tex_h / (full_h * bounds.h));
+  };
 
   const auto   texel   = [&](int x, int y) -> double {
     x = std::clamp(x, 0, static_cast<int>(tex_w) - 1);
@@ -70,13 +74,20 @@ inline auto EvaluateAiMaskR8(const AiMaskCoverageTexture&  texture,
   std::vector<std::uint8_t> result(static_cast<std::size_t>(width) * height);
   for (std::uint32_t y = 0; y < height; ++y) {
     for (std::uint32_t x = 0; x < width; ++x) {
+      // Estimate the derivative independently by centered differences over 0.002 output pixels.
+      constexpr double step = 0.001;
+      const double     cx   = x + 0.5;
+      const double     cy   = y + 0.5;
+      const double rho = std::max(footprint(reference(cx - step, cy), reference(cx + step, cy)),
+                                  footprint(reference(cx, cy - step), reference(cx, cy + step))) /
+                         (2.0 * step);
+      const int    samples = std::clamp(static_cast<int>(std::ceil(rho - 1.0e-3)), 1, 8);
       double sum = 0.0;
       for (int j = 0; j < samples; ++j) {
         for (int i = 0; i < samples; ++i) {
           const double px = x + (i + 0.5) / samples;
           const double py = y + (j + 0.5) / samples;
-          const double rx = m[0] * px + m[1] * py + m[2];
-          const double ry = m[3] * px + m[4] * py + m[5];
+          const auto [rx, ry] = reference(px, py);
           const double u  = (rx / full_w - bounds.x) / bounds.w;
           const double v  = (ry / full_h - bounds.y) / bounds.h;
           if (u < 0.0 || u > 1.0 || v < 0.0 || v > 1.0) {
@@ -364,6 +375,74 @@ inline void CheckAiMaskFollowsCropAndRotation(AiMaskBackendHarness& h) {
   h.render_mask();
   ExpectR8Within1(h.download_mask(), ExpectedAiMaskR8(asset, {}, h.plan(), false, 1.0),
                   "crop and rotation");
+}
+
+/// Both Mask types follow one fixed source feature through the production frame compiler.
+inline void CheckMaskRemainsOnSourceFeatureAfterPerspectiveChange(AiMaskBackendHarness& h) {
+  const auto asset = MakeEllipseAsset(kAnalysisExtent, kAssetRect);
+  (void)AttachAiMask(h, asset);
+  auto&     grade = *h.document().PrimaryGrade();
+  MaskModel radial;
+  radial.id = MaskId{"mask.radial"};
+  const RadialMaskSource ellipse{
+      .center_x = 0.50f, .center_y = 0.44f, .major_radius = 0.20f, .minor_radius = 0.18f};
+  radial.source        = ellipse;
+  const auto radial_id = radial.id;
+  grade_mask_test::AddMask(grade, std::move(radial));
+  h.document().MarkTopologyChanged();
+  RenderRequest request;
+  request.final_frame_geometry = gpu_dag_test::kTiltedFrame;
+
+  grade.SetMaskEnabled(radial_id, false);
+  h.compile({});
+  h.render_mask();
+  const auto raster_before = h.download_mask();
+  h.compile(request);
+  h.render_mask();
+  const auto  raster_after = h.download_mask();
+  const auto& geometry     = h.plan().geometry;
+  ASSERT_TRUE(geometry.projective);
+  ASSERT_EQ(geometry.render_extent, kAnalysisExtent);
+  EXPECT_NE(raster_after, raster_before);
+  ExpectR8Within1(raster_after, ExpectedAiMaskR8(asset, {}, h.plan(), false, 1.0),
+                  "projective raster coverage");
+  for (const auto& probe : gpu_dag_test::kTiltedFrameProbes) {
+    const auto expected = gpu_dag_test::InverseTiltedPosition(kAnalysisExtent, probe.x, probe.y);
+    const auto actual   = geometry.projective->render_to_reference.Map(probe);
+    EXPECT_NEAR(actual.x, expected.x, 1.0e-4);
+    EXPECT_NEAR(actual.y, expected.y, 1.0e-4);
+  }
+
+  // Compare the same raster texels through a pixel-aligned ROI with a different extent.
+  request.view.visible_rect_in_edit_space = {0.25f, 0.25f, 0.5f, 0.5f};
+  h.compile(request);
+  h.render_mask();
+  const auto raster_roi = h.download_mask();
+  ASSERT_EQ(h.plan().geometry.render_extent, (Extent2D{32, 24}));
+  ASSERT_EQ(raster_roi.size(), 32u * 24);
+  ASSERT_EQ(raster_after.size(), 64u * 48);
+  for (std::size_t y = 0; y < 24; ++y) {
+    for (std::size_t x = 0; x < 32; ++x) {
+      EXPECT_NEAR(raster_roi[y * 32 + x], raster_after[(y + 12) * 64 + x + 16], 1);
+    }
+  }
+
+  grade.SetMaskEnabled(kAiMaskId, false);
+  grade.SetMaskEnabled(radial_id, true);
+  request.view = {};
+  h.compile(request);
+  h.render_mask();
+  std::vector<std::uint8_t> expected;
+  for (std::uint32_t y = 0; y < kAnalysisExtent.height; ++y) {
+    for (std::uint32_t x = 0; x < kAnalysisExtent.width; ++x) {
+      const auto ref = gpu_dag_test::InverseTiltedPosition(kAnalysisExtent, x + 0.5, y + 0.5);
+      const auto raw = multi_mask_test::RadialSourceCoverage(
+          ellipse, static_cast<float>(ref.x / kAnalysisExtent.width),
+          static_cast<float>(ref.y / kAnalysisExtent.height));
+      expected.push_back(multi_mask_test::QuantizeR8(raw));
+    }
+  }
+  ExpectR8Within1(h.download_mask(), expected, "projective analytic coverage");
 }
 
 inline void CheckAiMaskOutsideTextureBoundsIsZero(AiMaskBackendHarness& h) {

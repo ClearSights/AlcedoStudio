@@ -21,6 +21,7 @@
 #include <utility>
 #include <vector>
 
+#include "../edit/geometry/perspective_frame_test_support.hpp"
 #include "edit/geometry/types.hpp"
 #include "edit/mask/mask_model.hpp"
 #include "ui/alcedo_main/app_theme.hpp"
@@ -586,6 +587,32 @@ TEST(MaskOverlayControlTest, GradientControlAxisIsPerpendicularAfterNonSquareMap
   const float dy = normalized->y - source.origin_y;
   EXPECT_NEAR(dx, source.normal_x, 1.0e-5f);
   EXPECT_NEAR(dy, source.normal_y, 1.0e-5f);
+}
+
+TEST(MaskOverlayControlTest, PerspectiveGradientGuidesAndHandlesStayOnSourceLoci) {
+  auto               mapping = MakeMapping(640, 480, 64, 48, 1.0f, {}, 1.5f);
+  constexpr Extent2D extent{64, 48};
+  mapping.geometry =
+      MaskEditGeometry::MakeDocumentPhotographGeometry(extent, gpu_dag_test::kTiltedFrame);
+  const auto source = SampleLinear();
+  const auto display =
+      MakeLinearExistingOverlayDisplay(mapping, source, DefaultMaskOverlayStyle(), {});
+  ASSERT_EQ(display.selected_guides.size(), 3u);
+  const auto source_y = [extent](QPointF item) {
+    return gpu_dag_test::InverseTiltedPosition(extent, item.x() / 10.0, item.y() / 10.0).y /
+           extent.height;
+  };
+  for (const auto& guide : display.selected_guides) {
+    const double sign = guide.id == MaskOverlayHandleId::LinearStartBoundary ? -1.0
+                        : guide.id == MaskOverlayHandleId::LinearEndBoundary ? 1.0
+                                                                             : 0.0;
+    const double y    = source.origin_y + sign * source.transition_distance / 2.0;
+    EXPECT_NEAR(source_y(guide.a), y, 1.0e-5);
+    EXPECT_NEAR(source_y(guide.b), y, 1.0e-5);
+    const auto* handle = HandleById(display, guide.id);
+    ASSERT_NE(handle, nullptr);
+    EXPECT_NEAR(source_y(handle->item), y, 1.0e-5);
+  }
 }
 
 TEST(MaskOverlayControlTest, GradientBoundaryGuidesRenderDashedAndOriginStaysSolid) {

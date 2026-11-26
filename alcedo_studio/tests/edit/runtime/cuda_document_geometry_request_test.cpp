@@ -22,6 +22,7 @@
 #include <utility>
 #include <vector>
 
+#include "../geometry/perspective_frame_test_support.hpp"
 #include "../graph/test_camera_profile.hpp"
 #include "../input/prepared_raw_test_support.hpp"
 #include "edit/geometry/render_request.hpp"
@@ -41,6 +42,8 @@ namespace {
 
 constexpr std::uint32_t kSourceWidth    = 96;
 constexpr std::uint32_t kSourceHeight   = 64;
+/// Bayer RCD keeps the CFA interior after removing four pixels on each edge.
+constexpr Extent2D      kBayerReference{kSourceWidth - 8, kSourceHeight - 8};
 constexpr float         kPixelTolerance = 1.0f / 1024.0f;
 
 auto                    HasCudaDevice() -> bool {
@@ -54,12 +57,13 @@ auto MakeEncodedImage(std::uint8_t tag) -> std::shared_ptr<ImageBuffer> {
   return std::make_shared<ImageBuffer>(std::move(bytes));
 }
 
-auto MakeUnpacker() -> PreparedSourceCache::UnpackFn {
-  return [](std::span<const std::byte>, DecodeRes decode_res) {
+auto MakeUnpacker(Extent2D sensor = {kSourceWidth, kSourceHeight})
+    -> PreparedSourceCache::UnpackFn {
+  return [sensor](std::span<const std::byte>, DecodeRes decode_res) {
     const auto pattern = gpu_dag_test::MakeRggbPattern();
     return RawInputLoader::FromUnpackedCfa(
-        gpu_dag_test::MakeU16CfaPlane(kSourceWidth, kSourceHeight, pattern), pattern,
-        gpu_dag_test::DefaultLinearization(), gpu_dag_test::FullSensor(kSourceWidth, kSourceHeight),
+        gpu_dag_test::MakeU16CfaPlane(sensor.width, sensor.height, pattern), pattern,
+        gpu_dag_test::DefaultLinearization(), gpu_dag_test::FullSensor(sensor.width, sensor.height),
         decode_res);
   };
 }
@@ -164,6 +168,55 @@ TEST_F(CudaDocumentGeometryRequestFixture, RotatedCropFastPreviewRoiMatchesFullF
   ASSERT_EQ(roi_pixels.cols, w);
   ASSERT_EQ(roi_pixels.rows, h);
   EXPECT_LE(MaxRgbDifference(roi_pixels, full(cv::Rect(x, y, w, h))), kPixelTolerance);
+}
+
+TEST_F(CudaDocumentGeometryRequestFixture, PerspectiveRoiPixelsMatchCompleteImageWithinTolerance) {
+  RenderRequest request;
+  request.final_frame_geometry = gpu_dag_test::kTiltedFrame;
+  const auto full              = Render(request);
+  ASSERT_EQ(full.size(), cv::Size(kBayerReference.width, kBayerReference.height));
+
+  request.view.visible_rect_in_edit_space = {0.25f, 0.25f, 0.5f, 0.5f};
+  const auto roi                          = Render(request);
+  ASSERT_EQ(roi.size(), cv::Size(kBayerReference.width / 2, kBayerReference.height / 2));
+  const cv::Rect interior(2, 2, roi.cols - 4, roi.rows - 4);
+  EXPECT_LE(
+      MaxRgbDifference(roi(interior), full(interior + cv::Point(full.cols / 4, full.rows / 4))),
+      2.0e-4f);
+}
+
+TEST_F(CudaDocumentGeometryRequestFixture, FullResolutionExportUsesSamePerspectiveSourcePositions) {
+  PipelineTask task{};
+  task.pipeline_executor_                 = std::make_shared<PipelineExecutor>(ExecutorRole::Batch);
+  task.options_.render_desc_.render_type_ = RenderType::FULL_RES_EXPORT;
+  task.options_.render_desc_.final_frame_geometry_ = gpu_dag_test::kTiltedFrame;
+  // A viewport request on the task cannot crop the full-resolution export.
+  task.options_.render_desc_.scale_factor_x_       = 0.5f;
+  const auto request                               = task.MakeApplyRequest();
+  ASSERT_EQ(request.role, ExecutorRole::Batch);
+  ASSERT_EQ(request.decode_res, DecodeRes::FULL);
+  ASSERT_TRUE(request.require_host_output);
+  ASSERT_TRUE(request.geometry.view.visible_rect_in_edit_space.IsFullFrame());
+
+  constexpr Extent2D source{64, 48};
+  CudaProductRenderer exporter(ExecutorRole::Batch, MakeUnpacker({source.width + 8, source.height + 8}));
+  const auto          frame  = exporter.RenderImage(*source_->Freeze(), image_, request);
+  const auto          pixels = HostPixels(frame.pixels);
+  ASSERT_EQ(pixels.size(), cv::Size(source.width, source.height));
+  ASSERT_EQ(frame.geometry.full_reference_extent, source);
+  ASSERT_TRUE(frame.geometry.projective);
+  EXPECT_EQ(frame.geometry.filter, TextureFilter::Bicubic);
+  for (const auto& point : gpu_dag_test::kTiltedFrameProbes) {
+    const auto expected = gpu_dag_test::InverseTiltedPosition(source, point.x, point.y);
+    const auto actual   = frame.geometry.projective->render_to_reference.Map(point);
+    EXPECT_NEAR(actual.x, expected.x, 1.0e-4);
+    EXPECT_NEAR(actual.y, expected.y, 1.0e-4);
+    EXPECT_GT(pixels.at<cv::Vec4f>(static_cast<int>(point.y), static_cast<int>(point.x))[1], 0.0f);
+  }
+
+  auto invalid                                 = request;
+  invalid.geometry.final_frame_geometry->scale = 0.0;
+  EXPECT_THROW((void)exporter.RenderImage(*source_->Freeze(), image_, invalid), std::runtime_error);
 }
 
 TEST_F(CudaDocumentGeometryRequestFixture,

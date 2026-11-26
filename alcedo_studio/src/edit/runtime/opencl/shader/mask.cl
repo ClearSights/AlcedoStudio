@@ -30,8 +30,9 @@ typedef struct {
 } MaskAnalyticParams;
 
 static inline float2 Transform(__private const float* matrix, float x, float y) {
+  const float w = matrix[6] * x + matrix[7] * y + matrix[8];
   return (float2)(matrix[0] * x + matrix[1] * y + matrix[2],
-                  matrix[3] * x + matrix[4] * y + matrix[5]);
+                matrix[3] * x + matrix[4] * y + matrix[5]) / w;
 }
 
 static inline float FinishEffectiveCoverage(float value, uint invert, float opacity) {
@@ -92,9 +93,9 @@ static inline float MaskRangeWeight(__private const MaskRangeParams* range, floa
       offset += 360.0f;
     }
     const float distance = offset <= width ? 0.0f : min(offset - width, 360.0f - offset);
-    const float gate_offset = range->hue_min_chroma - 0.03f;
+    const float chroma_threshold_offset = range->hue_min_chroma - 0.03f;
     weight *= (1.0f - SmoothStep(0.0f, range->hue_softness, distance)) *
-              SmoothStep(0.015f + gate_offset, 0.045f + gate_offset, chroma);
+              SmoothStep(0.015f + chroma_threshold_offset, 0.045f + chroma_threshold_offset, chroma);
   }
   if (range->luminance_restricted != 0u) {
     const float lightness = min(max(lab.x, 0.0f), 1.0f);
@@ -195,10 +196,9 @@ typedef struct {
 // Bilinear read at texel centers with clamp-to-edge indices; 0 outside UV [0, 1].
 static inline float SampleRasterMask(__read_only image2d_t texture,
                                      __private const MaskRasterParams* params, float x, float y) {
-  const float u = params->render_to_texture_uv[0] * x + params->render_to_texture_uv[1] * y +
-                  params->render_to_texture_uv[2];
-  const float v = params->render_to_texture_uv[3] * x + params->render_to_texture_uv[4] * y +
-                  params->render_to_texture_uv[5];
+  const float2 uv = Transform(params->render_to_texture_uv, x, y);
+  const float u = uv.x;
+  const float v = uv.y;
   if (!(u >= 0.0f && u <= 1.0f && v >= 0.0f && v <= 1.0f)) {
     return 0.0f;
   }
@@ -220,13 +220,29 @@ static inline float SampleRasterMask(__read_only image2d_t texture,
   return top + (bottom - top) * fy;
 }
 
+/// Estimates the texel footprint from the UV Jacobian at this render pixel center.
+static inline uint RasterMaskSampleCount(__private const MaskRasterParams* params, float x,
+                                        float y) {
+  if (params->samples != 0) return params->samples;
+  __private const float* m = params->render_to_texture_uv;
+  const float w = m[6] * x + m[7] * y + m[8];
+  const float2 uv = Transform(m, x, y);
+  const float2 dx = (float2)((m[0] - uv.x * m[6]) * (float)(params->texture_width),
+                          (m[3] - uv.y * m[6]) * (float)(params->texture_height)) / w;
+  const float2 dy = (float2)((m[1] - uv.x * m[7]) * (float)(params->texture_width),
+                          (m[4] - uv.y * m[7]) * (float)(params->texture_height)) / w;
+  const float footprint = max(length(dx), length(dy));
+  return (uint)clamp(ceil(footprint - 1.0e-3f), 1.0f, 8.0f);
+}
+
 // Source coverage of render pixel @p gid: the mean of samples x samples bilinear reads.
 static inline float RasterMaskMean(__read_only image2d_t texture,
                                    __private const MaskRasterParams* params, uint2 gid) {
-  const float samples = (float)params->samples;
+  const uint count = RasterMaskSampleCount(params, (float)gid.x + 0.5f, (float)gid.y + 0.5f);
+  const float samples = (float)count;
   float       sum     = 0.0f;
-  for (uint j = 0; j < params->samples; ++j) {
-    for (uint i = 0; i < params->samples; ++i) {
+  for (uint j = 0; j < count; ++j) {
+    for (uint i = 0; i < count; ++i) {
       sum += SampleRasterMask(texture, params, (float)gid.x + ((float)i + 0.5f) / samples,
                               (float)gid.y + ((float)j + 0.5f) / samples);
     }

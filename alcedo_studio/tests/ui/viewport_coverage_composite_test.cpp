@@ -30,6 +30,7 @@
 #include <variant>
 #include <vector>
 
+#include "../edit/geometry/perspective_frame_test_support.hpp"
 #include "../edit/graph/test_camera_profile.hpp"
 #include "../edit/input/prepared_raw_test_support.hpp"
 #include "app/editor_mask_coverage_port.hpp"
@@ -228,6 +229,35 @@ TEST_F(ViewportCoverageCompositeTest, CandidateAndCommittedCoverageUseSameCompos
     tinted += candidate_texels[i * 4] > 0.5f ? 1 : 0;
   }
   EXPECT_GT(tinted, 100) << "the coverage must cover a part of the frame";
+}
+
+TEST_F(ViewportCoverageCompositeTest, PerspectivePhotoSamplesCoverageAtLabeledSourcePositions) {
+  const auto                       source = MakeSourceGeometry(kAnalysis, kAnalysis);
+  const MaskCoverageDisplayRequest coverage{ResolveRenderGeometry(source, {}, {}, {}, {}), false,
+                                            1.0f};
+  const MaskCoverageDisplayRequest tilted{
+      ResolveRenderGeometry(source, gpu_dag_test::kTiltedFrame, {}, {}, {}), false, 1.0f};
+  ASSERT_EQ(Present(Candidate(MakeCandidatePixels(0)), coverage, Identity(73)),
+            MaskCoveragePublication::Published);
+  ASSERT_TRUE(Consume());
+  const auto         texels = ReadBack(layer_.Texture());
+  std::vector<float> photo_pixels;
+  const auto         photo    = BluePhoto(tilted, photo_pixels);
+  const auto         composed = CompositeFor(photo, kTint);
+  ASSERT_EQ(composed.size(), photo_pixels.size());
+  ASSERT_EQ(texels.size(), photo_pixels.size());
+  for (const auto& point : gpu_dag_test::kTiltedFrameProbes) {
+    const auto        ref = gpu_dag_test::InverseTiltedPosition(kAnalysis, point.x, point.y);
+    const std::size_t index =
+        static_cast<std::size_t>(point.y) * kAnalysis.width + static_cast<std::size_t>(point.x);
+    const auto expected = ExpectedComposite(
+        PhotoPixel(photo_pixels, index),
+        SampleCoverage(texels, kAnalysis, ref.x / kAnalysis.width, ref.y / kAnalysis.height),
+        kTint);
+    for (int channel = 0; channel < 4; ++channel) {
+      EXPECT_NEAR(composed[index * 4 + channel], expected[channel], 2.0e-4);
+    }
+  }
 }
 
 TEST_F(ViewportCoverageCompositeTest, OverlayToggleDoesNotExecutePhotoDag) {

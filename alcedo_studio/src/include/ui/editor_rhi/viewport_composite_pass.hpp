@@ -38,11 +38,11 @@ struct MaskCoverageDisplayStyle {
   auto  operator==(const MaskCoverageDisplayStyle& other) const -> bool = default;
 };
 
-/// Affine map from photo frame UV to coverage frame UV: `u' = u_row · (u, v, 1)`,
-/// `v' = v_row · (u, v, 1)`.
+/// Homogeneous rows from photo UV to coverage UV. Divide the u and v dot products by w.
 struct CoverageUvTransform {
   float u_row[3] = {1.0f, 0.0f, 0.0f};
   float v_row[3] = {0.0f, 1.0f, 0.0f};
+  float w_row[3] = {0.0f, 0.0f, 1.0f};
 };
 
 /**
@@ -55,8 +55,7 @@ struct CoverageUvTransform {
  * again. Identical geometry gives the identity map.
  *
  * @return std::nullopt when either geometry has an empty render or reference extent, or when the
- *         reference extents differ (the frames are of different source images). The coverage is
- *         then not composited.
+ *         reference extents differ, or the composed map is invalid on the photo frame.
  */
 [[nodiscard]] auto MapPhotoUvToCoverageUv(const ResolvedRenderGeometry& photo,
                                           const ResolvedRenderGeometry& coverage)
@@ -72,17 +71,21 @@ struct ViewportCompositeUniforms {
   float coverage_u[4]    = {1.0f, 0.0f, 0.0f, 0.0f};
   /// xyz: CoverageUvTransform::v_row.
   float coverage_v[4]    = {0.0f, 1.0f, 0.0f, 0.0f};
+  /// xyz: CoverageUvTransform::w_row.
+  float coverage_w[4]        = {0.0f, 0.0f, 1.0f, 0.0f};
   /// rgb: display-encoded tint; a: overlay opacity.
   float coverage_tint[4] = {0.0f, 0.0f, 0.0f, 0.0f};
   /// xyz: CoverageUvTransform::u_row of the detail coverage frame; w: 1 when it is composited.
   float detail_coverage_u[4] = {1.0f, 0.0f, 0.0f, 0.0f};
   /// xyz: CoverageUvTransform::v_row of the detail coverage frame.
   float detail_coverage_v[4] = {0.0f, 1.0f, 0.0f, 0.0f};
+  /// xyz: CoverageUvTransform::w_row of the detail coverage frame.
+  float detail_coverage_w[4] = {0.0f, 0.0f, 1.0f, 0.0f};
   /// x: 1 when the display table converts the output; y: nodes per axis; z: input exponent.
   /// @ref ViewportCompositePass::Record writes it from the table of the pass.
   float display_lut[4]       = {0.0f, 0.0f, 1.0f, 0.0f};
 };
-static_assert(sizeof(ViewportCompositeUniforms) == 10 * 4 * sizeof(float),
+static_assert(sizeof(ViewportCompositeUniforms) == 12 * 4 * sizeof(float),
               "ViewportCompositeUniforms must match the std140 block ViewerUniforms");
 
 /// The selected photo layer of one viewport draw.

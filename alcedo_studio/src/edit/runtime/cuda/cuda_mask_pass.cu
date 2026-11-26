@@ -28,8 +28,9 @@ auto EnsureOutput(CudaRenderWorkspace& workspace, const GraphValueId& id, Extent
 }
 
 __device__ auto Transform(const float* matrix, float x, float y) -> float2 {
-  return make_float2(matrix[0] * x + matrix[1] * y + matrix[2],
-                     matrix[3] * x + matrix[4] * y + matrix[5]);
+  const float w = matrix[6] * x + matrix[7] * y + matrix[8];
+  return make_float2((matrix[0] * x + matrix[1] * y + matrix[2]) / w,
+                     (matrix[3] * x + matrix[4] * y + matrix[5]) / w);
 }
 
 __device__ auto FinishEffectiveCoverage(float value, bool invert, float opacity) -> float {
@@ -68,9 +69,10 @@ __device__ auto MaskRangeWeight(const MaskRangeParams& range, const float4& aces
     float       offset = hue - range.hue_start;
     if (offset < 0.0f) offset += 360.0f;
     const float distance = offset <= width ? 0.0f : fminf(offset - width, 360.0f - offset);
-    const float gate_offset = range.hue_min_chroma - 0.03f;
-    weight *= (1.0f - SmoothStep(0.0f, range.hue_softness, distance)) *
-              SmoothStep(0.015f + gate_offset, 0.045f + gate_offset, chroma);
+    const float chroma_threshold_offset = range.hue_min_chroma - 0.03f;
+    weight *=
+        (1.0f - SmoothStep(0.0f, range.hue_softness, distance)) *
+        SmoothStep(0.015f + chroma_threshold_offset, 0.045f + chroma_threshold_offset, chroma);
   }
   if (range.luminance_restricted != 0u) {
     const float lightness = fminf(fmaxf(lab.x, 0.0f), 1.0f);
@@ -149,8 +151,9 @@ struct RasterMaskParams {
 __device__ auto SampleRasterMask(const std::uint8_t* texture, const RasterMaskParams& params,
                                  float x, float y) -> float {
   const float* m = params.render_to_texture_uv;
-  const float  u = m[0] * x + m[1] * y + m[2];
-  const float  v = m[3] * x + m[4] * y + m[5];
+  const auto   uv = Transform(m, x, y);
+  const float  u  = uv.x;
+  const float  v  = uv.y;
   if (!(u >= 0.0f && u <= 1.0f && v >= 0.0f && v <= 1.0f)) return 0.0f;
   const float tx    = u * static_cast<float>(params.texture_width) - 0.5f;
   const float ty    = v * static_cast<float>(params.texture_height) - 0.5f;
@@ -172,13 +175,32 @@ __device__ auto SampleRasterMask(const std::uint8_t* texture, const RasterMaskPa
   return top + (bottom - top) * fy;
 }
 
+/// Estimates the texel footprint from the UV Jacobian at this render pixel center.
+__device__ auto RasterMaskSampleCount(const RasterMaskParams& params, float x, float y)
+    -> std::uint32_t {
+  if (params.samples != 0) return params.samples;
+  const float* m  = params.render_to_texture_uv;
+  const float  w  = m[6] * x + m[7] * y + m[8];
+  const float2 uv = Transform(m, x, y);
+  const float2 dx =
+      make_float2((m[0] - uv.x * m[6]) * static_cast<float>(params.texture_width) / w,
+                  (m[3] - uv.y * m[6]) * static_cast<float>(params.texture_height) / w);
+  const float2 dy =
+      make_float2((m[1] - uv.x * m[7]) * static_cast<float>(params.texture_width) / w,
+                  (m[4] - uv.y * m[7]) * static_cast<float>(params.texture_height) / w);
+  const float footprint = fmaxf(hypotf(dx.x, dx.y), hypotf(dy.x, dy.y));
+  return static_cast<std::uint32_t>(fminf(fmaxf(ceilf(footprint - 1.0e-3f), 1.0f), 8.0f));
+}
+
 /// Source coverage of render pixel (@p x, @p y): the mean of samples x samples bilinear reads.
 __device__ auto RasterMaskMean(const std::uint8_t* texture, const RasterMaskParams& params,
                                std::uint32_t x, std::uint32_t y) -> float {
-  const float samples = static_cast<float>(params.samples);
+  const std::uint32_t count =
+      RasterMaskSampleCount(params, static_cast<float>(x) + 0.5f, static_cast<float>(y) + 0.5f);
+  const float samples = static_cast<float>(count);
   float       sum     = 0.0f;
-  for (std::uint32_t j = 0; j < params.samples; ++j) {
-    for (std::uint32_t i = 0; i < params.samples; ++i) {
+  for (std::uint32_t j = 0; j < count; ++j) {
+    for (std::uint32_t i = 0; i < count; ++i) {
       sum += SampleRasterMask(texture, params, static_cast<float>(x) + (i + 0.5f) / samples,
                               static_cast<float>(y) + (j + 0.5f) / samples);
     }
@@ -326,7 +348,7 @@ auto ExecuteCudaMask(CudaRenderDevice& device, const ExecutionPlan& plan,
       std::holds_alternative<LinearGradientMaskSource>(mask_model.source)) {
     const auto kernel = scene == nullptr ? AnalyticMaskKernel<false> : AnalyticMaskKernel<true>;
     kernel<<<blocks, block, 0, context.Stream()>>>(
-        target, extent.width, extent.height, plan.geometry.render_to_reference,
+        target, extent.width, extent.height, plan.geometry.RenderToReferenceMap().ToFloatMatrix(),
         plan.geometry.full_reference_extent, AnalyticKindFromMask(mask_model),
         RadialParamsFromMask(mask_model), LinearGradientParamsFromMask(mask_model), range, scene);
   } else if (const auto* ai = std::get_if<AiSegmentationMaskSource>(&mask_model.source)) {

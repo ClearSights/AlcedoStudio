@@ -328,7 +328,7 @@ struct OpenClLocalToneOps {
     params.output_height = decision.heights[0];
     params.full_ref_w    = static_cast<float>(geometry.full_reference_extent.width);
     params.full_ref_h    = static_cast<float>(geometry.full_reference_extent.height);
-    CopyMatrix(params.reference_to_render, geometry.reference_to_render);
+    CopyMatrix(params.reference_to_render, geometry.ReferenceToRenderMap().ToFloatMatrix());
     BindOpenClSceneView(kernel, 0, OpenClBindScene(device, input), device.Workspace().Device(),
                         "reference extract input", OpenClSceneArgAccess::Read);
     SetMem(kernel, 3, dest.native, "reference extract output");

@@ -200,11 +200,11 @@ inline void CheckFullySelectingRangeMatchesTheMaskWithoutRangesByteForByte(
 }
 
 /**
- * The default saturation threshold keeps the fixed chroma gate of the kernels before the threshold
+ * The default saturation threshold keeps the fixed chroma ramp of the kernels before the threshold
  * was stored: smoothstep(0.015, 0.045, C), written here with literal edges and not through
- * min_chroma. The hue wheel crosses that gate down its rows.
+ * min_chroma. The hue wheel crosses that ramp down its rows.
  */
-inline void CheckDefaultMinChromaKeepsTheFixedChromaGate(MaskRangeBackendHarness& h) {
+inline void CheckDefaultThresholdPreservesChromaRamp(MaskRangeBackendHarness& h) {
   auto mask        = MakeFullCoverageMask("mask.hue");
   mask.color_range = ColorRangeModel{20.0f, 200.0f, 12.0f};
   ASSERT_EQ(mask.color_range->min_chroma, kColorRangeDefaultMinChroma);
@@ -214,7 +214,7 @@ inline void CheckDefaultMinChromaKeepsTheFixedChromaGate(MaskRangeBackendHarness
   const auto actual = h.render_mask_with_scene(mask.id, scene);
   ASSERT_EQ(actual.size(), scene.size());
   const auto& range = *mask.color_range;
-  std::size_t gate  = 0;
+  std::size_t ramp_pixels = 0;
   for (std::size_t i = 0; i < scene.size(); ++i) {
     const auto   lab    = mask_range_reference::SceneOkLab(scene[i]);
     const double hue    = mask_range_reference::HueDegrees(lab);
@@ -227,9 +227,9 @@ inline void CheckDefaultMinChromaKeepsTheFixedChromaGate(MaskRangeBackendHarness
                           mask_range_reference::SmoothStep(0.015, 0.045, chroma);
     const auto expected = mask_range_reference::RangedCoverageR8(1.0, mask, weight);
     EXPECT_NEAR(actual[i], expected, 1) << "index " << i << " chroma " << chroma;
-    if (distance == 0.0 && chroma > 0.02 && chroma < 0.04) ++gate;
+    if (distance == 0.0 && chroma > 0.02 && chroma < 0.04) ++ramp_pixels;
   }
-  EXPECT_GE(gate, 20u) << "the scene must cross the chroma gate inside the range";
+  EXPECT_GE(ramp_pixels, 20u) << "the scene must cross the chroma ramp inside the range";
 }
 
 /**

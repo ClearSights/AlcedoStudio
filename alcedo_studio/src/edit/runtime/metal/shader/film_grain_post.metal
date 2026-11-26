@@ -26,7 +26,7 @@ using namespace metal;
 #include "../../../../include/edit/runtime/film/film_grain_tile.h"
 
 // A size that differs from the host stops the build of this library.
-static_assert(sizeof(FilmGrainFieldParams) == 388, "FilmGrainFieldParams differs from the host");
+static_assert(sizeof(FilmGrainFieldParams) == 400, "FilmGrainFieldParams differs from the host");
 static_assert(sizeof(FilmGrainPostParams) == 612, "FilmGrainPostParams differs from the host");
 
 /// `FilmGrainPostSize` of metal_film_grain_pass.mm.
