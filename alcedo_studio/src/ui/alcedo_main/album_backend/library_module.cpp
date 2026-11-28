@@ -246,9 +246,9 @@ void LibraryModule::SelectAllInCurrentView() {
     QString                                      error;
     try {
       const auto filter = MergeFilterNodes(input->stats_filter_, input->search_.filter_);
-      const auto ids  = input->browse_->ReadAlbumFileIds(input->folder_id_, filter, input->options_,
-                                                         input->active_model_key_, 0, occurrence_end,
-                                                         input->search_.semantic_query_);
+      const auto ids    = input->browse_->ReadAlbumFileIds(input->Scope(), filter, input->options_,
+                                                           input->active_model_key_, 0, occurrence_end,
+                                                           input->search_.semantic_query_);
       // Ids and names from typed columns, no thumbnail metadata.
       const auto rows = input->browse_->ReadAlbumFileRows(ids);
       images.reserve(rows.size());
@@ -267,6 +267,11 @@ void LibraryModule::SelectAllInCurrentView() {
           }
           if (!error.isEmpty()) {
             SetQueryError(error);
+            return;
+          }
+          if (refresh_in_flight_) {
+            // A refresh started after this read: its result may hide some of these photos.
+            RunAfterRefresh([this]() { SelectAllInCurrentView(); });
             return;
           }
           selection_.Replace(std::move(images));
@@ -293,8 +298,7 @@ void LibraryModule::ReloadFolderTree(const std::filesystem::path& preferredFolde
     return;
   }
 
-  folders_->ReloadTree(preferredFolderPath.empty() ? folders_->current_folder_path()
-                                                      : preferredFolderPath);
+  folders_->ReloadTree(preferredFolderPath);
 }
 
 void LibraryModule::ReloadCurrentFolder() { RequestLibraryRefresh(); }
@@ -465,8 +469,8 @@ auto RunLibraryQuery(const LibraryQueryInput& input) -> LibraryQueryOutput {
           input.filter_service_->EmbedSemanticQuery(*input.search_.semantic_text_);
     }
     output.result_ = input.browse_->ReadAlbumQuery(
-        input.folder_id_, MergeFilterNodes(input.stats_filter_, output.search_filter_),
-        input.options_, input.active_model_key_, input.read_, output.semantic_query_);
+        input.Scope(), MergeFilterNodes(input.stats_filter_, output.search_filter_), input.options_,
+        input.active_model_key_, input.read_, output.semantic_query_);
     ReadRowDisplayValues(input, output);
   } catch (const std::exception& e) {
     output.error_ = QString::fromUtf8(e.what());
@@ -754,6 +758,8 @@ void LibraryModule::SubmitPendingRefresh() {
     query_worker_->Invalidate(SearchRequestKind::kSelectAll);
     query_worker_->Invalidate(SearchRequestKind::kStatistics);
     ResetThumbnailWindow();
+    // No list: no photo stays selected for a batch action.
+    selection_.Clear();
     if (stats_) {
       stats_->ClearStats();
     }
@@ -768,6 +774,9 @@ void LibraryModule::SubmitPendingRefresh() {
 
   auto input                            = std::make_shared<LibraryQueryInput>();
   input->folder_id_                     = folder_id.value();
+  // The Library row of the Collections tree reads the photos directly in the root (#1078).
+  input->library_root_ =
+      folder_id.value() == kLibraryRootFolderId && folders_->LibraryRootSelected();
   input->stats_filter_                  = stats_->BuildStatsFilterNode();
   input->search_                        = search_->LibrarySearch();
   input->options_                       = RequestedOptions();
@@ -778,8 +787,12 @@ void LibraryModule::SubmitPendingRefresh() {
               input->search_.filter_.has_value() || input->search_.semantic_query_.has_value()
           ? kSearchMetadataPageSize
           : kAlbumMetadataPageSize);
-  input->read_      = AlbumQueryRead{
-           .offset_ = 0, .limit_ = input->page_size_, .read_groups_ = true, .read_statistics_ = true};
+  // The match ids keep the selection inside the accepted result (PruneSelectionToResult).
+  input->read_ = AlbumQueryRead{.offset_              = 0,
+                                .limit_               = input->page_size_,
+                                .read_groups_         = true,
+                                .read_statistics_     = true,
+                                .read_match_file_ids_ = true};
   input->browse_         = std::move(browse);
   input->filter_service_ = proj->GetSleeveFilterService();
   input->image_pool_     = proj->GetImagePoolService();
@@ -793,7 +806,7 @@ void LibraryModule::SubmitPendingRefresh() {
   // the views keep their position and animate.
   const bool in_place =
       requested_kind == RefreshKind::kInPlace && !unpublished_replace_ && accepted_input_ &&
-      !pending_options_.has_value() && accepted_input_->folder_id_ == input->folder_id_ &&
+      !pending_options_.has_value() && accepted_input_->Scope() == input->Scope() &&
       SamePresentation(accepted_input_->options_, input->options_) &&
       accepted_input_->options_.local_day_time_zone_ == input->options_.local_day_time_zone_ &&
       accepted_input_->active_model_key_ == input->active_model_key_ &&
@@ -806,7 +819,8 @@ void LibraryModule::SubmitPendingRefresh() {
                                   .limit_                    = 0,
                                   .read_groups_              = true,
                                   .read_statistics_          = true,
-                                  .read_occurrence_file_ids_ = true};
+                                  .read_occurrence_file_ids_ = true,
+                                  .read_match_file_ids_      = true};
   } else if (!std::exchange(unpublished_replace_, true) &&
              requested_kind == RefreshKind::kInPlace) {
     // A content refresh that must replace (a pending presentation or search change): the
@@ -815,7 +829,7 @@ void LibraryModule::SubmitPendingRefresh() {
   }
 
   // A different scope must not show the previous scope's photos while the new read runs.
-  if (accepted_input_ && accepted_input_->folder_id_ != input->folder_id_) {
+  if (accepted_input_ && accepted_input_->Scope() != input->Scope()) {
     ResetThumbnailWindow();
     stats_->ClearStats();
   }
@@ -983,7 +997,20 @@ void LibraryModule::PublishRefresh(const LibraryQueryInput& input, LibraryQueryO
     requested_begin_ = 0;
     requested_end_   = static_cast<int64_t>(page_ids.size());
   }
+  PruneSelectionToResult(result.match_file_ids_);
   FinishRefresh(output, search_changed);
+}
+
+void LibraryModule::PruneSelectionToResult(const std::vector<sl_element_id_t>& match_file_ids) {
+  // The selection holds only photos that the shown list holds, so a batch action (Delete,
+  // Paste, Rating, marks, Add to) never reaches a photo that a filter or a search hides.
+  std::vector<sl_element_id_t> hidden;
+  for (const auto element_id : selection_.SelectedElementIds()) {
+    if (!std::binary_search(match_file_ids.begin(), match_file_ids.end(), element_id)) {
+      hidden.push_back(element_id);
+    }
+  }
+  selection_.Prune(hidden);
 }
 
 auto LibraryModule::PlanInPlaceChange(const LibraryQueryInput&  input,
@@ -1168,6 +1195,7 @@ void LibraryModule::ApplyInPlaceChange(const LibraryQueryInput& input, LibraryQu
 
   emit LibraryChangeApplied();
   emit libraryChangeApplied();
+  PruneSelectionToResult(result.match_file_ids_);
   FinishRefresh(output, false);
   ContinuePaging();
 }
@@ -1333,8 +1361,8 @@ auto LibraryModule::RequestOrderedFileIds(const QVariantList& ranges) -> qulongl
           const auto relevance = input->search_.semantic_query_;
           for (const auto& [begin, end] : occurrence_ranges) {
             for (const auto id : input->browse_->ReadAlbumFileIds(
-                     input->folder_id_, filter, input->options_, input->active_model_key_, begin,
-                     end, input->search_.semantic_query_)) {
+                     input->Scope(), filter, input->options_, input->active_model_key_, begin, end,
+                     input->search_.semantic_query_)) {
               if (seen.insert(id).second) {
                 ordered.push_back(id);
               }
@@ -1392,7 +1420,7 @@ void LibraryModule::RequestFocusPosition(uint fileId, const QString& preferredGr
     QString                          error;
     try {
       position = input->browse_->ReadAlbumFilePosition(
-          input->folder_id_, MergeFilterNodes(input->stats_filter_, input->search_.filter_),
+          input->Scope(), MergeFilterNodes(input->stats_filter_, input->search_.filter_),
           input->options_, input->active_model_key_, static_cast<sl_element_id_t>(fileId),
           preferred, input->search_.semantic_query_);
     } catch (const std::exception& e) {
@@ -1464,7 +1492,7 @@ void LibraryModule::SubmitEditorListPosition(qulonglong requestId, uint fileId, 
     QString                          error;
     try {
       position = input->browse_->ReadAlbumFilePosition(
-          input->folder_id_, MergeFilterNodes(input->stats_filter_, input->search_.filter_),
+          input->Scope(), MergeFilterNodes(input->stats_filter_, input->search_.filter_),
           input->options_, input->active_model_key_, static_cast<sl_element_id_t>(fileId),
           std::nullopt, input->search_.semantic_query_);
     } catch (const std::exception& e) {

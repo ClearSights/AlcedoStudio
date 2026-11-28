@@ -109,6 +109,43 @@ def_library(BackgroundTaskController
     PUBLIC_DEPS Qt6::Core
 )
 
+# The change notifications of the mounted directories (mounted_folder_plan.md, MF7, P11).
+set(MOUNT_DIRECTORY_WATCHER_SRCS
+    "${ALCEDO_UI_SHELL_ROOT}/album_backend/mount_directory_watcher_qt.cpp"
+    "${ALCEDO_INCLUDE_ROOT}/ui/alcedo_main/album_backend/mount_directory_watcher.hpp"
+)
+if(WIN32)
+    list(APPEND MOUNT_DIRECTORY_WATCHER_SRCS
+        "${ALCEDO_UI_SHELL_ROOT}/album_backend/mount_directory_watcher_win.cpp"
+    )
+endif()
+def_library(MountDirectoryWatcher
+    SOURCES ${MOUNT_DIRECTORY_WATCHER_SRCS}
+    PUBLIC_DEPS
+        Qt6::Core
+    PRIVATE_DEPS
+        UiLocalization
+)
+if(WIN32)
+    # The message-only window and the device notifications of the Windows watcher.
+    target_link_libraries(MountDirectoryWatcher PRIVATE user32)
+endif()
+
+# The scan triggers of the mounted folders (mounted_folder_plan.md, MF7): project open,
+# application activation, and the directory watcher.
+def_library(MountScanCoordinator
+    SOURCES
+        "${ALCEDO_UI_SHELL_ROOT}/album_backend/mount_scan_coordinator.cpp"
+        "${ALCEDO_INCLUDE_ROOT}/ui/alcedo_main/album_backend/mount_scan_coordinator.hpp"
+    PUBLIC_DEPS
+        Qt6::Core
+        BackgroundTaskController
+        MountDirectoryWatcher
+        MountService
+    PRIVATE_DEPS
+        UiLocalization
+)
+
 def_library(AgentControlOwner
     SOURCES
         "${ALCEDO_UI_SHELL_ROOT}/album_backend/agent_control_owner.cpp"
@@ -173,6 +210,7 @@ add_library(AlbumBackendLib STATIC
         "${ALCEDO_UI_SHELL_ROOT}/album_backend/editor_comparison_controller.cpp"
         "${ALCEDO_UI_SHELL_ROOT}/album_backend/system_icon_image_provider.cpp"
         "${ALCEDO_UI_SHELL_ROOT}/album_backend/folder_controller.cpp"
+        "${ALCEDO_UI_SHELL_ROOT}/album_backend/folder_controller_mount.cpp"
     "${ALCEDO_UI_SHELL_ROOT}/album_backend/image_controller.cpp"
     "${ALCEDO_UI_SHELL_ROOT}/album_backend/stats_engine.cpp"
     "${ALCEDO_UI_SHELL_ROOT}/album_backend/search_controller.cpp"
@@ -188,6 +226,12 @@ add_library(AlbumBackendLib STATIC
     "${ALCEDO_INCLUDE_ROOT}/ui/alcedo_main/album_backend/editor_mask_creation_adapter.hpp"
     "${ALCEDO_UI_SHELL_ROOT}/album_backend/editor_ai_mask_tool.cpp"
     "${ALCEDO_INCLUDE_ROOT}/ui/alcedo_main/album_backend/editor_ai_mask_tool.hpp"
+    "${ALCEDO_UI_SHELL_ROOT}/album_backend/editor_ai_denoise_control.cpp"
+    "${ALCEDO_INCLUDE_ROOT}/ui/alcedo_main/album_backend/editor_ai_denoise_control.hpp"
+    "${ALCEDO_UI_SHELL_ROOT}/album_backend/export_ai_denoise_control.cpp"
+    "${ALCEDO_INCLUDE_ROOT}/ui/alcedo_main/album_backend/export_ai_denoise_control.hpp"
+    "${ALCEDO_UI_SHELL_ROOT}/album_backend/editor_viewport_placeholder.cpp"
+    "${ALCEDO_INCLUDE_ROOT}/ui/alcedo_main/album_backend/editor_viewport_placeholder.hpp"
     "${ALCEDO_UI_SHELL_ROOT}/album_backend/editor_panel_presentation.cpp"
     "${ALCEDO_UI_SHELL_ROOT}/album_backend/editor_curve_histogram_controller.cpp"
     "${ALCEDO_UI_SHELL_ROOT}/album_backend/editor_scope_controller.cpp"
@@ -216,8 +260,9 @@ add_library(AlbumBackendLib STATIC
     "${ALCEDO_UI_SHELL_ROOT}/album_backend/lut_library_query.cpp"
     "${ALCEDO_UI_SHELL_ROOT}/album_backend/lut_library_model.cpp"
     "${ALCEDO_UI_SHELL_ROOT}/album_backend/lut_library_controller.cpp"
+    "${ALCEDO_UI_SHELL_ROOT}/album_backend/browser_preview_controller.cpp"
+    "${ALCEDO_UI_SHELL_ROOT}/album_backend/browser_preview_image_provider.cpp"
     "${ALCEDO_UI_SHELL_ROOT}/album_backend/lut_preview_controller.cpp"
-    "${ALCEDO_UI_SHELL_ROOT}/album_backend/lut_preview_image_provider.cpp"
     "${ALCEDO_UI_SHELL_ROOT}/editor_support/modules/curve.cpp"
     "${ALCEDO_UI_SHELL_ROOT}/editor_support/modules/lens_calib.cpp"
     "${ALCEDO_UI_SHELL_ROOT}/editor_support/modules/color_wheel.cpp"
@@ -245,12 +290,18 @@ add_library(AlbumBackendLib STATIC
     "${ALCEDO_UI_SHELL_ROOT}/album_backend/export_queue.cpp"
     "${ALCEDO_UI_SHELL_ROOT}/album_backend/export_recipe_builder.cpp"
     "${ALCEDO_UI_SHELL_ROOT}/album_backend/editor_behavior_preferences.cpp"
+    "${ALCEDO_UI_SHELL_ROOT}/album_backend/library_behavior_preferences.cpp"
     "${ALCEDO_UI_SHELL_ROOT}/album_backend/library_view_preferences.cpp"
+    "${ALCEDO_UI_SHELL_ROOT}/album_backend/raw_import_look_settings_model.cpp"
     "${ALCEDO_UI_SHELL_ROOT}/album_backend/log_folder_controller.cpp"
     "${ALCEDO_UI_SHELL_ROOT}/album_backend/adjustment_transfer_controller.cpp"
     "${ALCEDO_UI_SHELL_ROOT}/album_backend/adjustment_transfer_dialog_model.cpp"
     "${ALCEDO_UI_SHELL_ROOT}/album_backend/adjustment_transfer_list_models.cpp"
     "${ALCEDO_UI_SHELL_ROOT}/album_backend/adjustment_transfer_apply_coordinator.cpp"
+    "${ALCEDO_UI_SHELL_ROOT}/album_backend/preset_list_model.cpp"
+    "${ALCEDO_UI_SHELL_ROOT}/album_backend/preset_controller.cpp"
+    "${ALCEDO_UI_SHELL_ROOT}/album_backend/preset_preview_controller.cpp"
+    "${ALCEDO_UI_SHELL_ROOT}/album_backend/library_preset_preview_source.cpp"
     "${ALCEDO_UI_SHELL_ROOT}/editor_support/controllers/image_controller.cpp"
     "${ALCEDO_INCLUDE_ROOT}/ui/alcedo_main/album_backend/application_module_host.hpp"
     "${ALCEDO_INCLUDE_ROOT}/ui/alcedo_main/album_backend/project_module.hpp"
@@ -322,8 +373,9 @@ add_library(AlbumBackendLib STATIC
     "${ALCEDO_INCLUDE_ROOT}/ui/alcedo_main/album_backend/lut_library_query.hpp"
     "${ALCEDO_INCLUDE_ROOT}/ui/alcedo_main/album_backend/lut_library_model.hpp"
     "${ALCEDO_INCLUDE_ROOT}/ui/alcedo_main/album_backend/lut_library_controller.hpp"
+    "${ALCEDO_INCLUDE_ROOT}/ui/alcedo_main/album_backend/browser_preview_controller.hpp"
+    "${ALCEDO_INCLUDE_ROOT}/ui/alcedo_main/album_backend/browser_preview_image_provider.hpp"
     "${ALCEDO_INCLUDE_ROOT}/ui/alcedo_main/album_backend/lut_preview_controller.hpp"
-    "${ALCEDO_INCLUDE_ROOT}/ui/alcedo_main/album_backend/lut_preview_image_provider.hpp"
     "${ALCEDO_INCLUDE_ROOT}/ui/alcedo_main/editor_support/modules/curve.hpp"
     "${ALCEDO_INCLUDE_ROOT}/ui/alcedo_main/editor_support/modules/color_wheel.hpp"
     "${ALCEDO_INCLUDE_ROOT}/ui/alcedo_main/editor_support/modules/hls.hpp"
@@ -345,12 +397,18 @@ add_library(AlbumBackendLib STATIC
     "${ALCEDO_INCLUDE_ROOT}/ui/alcedo_main/album_backend/editor_session_render_scheduler_port.hpp"
     "${ALCEDO_INCLUDE_ROOT}/ui/alcedo_main/album_backend/workspace_router.hpp"
     "${ALCEDO_INCLUDE_ROOT}/ui/alcedo_main/album_backend/editor_behavior_preferences.hpp"
+    "${ALCEDO_INCLUDE_ROOT}/ui/alcedo_main/album_backend/library_behavior_preferences.hpp"
     "${ALCEDO_INCLUDE_ROOT}/ui/alcedo_main/album_backend/library_view_preferences.hpp"
+    "${ALCEDO_INCLUDE_ROOT}/ui/alcedo_main/album_backend/raw_import_look_settings_model.hpp"
     "${ALCEDO_INCLUDE_ROOT}/ui/alcedo_main/album_backend/log_folder_controller.hpp"
     "${ALCEDO_INCLUDE_ROOT}/ui/alcedo_main/album_backend/adjustment_transfer_controller.hpp"
     "${ALCEDO_INCLUDE_ROOT}/ui/alcedo_main/album_backend/adjustment_transfer_dialog_model.hpp"
     "${ALCEDO_INCLUDE_ROOT}/ui/alcedo_main/album_backend/adjustment_transfer_list_models.hpp"
     "${ALCEDO_INCLUDE_ROOT}/ui/alcedo_main/album_backend/adjustment_transfer_apply_coordinator.hpp"
+    "${ALCEDO_INCLUDE_ROOT}/ui/alcedo_main/album_backend/preset_list_model.hpp"
+    "${ALCEDO_INCLUDE_ROOT}/ui/alcedo_main/album_backend/preset_controller.hpp"
+    "${ALCEDO_INCLUDE_ROOT}/ui/alcedo_main/album_backend/preset_preview_controller.hpp"
+    "${ALCEDO_INCLUDE_ROOT}/ui/alcedo_main/album_backend/library_preset_preview_source.hpp"
     "${ALCEDO_INCLUDE_ROOT}/ui/alcedo_main/editor_support/controllers/image_controller.hpp"
 )
 
@@ -367,6 +425,7 @@ target_link_libraries(AlbumBackendLib
         UiLocalization
         BackgroundTaskController
         AgentControlOwner
+        MountScanCoordinator
         DisplayProfileReadout
         EditorRhiViewport
         # The Tone Curve plot and the curve histogram owner (a PlotHistogramSource).
@@ -378,12 +437,16 @@ target_link_libraries(AlbumBackendLib
         Qt6::QuickControls2
         ProjectService
         ImportService
+        # Import defaults settings: the look of RAW history roots (#918).
+        RawImportLookSettings
         ExportService
         PipelineMgmtService
         AdjustmentTransferService
         AdjustmentTransferCatalog
+        # Turn Off AI Denoise of the export queue (integration plan, DN8).
+        AiDenoiseHistoryWrite
         AiMaskAnalysisImage
-        LutPreviewImage
+        BrowserPreviewImage
         # The AI Mask tool runs the segmentation service and the edit session on its worker.
         AiMaskSegmentationService
         AiMaskEditSession
@@ -409,6 +472,7 @@ target_link_libraries(AlbumBackendLib
         UpdateService
         LutLibraryService
         LutPackageService
+        PresetLibraryService
         CameraProfileLibraryService
         AiModelPackageService
         AiModelDownloadTaskPublisher
@@ -467,6 +531,8 @@ target_link_libraries(AlcedoQanGraph
 # The editor shell is QML-only. Widgets remains private to the album backend for
 # the native project and Nikon recovery file dialogs.
 target_link_libraries(AlbumBackendLib PRIVATE Qt6::Widgets)
+# The editor names the built-in lens profile of a fixed-lens camera for Lens Correction Auto (#960).
+target_link_libraries(AlbumBackendLib PRIVATE EditRuntimeLens)
 target_link_libraries(AlbumBackendLib PUBLIC AlcedoQanGraph)
 
 # Automation command surface: JSON-RPC command registry, schema validation, the local socket
@@ -493,9 +559,12 @@ def_library(AutomationHostLib
         "${ALCEDO_UI_SHELL_ROOT}/automation/commands/task_commands.cpp"
         "${ALCEDO_INCLUDE_ROOT}/ui/alcedo_main/automation/automation_task_commands.hpp"
         "${ALCEDO_UI_SHELL_ROOT}/automation/commands/library_commands.cpp"
+        "${ALCEDO_UI_SHELL_ROOT}/automation/commands/mount_commands.cpp"
         "${ALCEDO_INCLUDE_ROOT}/ui/alcedo_main/automation/automation_library_commands.hpp"
         "${ALCEDO_UI_SHELL_ROOT}/automation/commands/export_commands.cpp"
         "${ALCEDO_INCLUDE_ROOT}/ui/alcedo_main/automation/automation_export_commands.hpp"
+        "${ALCEDO_UI_SHELL_ROOT}/automation/commands/denoise_commands.cpp"
+        "${ALCEDO_INCLUDE_ROOT}/ui/alcedo_main/automation/automation_denoise_commands.hpp"
         "${ALCEDO_UI_SHELL_ROOT}/automation/commands/label_commands.cpp"
         "${ALCEDO_INCLUDE_ROOT}/ui/alcedo_main/automation/automation_label_commands.hpp"
         "${ALCEDO_UI_SHELL_ROOT}/automation/commands/search_commands.cpp"
@@ -509,8 +578,13 @@ def_library(AutomationHostLib
         "${ALCEDO_UI_SHELL_ROOT}/automation/commands/editor_commands.cpp"
         "${ALCEDO_UI_SHELL_ROOT}/automation/commands/render_commands.cpp"
         "${ALCEDO_UI_SHELL_ROOT}/automation/commands/version_commands.cpp"
+        "${ALCEDO_UI_SHELL_ROOT}/automation/commands/node_commands.cpp"
         "${ALCEDO_UI_SHELL_ROOT}/automation/commands/adjustment_commands.cpp"
         "${ALCEDO_INCLUDE_ROOT}/ui/alcedo_main/automation/automation_adjustment_commands.hpp"
+        "${ALCEDO_UI_SHELL_ROOT}/automation/commands/preset_commands.cpp"
+        "${ALCEDO_INCLUDE_ROOT}/ui/alcedo_main/automation/automation_preset_commands.hpp"
+        "${ALCEDO_UI_SHELL_ROOT}/automation/automation_agent_paste.cpp"
+        "${ALCEDO_INCLUDE_ROOT}/ui/alcedo_main/automation/automation_agent_paste.hpp"
         "${ALCEDO_UI_SHELL_ROOT}/automation/automation_editor_operation.cpp"
         "${ALCEDO_INCLUDE_ROOT}/ui/alcedo_main/automation/automation_editor_operation.hpp"
         "${ALCEDO_INCLUDE_ROOT}/ui/alcedo_main/automation/automation_editor_commands.hpp"
@@ -800,7 +874,9 @@ endif()
 set(ALCEDO_MAIN_QML_FILES
     "${ALCEDO_UI_SHELL_ROOT}/qml/Main.qml"
     "${ALCEDO_UI_SHELL_ROOT}/qml/TopToolbar.qml"
+    "${ALCEDO_UI_SHELL_ROOT}/qml/WindowBackdropDragArea.qml"
     "${ALCEDO_UI_SHELL_ROOT}/qml/WindowCaptionButtons.qml"
+    "${ALCEDO_UI_SHELL_ROOT}/qml/WindowCaptionLayer.qml"
     "${ALCEDO_UI_SHELL_ROOT}/qml/InspectorToggleButton.qml"
     "${ALCEDO_UI_SHELL_ROOT}/qml/WindowResizeHandles.qml"
     "${ALCEDO_UI_SHELL_ROOT}/qml/NotificationSnackbar.qml"
@@ -815,7 +891,6 @@ set(ALCEDO_MAIN_QML_FILES
     "${ALCEDO_UI_SHELL_ROOT}/qml/ProjectLaunchController.qml"
     "${ALCEDO_UI_SHELL_ROOT}/qml/ShellSignals.qml"
     "${ALCEDO_UI_SHELL_ROOT}/qml/AppDialogs.qml"
-    "${ALCEDO_UI_SHELL_ROOT}/qml/FolderImportConfirmDialog.qml"
     "${ALCEDO_UI_SHELL_ROOT}/qml/EditorCloseConfirmDialog.qml"
     "${ALCEDO_UI_SHELL_ROOT}/qml/ExportInspectorPanel.qml"
     "${ALCEDO_UI_SHELL_ROOT}/qml/ExportNamingEditor.qml"
@@ -827,6 +902,7 @@ set(ALCEDO_MAIN_QML_FILES
     "${ALCEDO_UI_SHELL_ROOT}/qml/AdjustmentTransferItemPane.qml"
     "${ALCEDO_UI_SHELL_ROOT}/qml/SettingDialog.qml"
     "${ALCEDO_UI_SHELL_ROOT}/qml/ColorLabelNamesEditor.qml"
+    "${ALCEDO_UI_SHELL_ROOT}/qml/RawImportLookSettingsSection.qml"
     "${ALCEDO_UI_SHELL_ROOT}/qml/KeyboardSettingsPanel.qml"
     "${ALCEDO_UI_SHELL_ROOT}/qml/ShortcutCaptureField.qml"
     "${ALCEDO_UI_SHELL_ROOT}/qml/WelcomeDialog.qml"
@@ -843,6 +919,7 @@ set(ALCEDO_MAIN_QML_FILES
     "${ALCEDO_UI_SHELL_ROOT}/qml/UpdatesSettingsPanel.qml"
     "${ALCEDO_UI_SHELL_ROOT}/qml/LutSettingsPanel.qml"
     "${ALCEDO_UI_SHELL_ROOT}/qml/CameraProfileFolderTile.qml"
+    "${ALCEDO_UI_SHELL_ROOT}/qml/PresetSettingsSection.qml"
     "${ALCEDO_UI_SHELL_ROOT}/qml/DisplayProfileTile.qml"
     "${ALCEDO_UI_SHELL_ROOT}/qml/AiModelsSettingsPanel.qml"
     "${ALCEDO_UI_SHELL_ROOT}/qml/AiModelDownloadStatementDialog.qml"
@@ -857,10 +934,18 @@ set(ALCEDO_MAIN_QML_FILES
     "${ALCEDO_UI_SHELL_ROOT}/qml/SemanticGenerationDialog.qml"
     "${ALCEDO_UI_SHELL_ROOT}/qml/DialogActionButton.qml"
     "${ALCEDO_UI_SHELL_ROOT}/qml/ThemeCheckBox.qml"
+    "${ALCEDO_UI_SHELL_ROOT}/qml/ImportFolderChoiceCard.qml"
+    "${ALCEDO_UI_SHELL_ROOT}/qml/ImportFolderChoiceCards.qml"
+    "${ALCEDO_UI_SHELL_ROOT}/qml/ImportFolderDialog.qml"
+    "${ALCEDO_UI_SHELL_ROOT}/qml/ImportFolderFlow.qml"
+    "${ALCEDO_UI_SHELL_ROOT}/qml/CollectionPickerTree.qml"
     "${ALCEDO_UI_SHELL_ROOT}/qml/ThemeSwitch.qml"
     "${ALCEDO_UI_SHELL_ROOT}/qml/IconButton.qml"
     "${ALCEDO_UI_SHELL_ROOT}/qml/FolderPathField.qml"
     "${ALCEDO_UI_SHELL_ROOT}/qml/IconActionButton.qml"
+    "${ALCEDO_UI_SHELL_ROOT}/qml/BrowserSearchField.qml"
+    "${ALCEDO_UI_SHELL_ROOT}/qml/BrowserViewModeToggle.qml"
+    "${ALCEDO_UI_SHELL_ROOT}/qml/BrowserPreviewThumb.qml"
     "${ALCEDO_UI_SHELL_ROOT}/qml/EditorRailButton.qml"
     "${ALCEDO_UI_SHELL_ROOT}/qml/RegisteredShortcut.qml"
     "${ALCEDO_UI_SHELL_ROOT}/qml/SlidingIconNav.qml"
@@ -880,6 +965,8 @@ set(ALCEDO_MAIN_QML_FILES
     "${ALCEDO_UI_SHELL_ROOT}/qml/AlbumSectionView.qml"
     "${ALCEDO_UI_SHELL_ROOT}/qml/ImageInspectorPanel.qml"
     "${ALCEDO_UI_SHELL_ROOT}/qml/CollectionsPanel.qml"
+    "${ALCEDO_UI_SHELL_ROOT}/qml/CollectionsRail.qml"
+    "${ALCEDO_UI_SHELL_ROOT}/qml/AlcedoScrollBar.qml"
     "${ALCEDO_UI_SHELL_ROOT}/qml/CollectionTree.js"
     "${ALCEDO_UI_SHELL_ROOT}/qml/ColorLabelNames.js"
     "${ALCEDO_UI_SHELL_ROOT}/qml/DataFormat.js"
@@ -910,6 +997,7 @@ set(ALCEDO_MAIN_QML_FILES
     "${ALCEDO_UI_SHELL_ROOT}/qml/LibraryWorkspace.qml"
     "${ALCEDO_UI_SHELL_ROOT}/qml/LibraryInspectorActions.qml"
     "${ALCEDO_UI_SHELL_ROOT}/qml/LibraryMarksControl.qml"
+    "${ALCEDO_UI_SHELL_ROOT}/qml/LibraryFolderSection.qml"
     "${ALCEDO_UI_SHELL_ROOT}/qml/ColorLabelFilterChips.qml"
     "${ALCEDO_UI_SHELL_ROOT}/qml/EditorWorkspace.qml"
     "${ALCEDO_UI_SHELL_ROOT}/qml/EditorWorkspaceNavigation.qml"
@@ -922,13 +1010,18 @@ set(ALCEDO_MAIN_QML_FILES
     "${ALCEDO_UI_SHELL_ROOT}/qml/EditorHistoryTransactionEntry.qml"
     "${ALCEDO_UI_SHELL_ROOT}/qml/EditorHistoryCommitGraphNode.qml"
     "${ALCEDO_UI_SHELL_ROOT}/qml/EditorVersionsPanel.qml"
+    "${ALCEDO_UI_SHELL_ROOT}/qml/EditorPresetsSection.qml"
+    "${ALCEDO_UI_SHELL_ROOT}/qml/PresetBrowser.qml"
+    "${ALCEDO_UI_SHELL_ROOT}/qml/PresetTile.qml"
+    "${ALCEDO_UI_SHELL_ROOT}/qml/DropGuideOverlay.qml"
+    "${ALCEDO_UI_SHELL_ROOT}/qml/ApplyPresetDialog.qml"
     "${ALCEDO_UI_SHELL_ROOT}/qml/EditorComparisonCanvas.qml"
     "${ALCEDO_UI_SHELL_ROOT}/qml/EditorComparisonView.qml"
     "${ALCEDO_UI_SHELL_ROOT}/qml/EditorComparisonPanel.qml"
     "${ALCEDO_UI_SHELL_ROOT}/qml/EditorAdjustmentStack.qml"
     "${ALCEDO_UI_SHELL_ROOT}/qml/EditorAdjustmentHeader.qml"
     "${ALCEDO_UI_SHELL_ROOT}/qml/LockedNodeMaskPromptDialog.qml"
-    "${ALCEDO_UI_SHELL_ROOT}/qml/EditorMonoSlider.qml"
+    "${ALCEDO_UI_SHELL_ROOT}/qml/EditorDragSlider.qml"
     "${ALCEDO_UI_SHELL_ROOT}/qml/EditorWhiteBalanceSection.qml"
     "${ALCEDO_UI_SHELL_ROOT}/qml/EditorCameraProfileSection.qml"
     "${ALCEDO_UI_SHELL_ROOT}/qml/EditorWhiteBalanceSliders.qml"
@@ -937,6 +1030,9 @@ set(ALCEDO_MAIN_QML_FILES
     "${ALCEDO_UI_SHELL_ROOT}/qml/EditorMasksContextPanel.qml"
     "${ALCEDO_UI_SHELL_ROOT}/qml/EditorMaskRangeSection.qml"
     "${ALCEDO_UI_SHELL_ROOT}/qml/RangeSelectorBar.qml"
+    "${ALCEDO_UI_SHELL_ROOT}/qml/EditorAiDenoiseErrorCard.qml"
+    "${ALCEDO_UI_SHELL_ROOT}/qml/EditorRenderProgress.qml"
+    "${ALCEDO_UI_SHELL_ROOT}/qml/ViewportRenderAlert.qml"
     "${ALCEDO_UI_SHELL_ROOT}/qml/EditorAiMaskPanel.qml"
     "${ALCEDO_UI_SHELL_ROOT}/qml/EditorScopePanel.qml"
     "${ALCEDO_UI_SHELL_ROOT}/qml/EditorTonePanel.qml"
@@ -963,7 +1059,11 @@ set(ALCEDO_MAIN_QML_FILES
     "${ALCEDO_UI_SHELL_ROOT}/qml/EditorMaskGroupsPanel.qml"
     "${ALCEDO_UI_SHELL_ROOT}/qml/EditorMaskGroupDelegate.qml"
     "${ALCEDO_UI_SHELL_ROOT}/qml/EditorMaskGroupMaskRow.qml"
+    "${ALCEDO_UI_SHELL_ROOT}/qml/EditorLayerIconButton.qml"
+    "${ALCEDO_UI_SHELL_ROOT}/qml/EditorAiMaskTile.qml"
     "${ALCEDO_UI_SHELL_ROOT}/qml/AdjustmentSlider.qml"
+    "${ALCEDO_UI_SHELL_ROOT}/qml/AlcedoSlider.qml"
+    "${ALCEDO_UI_SHELL_ROOT}/qml/LoadingSpinner.qml"
     "${ALCEDO_UI_SHELL_ROOT}/qml/AdjustmentField.qml"
     "${ALCEDO_UI_SHELL_ROOT}/qml/AdjustmentToggle.qml"
     "${ALCEDO_UI_SHELL_ROOT}/qml/AdjustmentCombo.qml"
@@ -1322,6 +1422,12 @@ if(ALCEDO_BUILD_SEMANTIC_SIDECAR AND TARGET alcedo_mind_sidecar)
         VERBATIM
     )
     add_dependencies(alcedo_main alcedo_mind_sidecar_runtime_copy)
+endif()
+
+# ONNX Runtime DirectML of AI Denoise (decoders/CMakeLists.txt). The copy fails when the
+# DirectML.dll of the AI Mask sidecar differs from the DirectML.dll of the package.
+if(COMMAND alcedo_copy_onnxruntime_directml_runtime AND TARGET alcedo_main)
+    alcedo_copy_onnxruntime_directml_runtime(alcedo_main)
 endif()
 
 # aria2c is bundled next to alcedo_main for accelerated model downloads.

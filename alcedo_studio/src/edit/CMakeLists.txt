@@ -106,14 +106,34 @@ if(ALCEDO_ENABLE_BRUSH_MASK)
 endif()
 
 # CPU RAW unpack / downsample. No CUDA, no ImageBuffer.
+# AI Denoise (integration plan, DN6): the input preparation, the gain match, and the process-wide
+# owner of the model session. The platform session is DirectML on Windows x64 (UtNet2DirectMl)
+# and Core ML on macOS on Apple silicon (UtNet2CoreMl, DN10); a build without them has no forward
+# code, and a run reports the error.
+if(TARGET UtNet2DirectMl)
+    set(EDIT_INPUT_AI_DENOISE_PLATFORM_SRC ${ALCEDO_SRC_ROOT}/edit/input/ai_denoise_directml_platform.cpp)
+elseif(TARGET UtNet2CoreMl)
+    set(EDIT_INPUT_AI_DENOISE_PLATFORM_SRC ${ALCEDO_SRC_ROOT}/edit/input/ai_denoise_coreml_platform.cpp)
+else()
+    set(EDIT_INPUT_AI_DENOISE_PLATFORM_SRC ${ALCEDO_SRC_ROOT}/edit/input/ai_denoise_platform_unavailable.cpp)
+endif()
 def_library(EditInput
     SOURCES
         ${ALCEDO_SRC_ROOT}/edit/input/raw_input_loader.cpp
         ${ALCEDO_SRC_ROOT}/edit/input/prepared_source_cache.cpp
         ${ALCEDO_SRC_ROOT}/edit/input/raster_input_loader.cpp
-    PUBLIC_DEPS EditGeometry JSON libraw::raw_r opencv_core Image
-    PRIVATE_DEPS OpenImageIO::OpenImageIO libjpeg-turbo::turbojpeg lcms2::lcms2 Sha256Digest
+        ${ALCEDO_SRC_ROOT}/edit/input/ai_denoise_input.cpp
+        ${ALCEDO_SRC_ROOT}/edit/input/raw_sensor_layout.cpp
+        ${ALCEDO_SRC_ROOT}/edit/input/ai_denoise_model_session.cpp
+        ${EDIT_INPUT_AI_DENOISE_PLATFORM_SRC}
+    PUBLIC_DEPS EditGeometry JSON libraw::raw_r opencv_core Image UtNet2TileLoop
+    PRIVATE_DEPS OpenImageIO::OpenImageIO libjpeg-turbo::turbojpeg lcms2::lcms2 Sha256Digest AlcedoLog
 )
+if(TARGET UtNet2DirectMl)
+    target_link_libraries(EditInput PRIVATE UtNet2DirectMl)
+elseif(TARGET UtNet2CoreMl)
+    target_link_libraries(EditInput PRIVATE UtNet2CoreMl)
+endif()
 
 # GPU-agnostic DAG runtime (parameter arena, texture LRU, KV cache). No CUDA headers.
 set(EDIT_RUNTIME_SRCS
@@ -127,8 +147,6 @@ set(EDIT_RUNTIME_SRCS
     ${ALCEDO_SRC_ROOT}/edit/runtime/grade_schedule.cpp
     ${ALCEDO_SRC_ROOT}/edit/runtime/drt_post_schedule.cpp
     ${ALCEDO_SRC_ROOT}/edit/runtime/dng_profile_gpu_data.cpp
-    ${ALCEDO_SRC_ROOT}/edit/runtime/profile_tone_reference.cpp
-    ${ALCEDO_SRC_ROOT}/edit/runtime/profile_tone_stage.cpp
     ${ALCEDO_SRC_ROOT}/edit/runtime/execution_plan.cpp
     ${ALCEDO_SRC_ROOT}/edit/runtime/graph_compiler.cpp
     ${ALCEDO_SRC_ROOT}/edit/runtime/raster_develop_params.cpp
@@ -149,6 +167,15 @@ def_library(EditRuntimeDrt
         ${ALCEDO_SRC_ROOT}/edit/runtime/drt/aces2_reference_runtime.cpp
         ${ALCEDO_SRC_ROOT}/edit/runtime/drt/open_drt_runtime.cpp
     PUBLIC_DEPS EditGraph ColorEncodingCatalog ${ALCEDO_OPENCV_CORE_DEPS}
+)
+
+# The ProfileToneCurve of a DCP profile as points of the RGB curve (#911): the neutral responses of
+# the DRT methods and the fit. The editor command service writes the points; no GPU pass reads them.
+def_library(ProfileToneCurve
+    SOURCES
+        ${ALCEDO_SRC_ROOT}/edit/runtime/profile_tone_reference.cpp
+        ${ALCEDO_SRC_ROOT}/edit/runtime/profile_tone_curve_import.cpp
+    PUBLIC_DEPS EditGraph EditRuntimeDrt Image
 )
 
 # Lens calibration shared by the CUDA, OpenCL, and Metal Develop passes: the Lensfun resolver and the

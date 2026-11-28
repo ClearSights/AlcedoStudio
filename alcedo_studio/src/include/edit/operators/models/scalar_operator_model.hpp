@@ -9,6 +9,7 @@
 #include <string_view>
 
 #include "edit/operators/models/builtin_type_ids.hpp"
+#include "edit/operators/models/json_read.hpp"
 #include "edit/operators/models/operator_model_base.hpp"
 
 namespace alcedo {
@@ -65,7 +66,7 @@ class ScalarOperatorModel final
   void LoadJson(const nlohmann::json& json) override {
     float value = Traits::kDefault;
     if (json.contains(Traits::kJsonKey) && json[Traits::kJsonKey].is_number()) {
-      value = json[Traits::kJsonKey].template get<float>();
+      value = json_util::ToFloat(json[Traits::kJsonKey], Traits::kJsonKey.data());
     }
     SetValue(value);
   }
@@ -128,7 +129,8 @@ struct ShadowsTraits {
   static constexpr std::string_view kInstanceSuffix = "shadows";
   static constexpr float            kDefault        = 0.0f;
   static constexpr float            kMin            = -100.0f;
-  static constexpr float            kMax            = 100.0f;
+  /// Above +100 the lift continues to kShadowLiftAmountLimit (#922).
+  static constexpr float            kMax            = 150.0f;
 };
 
 struct HighlightsTraits {
@@ -139,7 +141,8 @@ struct HighlightsTraits {
   static constexpr std::string_view kDisplayName    = "Highlights";
   static constexpr std::string_view kInstanceSuffix = "highlights";
   static constexpr float            kDefault        = 0.0f;
-  static constexpr float            kMin            = -100.0f;
+  /// Below -100 the recovery continues to kHighlightRecoveryAmountLimit (#922).
+  static constexpr float            kMin            = -150.0f;
   static constexpr float            kMax            = 100.0f;
 };
 

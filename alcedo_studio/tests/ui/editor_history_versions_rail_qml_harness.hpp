@@ -127,6 +127,13 @@ class RecordingEditorSessionBackend final : public IEditorSessionBackend {
           state_ == EditorSessionState::Interactive && has_image_);
     allow(alcedo::EditorAction::MoveHead, true);
     allow(alcedo::EditorAction::ApplyPaste, true);
+    // Version actions need an interactive image, as in EditorActionPolicy (issue #1125).
+    for (const auto action :
+         {alcedo::EditorAction::CheckoutVersion, alcedo::EditorAction::CreateRootVersion,
+          alcedo::EditorAction::BranchVersion, alcedo::EditorAction::RenameVersion,
+          alcedo::EditorAction::RemoveVersion}) {
+      allow(action, state_ == EditorSessionState::Interactive && has_image_);
+    }
     allow(alcedo::EditorAction::RetrySave, recovery_pending_);
     allow(alcedo::EditorAction::DiscardAndContinue, recovery_pending_);
     allow(alcedo::EditorAction::CancelPendingNavigation, recovery_pending_);
@@ -411,6 +418,19 @@ class RecordingEditorSessionBackend final : public IEditorSessionBackend {
     return Accepted("Color Grade deletion protection updated");
   }
 
+  auto SetColorGradeEnabled(const NodeId& node_id, bool enabled) -> EditorSessionResult override {
+    if (fail_node_commands_) return Rejected("mini-Git journal append failed");
+    const auto errors = alcedo::SetColorGradeEnabled(*document_, node_id, enabled);
+    if (!errors.empty()) return Rejected(errors.front().message.c_str());
+    last_visibility_node_id_ = node_id;
+    last_visibility_value_   = enabled;
+    ++visibility_grade_count_;
+    NotifyHistoryChange();
+    EditorSessionResult result = Accepted(enabled ? "Color Grade shown" : "Color Grade hidden");
+    result.kind                = EditorSessionResultKind::RenderRouted;
+    return result;
+  }
+
   auto Close(bool) -> EditorSessionResult override {
     state_     = EditorSessionState::NoImage;
     has_image_ = false;
@@ -501,6 +521,9 @@ class RecordingEditorSessionBackend final : public IEditorSessionBackend {
   [[nodiscard]] auto insert_grade_count() const -> int { return insert_grade_count_; }
   [[nodiscard]] auto remove_grade_count() const -> int { return remove_grade_count_; }
   [[nodiscard]] auto lock_grade_count() const -> int { return lock_grade_count_; }
+  [[nodiscard]] auto visibility_grade_count() const -> int { return visibility_grade_count_; }
+  [[nodiscard]] auto last_visibility_node_id() const -> NodeId { return last_visibility_node_id_; }
+  [[nodiscard]] auto last_visibility_value() const -> bool { return last_visibility_value_; }
   [[nodiscard]] auto last_inserted_node_id() const -> NodeId { return last_inserted_node_id_; }
   [[nodiscard]] auto last_removed_group_node_id() const -> NodeId {
     return last_removed_group_node_id_;
@@ -713,6 +736,9 @@ class RecordingEditorSessionBackend final : public IEditorSessionBackend {
   int                                    insert_grade_count_    = 0;
   int                                    remove_grade_count_    = 0;
   int                                    lock_grade_count_      = 0;
+  int                                    visibility_grade_count_ = 0;
+  bool                                   last_visibility_value_  = true;
+  NodeId                                 last_visibility_node_id_;
   NodeGraphTopologyChange                last_topology_change_{};
   NodeId                                 last_renamed_node_id_;
   NodeId                                 last_inserted_node_id_;
