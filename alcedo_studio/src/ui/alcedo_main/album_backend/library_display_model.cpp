@@ -148,7 +148,8 @@ QVariant LibraryDisplayModel::data(const QModelIndex& index, int role) const {
 }
 QString LibraryDisplayModel::Key(const AlbumDisplayIdentity& identity) {
   const auto& fragment = identity.fragment;
-  QJsonArray  parts{static_cast<qint64>(fragment.folder_id), static_cast<int>(fragment.group_field),
+  QJsonArray  parts{static_cast<qint64>(fragment.scope.FolderId()), fragment.scope.IsLibraryRoot(),
+                    static_cast<int>(fragment.group_field),
                     static_cast<int>(fragment.group_key.index())};
   if (const auto* text = std::get_if<std::string>(&fragment.group_key))
     parts.append(QString::fromStdString(*text));
@@ -269,8 +270,10 @@ auto LibraryDisplayModel::RetainedPages(std::vector<AlbumDisplayItem>& result,
                                         size_t max_pages) const -> PageMap {
   const auto less = [](const AlbumDisplayIdentity& a, const AlbumDisplayIdentity& b) {
     const auto parts = [](const AlbumDisplayIdentity& id) {
-      return std::tie(id.fragment.folder_id, id.fragment.group_field, id.fragment.group_key,
-                      id.fragment.stack_id, id.kind, id.file_id);
+      return std::tuple_cat(
+          std::tuple(id.fragment.scope.FolderId(), id.fragment.scope.IsLibraryRoot()),
+          std::tie(id.fragment.group_field, id.fragment.group_key, id.fragment.stack_id, id.kind,
+                   id.file_id));
     };
     return parts(a) < parts(b);
   };
@@ -279,10 +282,11 @@ auto LibraryDisplayModel::RetainedPages(std::vector<AlbumDisplayItem>& result,
   // This scoped index maps that same displayed File in its typed group to its old position.
   // Only scalar identity/position inputs leave this loop; no photo metadata is copied.
   using FileOccurrence =
-      std::tuple<sl_element_id_t, AlbumGroupField, AlbumGroupKey, sl_element_id_t>;
+      std::tuple<sl_element_id_t, bool, AlbumGroupField, AlbumGroupKey, sl_element_id_t>;
   const auto file_key = [](const AlbumDisplayItem& item) -> FileOccurrence {
     const auto& fragment = item.identity.fragment;
-    return {fragment.folder_id, fragment.group_field, fragment.group_key, item.file_id};
+    return {fragment.scope.FolderId(), fragment.scope.IsLibraryRoot(), fragment.group_field,
+            fragment.group_key, item.file_id};
   };
   std::map<FileOccurrence, int64_t> file_positions;
   std::set<int64_t>                 photo_pages;
@@ -367,11 +371,11 @@ auto LibraryDisplayModel::SetStackExpanded(const AlbumStackFragmentKey& key, boo
 auto LibraryDisplayModel::IsStackExpanded(const AlbumStackFragmentKey& key) const -> bool {
   return std::find(expanded_.begin(), expanded_.end(), key) != expanded_.end();
 }
-auto LibraryDisplayModel::ExpandedFragments(sl_element_id_t folder, AlbumGroupField group) const
+auto LibraryDisplayModel::ExpandedFragments(const AlbumScope& scope, AlbumGroupField group) const
     -> std::vector<AlbumStackFragmentKey> {
   std::vector<AlbumStackFragmentKey> keys;
   for (const auto& key : expanded_)
-    if (key.folder_id == folder && key.group_field == group) keys.push_back(key);
+    if (key.scope == scope && key.group_field == group) keys.push_back(key);
   return keys;
 }
 auto LibraryDisplayModel::ItemAt(int64_t position) const -> const AlbumDisplayItem* {

@@ -8,6 +8,7 @@
 #include <optional>
 #include <string>
 
+#include "decoders/dng_warp_rectilinear.hpp"
 #include "decoders/processor/raw_color_context.hpp"
 #include "edit/geometry/types.hpp"
 #include "edit/graph/develop_node_model.hpp"
@@ -29,6 +30,11 @@ struct LensInputMeta {
   float       distance_m_        = 0.0f;
   float       focal_35mm_mm_     = 0.0f;
   float       crop_factor_hint_  = 0.0f;
+  /// True when @c lens_maker_ and @c lens_model_ are a catalog selection, which names a Lensfun
+  /// profile exactly. The search then accepts a profile of any mount: the selection names the lens
+  /// on the camera, for example an adapted lens. False for the RAW lens name, which matches only
+  /// profiles whose mount fits the camera.
+  bool        lens_selected_     = false;
 };
 
 /**
@@ -53,7 +59,8 @@ struct LensCorrectionSettings {
 enum class LensProfileStatus {
   Resolved,             ///< At least one correction applies.
   NoCorrectionApplies,  ///< The profile matched, but no requested correction is available.
-  MissingLensIdentity,  ///< No lens model or no positive focal length.
+  /// No positive focal length, or no lens model on a camera without a built-in lens.
+  MissingLensIdentity,
   DatabaseUnavailable,  ///< No Lensfun database directory could be found or loaded.
   LensNotInDatabase,    ///< The database has no profile for the lens.
 };
@@ -74,8 +81,18 @@ struct LensProfileResolution {
   std::string        matched_lens_model_ = {};
 };
 
+/// Maker and model strings of one Lensfun lens profile.
+struct LensProfileName {
+  std::string maker_ = {};
+  std::string model_ = {};
+};
+
 /**
  * @brief Resolves Lensfun coefficients into @ref LensCalibGpuParams for the lens kernels.
+ *
+ * The lens name selects the profile. A fixed-lens camera (a Lensfun camera whose mount name starts
+ * with a lower-case letter) whose RAW names no lens, or a lens that no profile matches, uses the
+ * profile of its built-in lens.
  *
  * The resolver owns the process-wide Lensfun database cache. The cache holds one loaded database
  * directory and reloads it when a call names a different directory; a mutex serializes the load.
@@ -88,30 +105,35 @@ class LensCalibrationResolver {
    *
    * Uses the prepared RAW camera, lens, focal length, aperture, and focus distance. A non-empty
    * @c DevelopPayload::lens_maker or @c lens_model is a user catalog selection and replaces the
-   * RAW lens name. The result is sized for @p extent.
+   * RAW lens name; a selected profile of another mount than the camera applies too
+   * (@ref LensInputMeta::lens_selected_). The result is sized for @p extent.
    *
    * A disabled setting, missing lens identity, missing or unloadable Lensfun database, unknown
    * lens, or profile with no requested correction returns @c std::nullopt. Lens correction is
    * then skipped for that image; no other backend or algorithm runs.
    *
-   * @param dng_geometry_applied True when the DNG OpcodeList3 warp already corrected geometry.
-   *        Distortion, TCA, projection, and crop are then off; vignetting can still apply.
+   * @param dng_warp What the DNG OpcodeList3 warp of the image corrects
+   *        (@ref dng::CorrectionsOf). A warp that corrects distortion turns off distortion, TCA,
+   *        projection, and crop; a warp that corrects only lateral chromatic aberration turns off
+   *        TCA. Vignetting can apply in both cases.
    * @throws std::runtime_error when the setting is enabled and @p extent is empty.
    */
   [[nodiscard]] static auto Resolve(const DevelopPayload&         develop,
                                     const RawRuntimeColorContext& context, Extent2D extent,
-                                    bool dng_geometry_applied) -> std::optional<LensCalibGpuParams>;
+                                    dng::WarpCorrections dng_warp)
+      -> std::optional<LensCalibGpuParams>;
 
   /**
    * @brief Match a Lensfun profile and interpolate its coefficients for @p meta.
    *
    * Loads the database named by @p settings on first use or when the directory changes. Prints
    * one line to standard output for each matched profile. The image size fields of the result
-   * are zero; call @ref BindImageExtent before a kernel uses the result.
+   * are zero; call @ref BindImageExtent before a kernel uses the result. @p dng_warp turns off
+   * corrections as in @ref Resolve.
    */
   [[nodiscard]] static auto ResolveProfile(const LensInputMeta&          meta,
                                            const LensCorrectionSettings& settings,
-                                           bool dng_geometry_applied) -> LensProfileResolution;
+                                           dng::WarpCorrections dng_warp) -> LensProfileResolution;
 
   /**
    * @brief Size a resolved profile for a @p width x @p height image.
@@ -124,6 +146,23 @@ class LensCalibrationResolver {
   static void               BindImageExtent(const LensInputMeta&         matched_meta,
                                             const std::filesystem::path& database_path,
                                             LensCalibGpuParams& params, int width, int height);
+
+  /// Load the database named by @p database_path into the cache, so that later calls find it
+  /// loaded. Blocks while it loads; a failed load leaves the cache empty.
+  static void               PreloadDatabase(const std::filesystem::path& database_path);
+
+  /**
+   * @brief Profile that @ref ResolveProfile matches for the lens and camera in @p meta.
+   *
+   * This is the profile of Lens Calibration Auto: the lens name decides, and a fixed-lens camera
+   * without a matching lens name gets the profile of its built-in lens. The focal length and
+   * aperture order profiles with equal match scores. Returns @c std::nullopt when no profile
+   * matches or the database does not load. Loads the database named by @p database_path on first
+   * use, as @ref ResolveProfile does.
+   */
+  [[nodiscard]] static auto ShotLensProfile(const LensInputMeta&         meta,
+                                            const std::filesystem::path& database_path)
+      -> std::optional<LensProfileName>;
 
   /// First existing Lensfun database directory of the default search, or an empty path.
   [[nodiscard]] static auto DefaultDatabasePath() -> std::filesystem::path;

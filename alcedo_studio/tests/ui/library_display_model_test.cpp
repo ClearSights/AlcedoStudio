@@ -27,6 +27,19 @@ auto Item(sl_element_id_t file, const std::string& stack = {}) -> AlbumDisplayIt
   return item;
 }
 
+TEST(LibraryDisplayModelTest, AllPhotosAndLibraryRootHaveDifferentOccurrenceKeys) {
+  LibraryDisplayModel display;
+  auto                all_photos = Item(1, "stack");
+  auto                root       = all_photos;
+  root.identity.fragment.scope  = AlbumScope::LibraryRoot();
+  display.Install(2, {{0, {all_photos, root}}});
+  const auto all_key = display.data(display.index(0), LibraryDisplayModel::OccurrenceKey).toString();
+  const auto root_key = display.data(display.index(1), LibraryDisplayModel::OccurrenceKey).toString();
+  EXPECT_NE(all_key, root_key);
+  EXPECT_EQ(display.rowByKey(all_key), 0);
+  EXPECT_EQ(display.rowByKey(root_key), 1);
+}
+
 TEST(LibraryDisplayModelTest, SectionGeometryReadsDisplayCountsButReportsMatchingPhotoCounts) {
   LibraryDisplayModel      display;
   AlbumSectionModel        sections(display);

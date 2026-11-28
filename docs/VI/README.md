@@ -475,16 +475,38 @@ labels.
 
 ### `CollectionsPanel.qml`
 
+- One `colBgPanel` surface (#1028): wordmark, the Search, Background Tasks,
+  and All Photos rows, the Collections section with its tree, and the Import
+  button at the foot. The edge in the gap to the workspace sets the width;
+  a double-click sets the default width.
 - The "Alcedo" wordmark keeps the theme accent (documented use).
-- The selected collection row is the `editorListSelectedFillColor` well; its
-  name and folder icon (`ColorImage`) use `editorListSelectedInkColor`. No side
-  stripe.
+- The selected row (tree or navigation) is the quiet `controlHoveredFillColor`
+  well with unchanged `textColor` text in `fontWeightStrong`. No side stripe.
+- Tree rows: chevron column, icon column (`folder-symlink.svg` for a mount
+  root, `folder.svg` otherwise), name, count. Indent guides in
+  `collectionsTreeGuideColor`; the guide of the collection that holds the
+  selection in `collectionsTreeGuideActiveColor`. On hover the more button
+  (`dots.svg`) takes the place of the count.
+- Every icon of the sidebar and its rail (navigation rows, tree rows, sort,
+  New collection, more button) is `textMutedColor`, as the editor side panel
+  icons; selection or hover makes it `textColor`. The Import button keeps its
+  filled-action ink. No pure white icon.
 - The new-collection name field has a 1 px `textMutedColor` focus border and a
   neutral text selection.
-- Import From Folder is the neutral filled action: `editorListSelectedFillColor`
-  fill (darker on hover and press), text and icon in
-  `editorListSelectedInkColor`; disabled uses `bgBaseColor` with
-  `textMutedColor` ink.
+- Import is the neutral filled action: `editorListSelectedFillColor` fill
+  (darker on hover and press), text and icon in `editorListSelectedInkColor`.
+  Its menu opens above it.
+- States to check: no project; a project with no collection; deep tree with a
+  long name; a selected mount root; an offline mount; the Collections section
+  folded; a row menu open; a file drag over All Photos and over a row; a
+  collection drag onto All Photos; the narrowest and the widest width.
+
+### `CollectionsRail.qml`
+
+- The folded sidebar in the Library: compact `IconActionButton`s on a
+  `colBgPanel` rail. Import keeps the neutral filled action fill.
+- A hover on All Photos or Collections shows the sidebar over the workspace
+  with a 1 px `glassStrokeColor` outline.
 
 ### `ThumbnailEditMark.qml`, `ThumbnailStarRating.qml`
 
@@ -575,6 +597,12 @@ labels.
 
 - The grouped mode loads `AlbumSectionView`; the flat mode keeps
   `ThumbnailGridView`.
+- The header shows the path of the current collection (#1028): All Photos,
+  then each collection, with a 12 px `chevron-right.svg` in `textMutedColor`
+  between the parts. The parts above the current collection are muted and
+  select their collection on click; the current collection is `textColor`
+  in `fontWeightStrong`. A path of more than four parts folds its middle
+  into "...".
 - A query that replaces the result shows `StaggeredGridLoader` 150 ms after it
   starts (DESIGN.md "Library loading"). With no result shown (a collection
   switch), placeholder cards fill the grid area at the current zoom level and
@@ -584,7 +612,7 @@ labels.
   shows the error in `dangerColor` with a compact Retry `DialogActionButton`. A
   successful empty filtered result shows No Matching Photos.
 - Load Project (empty Library) and the Export queue button are the neutral
-  filled action of `CollectionsPanel.qml` (Import From Folder). No gradient and
+  filled action of `CollectionsPanel.qml` (Import). No gradient and
   no `#457B9D`.
 - The grid zoom slider has a `textColor` fill and handle on the `bgBaseColor`
   track. The Inspector resize handle shows `textMutedColor` on hover and drag.
@@ -637,8 +665,8 @@ image root, star overlay, editing tile ink).
 ### `ImportProgressOverlay.qml`
 
 - Ring and large count measure photos imported out of photos expected
-  (`importTotal - importFailed`); rejected files leave the expected total, so
-  the total shrinks as the import runs.
+  (`importTotal - importFailed - importDuplicates`). Rejected files and
+  duplicates leave the expected total as the import runs.
 - The phase caption and the `ThemedProgressBar` below it measure files checked
   out of all files. Phases: `Preparing files... a of b`, `Reading photos... a of
   b files checked`, `Saving to the library...`.
@@ -708,3 +736,34 @@ natural-language search on; empty query with and without recent
 searches; a field query (loading frames, three previews, no matches, error); a
 natural-language query (hint, rejected Enter); hover and Up / Down highlight;
 a recommendation row, a recent search, and a photo click.
+
+## Viewport render alert (#1056)
+
+### `ViewportRenderAlert.qml`
+
+- The whole editor viewport blurs (`BlurredOverlay` with the viewport stage as
+  its source) and dims with `viewportAlertScrimColor`. A centered column of
+  `viewportAlertWidth` stands on it with no card: `photo-off.svg`, the title
+  in the empty-state headline style, one muted sentence, Show Details, and the
+  buttons. The user chose this direction from three mocks (quiet card, frosted
+  viewport, bottom bar) and asked for no red badge.
+- Show Details opens the detail well under the toggle: the raw error text in
+  `monoFontFamily`, selectable, eight lines, then an `AlcedoScrollBar` that
+  stays shown. Copy (`clipboard.svg`) at the top right copies the whole text
+  and its tooltip reads "Copied".
+- Buttons are `DialogActionButton`s of `viewportAlertButtonHeight`: the main
+  action `light` at the right, a second action `normal` at its left.
+
+### `EditorAiDenoiseErrorCard.qml`
+
+- Maps the AI Denoise error kind to the title and the message of
+  `ViewportRenderAlert` and passes the raw error text as the detail. Model not
+  installed: Manage (main) and Turn Off AI Denoise. Every other kind: Turn Off
+  AI Denoise.
+
+### Manual review
+
+In Alcedo and Classic themes, English and Chinese: each AI Denoise kind over a
+light and a dark photo, and over a viewport with no frame yet; the minimum
+window (960 x 640) and a wide window; Show Details closed and open with a long
+error (the well scrolls), Copy, and a narrow viewport where the title wraps.

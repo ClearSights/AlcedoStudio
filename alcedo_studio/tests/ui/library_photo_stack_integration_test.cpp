@@ -226,7 +226,7 @@ TEST_F(LibraryPhotoStackIntegrationTest,
     ProcessEvents(10);
   ASSERT_EQ(host->library()->selection()->SelectedCount(), 3);
   const auto clicked = host->library_display()->getItemAt(host->library_display()->rowByKey(key));
-  const auto targets = host->library_mutations()->ResolveTargets(clicked, true);
+  const auto targets = host->library_mutations()->ResolveTargets(clicked);
   ASSERT_EQ(targets.size(), 3);
   host->export_queue()->AddTargets(targets);
   host->export_queue()->AddTargets(targets);

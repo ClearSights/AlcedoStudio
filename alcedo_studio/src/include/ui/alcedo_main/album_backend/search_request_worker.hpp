@@ -29,6 +29,7 @@ enum class SearchRequestKind : std::uint8_t {
   kSelectionVisibility = 10,  ///< Matching/hidden selection counts after query publication.
   kSelectionMarks      = 9,   ///< Ratings and marks of the selected photos (marks control).
   kLastEditedFile = 11,  ///< Global project-open reveal; independent of accepted-query ID reads.
+  kFolderTree = 12,  ///< Folder tree of the Collections sidebar.
 };
 
 /// One worker thread that runs search requests in submit order with latest-wins coalescing.
@@ -85,7 +86,7 @@ class SearchRequestWorker {
   std::condition_variable      wake_;
   std::deque<PendingRequest>   pending_{};
   std::condition_variable      idle_;
-  std::array<std::uint64_t, 12> newest_generation_{};
+  std::array<std::uint64_t, 13> newest_generation_{};
   std::uint64_t                last_generation_ = 0;
   bool                         stopping_        = false;
   bool                         running_         = false;

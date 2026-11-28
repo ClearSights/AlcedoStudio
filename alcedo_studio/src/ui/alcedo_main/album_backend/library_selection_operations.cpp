@@ -20,7 +20,7 @@ void LibrarySelectionOperations::SelectFragment(std::shared_ptr<const LibraryQue
                                                 const AlbumStackFragmentKey&             fragment) {
   Select(input, [input, fragment] {
     return input->browse_->ReadAlbumMatchingFragmentIds(
-        input->folder_id_, MergeFilterNodes(input->stats_filter_, input->search_.filter_),
+        input->Scope(), MergeFilterNodes(input->stats_filter_, input->search_.filter_),
         input->options_, input->active_model_key_, fragment, input->search_.semantic_query_);
   });
 }
@@ -75,11 +75,11 @@ void LibrarySelectionOperations::RefreshMembership(std::shared_ptr<const Library
         try {
           const auto filter = MergeFilterNodes(input->stats_filter_, input->search_.filter_);
           matching          = input->browse_->ReadAlbumFileIds(
-              input->folder_id_, filter, input->options_, input->active_model_key_, 0,
+              input->Scope(), filter, input->options_, input->active_model_key_, 0,
               std::numeric_limits<int64_t>::max(), input->search_.semantic_query_);
           displayed = input->read_.mode == AlbumReadMode::kDisplay
                           ? input->browse_->ReadAlbumDisplayFileIds(
-                                input->folder_id_, filter, input->options_,
+                                input->Scope(), filter, input->options_,
                                 input->active_model_key_, input->read_.expanded_fragments, 0,
                                 std::numeric_limits<int64_t>::max(), input->search_.semantic_query_)
                           : std::vector<sl_element_id_t>{};

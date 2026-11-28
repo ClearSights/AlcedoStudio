@@ -91,6 +91,27 @@ class AppTheme final : public QObject {
   Q_PROPERTY(int editorScopeHeight READ editorScopeHeight CONSTANT)
   Q_PROPERTY(int editorScopeHeightMin READ editorScopeHeightMin CONSTANT)
   Q_PROPERTY(int editorAdjustmentHeaderMinHeight READ editorAdjustmentHeaderMinHeight CONSTANT)
+  // Viewport render alert (ViewportRenderAlert.qml, #1056): text column width, button height,
+  // detail lines before the detail scrolls, and the colors over the blurred viewport.
+  Q_PROPERTY(int viewportAlertWidth READ viewportAlertWidth CONSTANT)
+  Q_PROPERTY(int viewportAlertButtonHeight READ viewportAlertButtonHeight CONSTANT)
+  Q_PROPERTY(int viewportAlertDetailMaxLines READ viewportAlertDetailMaxLines CONSTANT)
+  Q_PROPERTY(int viewportAlertCopiedMs READ viewportAlertCopiedMs CONSTANT)
+  Q_PROPERTY(QColor viewportAlertScrimColor READ viewportAlertScrimColor NOTIFY ThemeChanged)
+  Q_PROPERTY(QColor viewportAlertSecondaryTextColor READ viewportAlertSecondaryTextColor NOTIFY
+                 ThemeChanged)
+  Q_PROPERTY(
+      QColor viewportAlertDetailFillColor READ viewportAlertDetailFillColor NOTIFY ThemeChanged)
+  // Viewport render progress (EditorRenderProgress.qml, AI Denoise plan DN14): the pill, its step
+  // dots, the segmented bar at the bottom edge, and the fade at the end of the render.
+  Q_PROPERTY(int viewportProgressPillHeight READ viewportProgressPillHeight CONSTANT)
+  Q_PROPERTY(int viewportProgressDotSize READ viewportProgressDotSize CONSTANT)
+  Q_PROPERTY(int viewportProgressBarHeight READ viewportProgressBarHeight CONSTANT)
+  Q_PROPERTY(int viewportProgressSegmentGap READ viewportProgressSegmentGap CONSTANT)
+  Q_PROPERTY(int viewportProgressFadeMs READ viewportProgressFadeMs CONSTANT)
+  Q_PROPERTY(QColor viewportProgressPillColor READ viewportProgressPillColor NOTIFY ThemeChanged)
+  Q_PROPERTY(QColor viewportProgressTrackColor READ viewportProgressTrackColor NOTIFY ThemeChanged)
+  Q_PROPERTY(QColor viewportProgressFillColor READ viewportProgressFillColor NOTIFY ThemeChanged)
   // LUT browser rail page (LUT library plan L6A): preferred page width, filter card width,
   // minimum tile width, and the tile placeholder icon size. See DESIGN.md.
   Q_PROPERTY(int editorLutBrowserPanelWidth READ editorLutBrowserPanelWidth CONSTANT)
@@ -99,8 +120,30 @@ class AppTheme final : public QObject {
   Q_PROPERTY(int editorLutTileMinWidth READ editorLutTileMinWidth CONSTANT)
   Q_PROPERTY(int editorLutTileCompactWidth READ editorLutTileCompactWidth CONSTANT)
   Q_PROPERTY(int editorLutTileIconSize READ editorLutTileIconSize CONSTANT)
+  // Versions panel presets (edit presets plan, PS2): default preset part height, the
+  // smallest Versions part the splitter leaves, and the minimum preset tile width.
+  Q_PROPERTY(int editorPresetPaneHeight READ editorPresetPaneHeight CONSTANT)
+  Q_PROPERTY(int editorVersionsPartMinHeight READ editorVersionsPartMinHeight CONSTANT)
+  Q_PROPERTY(int editorPresetTileMinWidth READ editorPresetTileMinWidth CONSTANT)
+  // List rows of the LUT and preset browsers: width of the 3:2 preview slot left of the name.
+  Q_PROPERTY(int editorBrowserListThumbWidth READ editorBrowserListThumbWidth CONSTANT)
   // Persistent left collections column in the application shell (see DESIGN.md).
+  // collectionsSidebarWidth is the default width; the user drags it in the min..max range.
   Q_PROPERTY(int collectionsSidebarWidth READ collectionsSidebarWidth CONSTANT)
+  Q_PROPERTY(int collectionsSidebarMinWidth READ collectionsSidebarMinWidth CONSTANT)
+  Q_PROPERTY(int collectionsSidebarMaxWidth READ collectionsSidebarMaxWidth CONSTANT)
+  // A drag of the sidebar edge below this width folds the sidebar.
+  Q_PROPERTY(int collectionsSidebarFoldWidth READ collectionsSidebarFoldWidth CONSTANT)
+  // Width of the rail that stays when the sidebar is folded in the Library.
+  Q_PROPERTY(int collectionsRailWidth READ collectionsRailWidth CONSTANT)
+  // Hover time on a rail button before the sidebar shows as an overlay.
+  Q_PROPERTY(int collectionsPeekDelayMs READ collectionsPeekDelayMs CONSTANT)
+  // Row height and indent per level of the sidebar tree and its navigation rows.
+  Q_PROPERTY(int collectionsTreeRowHeight READ collectionsTreeRowHeight CONSTANT)
+  Q_PROPERTY(int collectionsTreeIndentStep READ collectionsTreeIndentStep CONSTANT)
+  Q_PROPERTY(QColor collectionsTreeGuideColor READ collectionsTreeGuideColor NOTIFY ThemeChanged)
+  Q_PROPERTY(QColor collectionsTreeGuideActiveColor READ collectionsTreeGuideActiveColor
+                 NOTIFY ThemeChanged)
   Q_PROPERTY(int collectionRowHeight READ collectionRowHeight CONSTANT)
   Q_PROPERTY(int collectionIndentStep READ collectionIndentStep CONSTANT)
   Q_PROPERTY(int collectionMenuMaxRows READ collectionMenuMaxRows CONSTANT)
@@ -154,6 +197,9 @@ class AppTheme final : public QObject {
   Q_PROPERTY(int motionEasing READ motionEasing CONSTANT)
   Q_PROPERTY(int backgroundTaskAutoCollapseMs READ backgroundTaskAutoCollapseMs CONSTANT)
   Q_PROPERTY(bool reduceMotion READ reduceMotion WRITE setReduceMotion NOTIFY ReduceMotionChanged)
+  /// Text of dense data controls, smaller than fontSizeCaption: plot axis labels, the readout and
+  /// the values around a plot, and the titles of a crowded segmented switcher.
+  Q_PROPERTY(int fontSizeMicro READ fontSizeMicro CONSTANT)
   Q_PROPERTY(int fontSizeCaption READ fontSizeCaption CONSTANT)
   Q_PROPERTY(int fontSizeBody READ fontSizeBody CONSTANT)
   Q_PROPERTY(int fontSizeTitle READ fontSizeTitle CONSTANT)
@@ -243,6 +289,8 @@ class AppTheme final : public QObject {
   Q_PROPERTY(QColor plotChannelBlueColor READ plotChannelBlueColor NOTIFY ThemeChanged)
   Q_PROPERTY(QColor plotPointerLineColor READ plotPointerLineColor NOTIFY ThemeChanged)
   Q_PROPERTY(qreal plotInactiveLineOpacity READ plotInactiveLineOpacity CONSTANT)
+  Q_PROPERTY(qreal plotHistogramFillOpacity READ plotHistogramFillOpacity CONSTANT)
+  Q_PROPERTY(qreal plotHistogramEdgeOpacity READ plotHistogramEdgeOpacity CONSTANT)
   Q_PROPERTY(qreal plotCurveHitRadius READ plotCurveHitRadius CONSTANT)
   Q_PROPERTY(qreal plotChannelMarkSize READ plotChannelMarkSize CONSTANT)
   // Nodes graph canvas and node-card geometry. Colors follow the active theme;
@@ -267,6 +315,9 @@ class AppTheme final : public QObject {
   Q_PROPERTY(int graphMaskRowHeight READ graphMaskRowHeight CONSTANT)
   Q_PROPERTY(int maskGroupPreviewSize READ maskGroupPreviewSize CONSTANT)
   Q_PROPERTY(int maskGroupMaskPreviewSize READ maskGroupMaskPreviewSize CONSTANT)
+  Q_PROPERTY(int layerIconHitSize READ layerIconHitSize CONSTANT)
+  Q_PROPERTY(int layerIconGlyphSize READ layerIconGlyphSize CONSTANT)
+  Q_PROPERTY(qreal layerHiddenContentOpacity READ layerHiddenContentOpacity CONSTANT)
   Q_PROPERTY(int graphPortSize READ graphPortSize CONSTANT)
   Q_PROPERTY(int graphPortHitSize READ graphPortHitSize CONSTANT)
   Q_PROPERTY(int graphEdgeWidth READ graphEdgeWidth CONSTANT)
@@ -410,13 +461,41 @@ class AppTheme final : public QObject {
   auto        editorScopeHeight() const -> int;
   auto        editorScopeHeightMin() const -> int;
   auto        editorAdjustmentHeaderMinHeight() const -> int;
+  auto        viewportAlertWidth() const -> int;
+  auto        viewportAlertButtonHeight() const -> int;
+  auto        viewportAlertDetailMaxLines() const -> int;
+  auto        viewportAlertCopiedMs() const -> int;
+  auto        viewportAlertScrimColor() const -> QColor;
+  auto        viewportAlertSecondaryTextColor() const -> QColor;
+  auto        viewportAlertDetailFillColor() const -> QColor;
+  auto        viewportProgressPillHeight() const -> int;
+  auto        viewportProgressDotSize() const -> int;
+  auto        viewportProgressBarHeight() const -> int;
+  auto        viewportProgressSegmentGap() const -> int;
+  auto        viewportProgressFadeMs() const -> int;
+  auto        viewportProgressPillColor() const -> QColor;
+  auto        viewportProgressTrackColor() const -> QColor;
+  auto        viewportProgressFillColor() const -> QColor;
   auto        editorLutBrowserPanelWidth() const -> int;
   auto        editorLutBrowserPanelWidthMin() const -> int;
   auto        editorLutBrowserFilterWidth() const -> int;
   auto        editorLutTileMinWidth() const -> int;
   auto        editorLutTileCompactWidth() const -> int;
   auto        editorLutTileIconSize() const -> int;
+  auto        editorPresetPaneHeight() const -> int;
+  auto        editorVersionsPartMinHeight() const -> int;
+  auto        editorPresetTileMinWidth() const -> int;
+  auto        editorBrowserListThumbWidth() const -> int;
   auto        collectionsSidebarWidth() const -> int;
+  auto        collectionsSidebarMinWidth() const -> int;
+  auto        collectionsSidebarMaxWidth() const -> int;
+  auto        collectionsSidebarFoldWidth() const -> int;
+  auto        collectionsRailWidth() const -> int;
+  auto        collectionsPeekDelayMs() const -> int;
+  auto        collectionsTreeRowHeight() const -> int;
+  auto        collectionsTreeIndentStep() const -> int;
+  auto        collectionsTreeGuideColor() const -> QColor;
+  auto        collectionsTreeGuideActiveColor() const -> QColor;
   auto        collectionRowHeight() const -> int;
   auto        collectionIndentStep() const -> int;
   auto        collectionMenuMaxRows() const -> int;
@@ -463,6 +542,7 @@ class AppTheme final : public QObject {
   auto        backgroundTaskAutoCollapseMs() const -> int;
   auto        reduceMotion() const -> bool;
   void        setReduceMotion(bool enabled);
+  auto        fontSizeMicro() const -> int;
   auto        fontSizeCaption() const -> int;
   auto        fontSizeBody() const -> int;
   auto        fontSizeTitle() const -> int;
@@ -524,6 +604,8 @@ class AppTheme final : public QObject {
   auto plotChannelBlueColor() const -> QColor;
   auto plotPointerLineColor() const -> QColor;
   auto plotInactiveLineOpacity() const -> qreal;
+  auto plotHistogramFillOpacity() const -> qreal;
+  auto plotHistogramEdgeOpacity() const -> qreal;
   auto plotCurveHitRadius() const -> qreal;
   auto plotChannelMarkSize() const -> qreal;
   auto graphCanvasColor() const -> QColor;
@@ -545,6 +627,12 @@ class AppTheme final : public QObject {
   auto graphMaskRowHeight() const -> int;
   auto maskGroupPreviewSize() const -> int;
   auto maskGroupMaskPreviewSize() const -> int;
+  /// Hit square of one icon in the shared layer icon strip (Mask Groups rows, node cards).
+  auto layerIconHitSize() const -> int;
+  /// Painted glyph size inside a layer icon strip slot.
+  auto layerIconGlyphSize() const -> int;
+  /// Preview opacity of a hidden Color Grade in the Mask Groups panel.
+  auto layerHiddenContentOpacity() const -> qreal;
   auto graphPortSize() const -> int;
   auto graphPortHitSize() const -> int;
   auto graphEdgeWidth() const -> int;
