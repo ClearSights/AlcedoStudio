@@ -229,16 +229,11 @@ auto ParseCurvePoints(const nlohmann::json& points_json, std::string_view key)
   return points;
 }
 
-/// The points of the Tone Curve preset @p id_json for `curve.<key>` (a write only).
-auto ParseCurvePresetPoints(const nlohmann::json& id_json, std::string_view key)
-    -> std::vector<CurvePoint> {
-  const auto  id     = id_json.get<std::string>();
-  const auto* preset = FindToneCurvePreset(id);
-  if (preset == nullptr) {
-    throw std::invalid_argument("curve." + std::string{key} + " names no Tone Curve preset: " + id +
-                                "; curve.presets lists them");
-  }
-  return preset->PointList();
+/// The points of the Tone Curve preset @p id_json for a `curve` key (a write only). An id that
+/// names no preset, such as `film_like` (the id before #914), gives Cl. Digit
+/// (ResolveToneCurvePreset).
+auto ParseCurvePresetPoints(const nlohmann::json& id_json) -> std::vector<CurvePoint> {
+  return ResolveToneCurvePreset(id_json.get<std::string>()).PointList();
 }
 
 /// `curve`: the RGB curve under `points` (with an optional `size`, the point count) and the
@@ -268,7 +263,7 @@ auto ParseCurveWrite(const nlohmann::json& params, ParseForm form) -> EditorCurv
   for (const auto channel : kCurveChannels) {
     const std::string key{CurveChannelKey(channel)};
     if (object.contains(key) && form == ParseForm::Write && object.at(key).is_string()) {
-      write.Channel(channel) = ParseCurvePresetPoints(object.at(key), key);
+      write.Channel(channel) = ParseCurvePresetPoints(object.at(key));
     } else if (object.contains(key)) {
       write.Channel(channel) = ParseCurvePoints(object.at(key), key);
     } else if (form == ParseForm::Value) {
@@ -434,11 +429,16 @@ auto ParseColorWheelUpdate(const nlohmann::json& params) -> ColorWheelUpdate {
   return update;
 }
 
-auto ParseRawDecodeUpdate(const nlohmann::json& params) -> DevelopRawDecodeUpdate {
+/// `raw_decode`. The AI Denoise switch (integration plan, DN7): in a write, an `ai_denoise` object
+/// turns it on with its model version, null turns it off, and no key keeps it. A value (history
+/// replay, paste) is a stored Develop JSON, which has the key only while the switch is on, so no
+/// key turns it off.
+auto ParseRawDecodeUpdate(const nlohmann::json& params, ParseForm form) -> DevelopRawDecodeUpdate {
   const auto& object = UnwrapObject(params, {"raw", "raw_decode"}, "raw_decode");
   RejectUnknownKeys(object,
                     {"method",
                      "demosaic_method",
+                     "ai_denoise",
                      "highlights_reconstruct",
                      "use_camera_wb",
                      "user_wb",
@@ -472,6 +472,12 @@ auto ParseRawDecodeUpdate(const nlohmann::json& params) -> DevelopRawDecodeUpdat
       ReadOptionalBool(object, {"highlights_reconstruct"}, "raw_decode");
   update.use_camera_wb = ReadOptionalBool(object, {"use_camera_wb"}, "raw_decode");
   update.user_wb       = ReadOptionalFloat(object, {"user_wb"}, "raw_decode");
+  if (const auto found = object.find("ai_denoise"); found != object.end()) {
+    update.ai_denoise = found->is_null() ? std::optional<DevelopAiDenoise>{}
+                                         : std::optional{DevelopAiDenoiseFromJson(*found)};
+  } else if (form == ParseForm::Value) {
+    update.ai_denoise = std::optional<DevelopAiDenoise>{};
+  }
   return update;
 }
 
@@ -932,7 +938,7 @@ auto ParseDrtUpdate(const nlohmann::json& params) -> DrtParameterUpdate {
 /// `camera_profile_file` (dcp_camera_profile_plan.md, phase C4).
 ///
 /// A write is a selection: {"camera_model", "profile_name"} with an optional boolean
-/// "profile_tone" (default true; dcp_profile_tone_curve_study.md, section 6.3), or the same object
+/// "profile_tone" (default true; dcp_profile_tone_curve_study.md, section 11), or the same object
 /// under "camera_profile_file". `{}`, null, and {"camera_profile_file": null} clear the reference.
 /// The identity is resolved through the DCP library; an identity that the library does not hold is
 /// rejected, so the document stays unchanged.
@@ -1044,7 +1050,7 @@ auto ParseWriteOrThrow(std::string_view field, const nlohmann::json& params, Par
     return ParseSharpenUpdate(params);
   }
   if (field == "raw_decode") {
-    return ParseRawDecodeUpdate(params);
+    return ParseRawDecodeUpdate(params, form);
   }
   if (field == "color_temp") {
     return ParseColorTemperatureUpdate(params);

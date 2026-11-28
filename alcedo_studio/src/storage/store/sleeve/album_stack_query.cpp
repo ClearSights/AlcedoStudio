@@ -66,11 +66,11 @@ void ValidateKey(AlbumGroupField field, const AlbumGroupKey& key) {
 }
 
 /// Construct the stable representative key or an actual expanded member/ordinary photo key.
-auto Identity(sl_element_id_t folder, AlbumGroupField field, AlbumGroupKey group, std::string stack,
+auto Identity(const AlbumScope& scope, AlbumGroupField field, AlbumGroupKey group, std::string stack,
               sl_element_id_t file, sl_element_id_t cover) -> AlbumDisplayIdentity {
   const bool stacked        = !stack.empty();
   const bool representative = stacked && file == cover;
-  return {{folder, field, std::move(group), std::move(stack)},
+  return {{scope, field, std::move(group), std::move(stack)},
           !stacked         ? AlbumDisplayKind::kPhoto
           : representative ? AlbumDisplayKind::kStackRepresentative
                            : AlbumDisplayKind::kStackMember,
@@ -179,11 +179,11 @@ struct PageRow : ItemRow, album_query_rows::SearchResultDbRow {
   using Columns = PhotoColumns;
 };
 /// Convert only required scalar values, preserving the stable representative identity.
-auto DisplayItem(const ItemRow& row, sl_element_id_t folder, AlbumGroupField group)
+auto DisplayItem(const ItemRow& row, const AlbumScope& scope, AlbumGroupField group)
     -> AlbumDisplayItem {
   AlbumDisplayItem item;
   item.file_id  = FileId(row.displayed_file);
-  item.identity = Identity(folder, group, GroupKey(group, row.key), row.stack.value_or(""),
+  item.identity = Identity(scope, group, GroupKey(group, row.key), row.stack.value_or(""),
                            item.file_id, FileId(row.displayed_cover));
   item.saved_cover_file_id  = row.saved_cover ? FileId(*row.saved_cover) : 0;
   item.stack_total          = row.total_count;
@@ -222,11 +222,11 @@ void ValidateStacks(duckorm::Connection connection) {
 }
 }  // namespace
 
-void ValidateExpansion(sl_element_id_t folder_id, const AlbumQueryOptions& options,
+void ValidateExpansion(const AlbumScope& scope, const AlbumQueryOptions& options,
                        std::span<const AlbumStackFragmentKey> fragments) {
   ValidateAlbumQueryOptions(options);
   for (const auto& key : fragments) {
-    if (key.folder_id != folder_id || key.group_field != options.group_field_ ||
+    if (key.scope != scope || key.group_field != options.group_field_ ||
         key.stack_id.empty()) {
       throw std::invalid_argument(
           "Album display: fragment does not belong to this query scope/group");
@@ -238,7 +238,7 @@ void ValidatePreferredGroup(AlbumGroupField field, const std::optional<AlbumGrou
   if (group) ValidateKey(field, *group);
 }
 
-void ReadDisplay(duckorm::Connection connection, sl_element_id_t folder_id,
+void ReadDisplay(duckorm::Connection connection, const AlbumScope& scope,
                  const AlbumQueryOptions& options, const std::string& model,
                  const AlbumQueryRead& read, bool has_relevance, AlbumQueryResult& result) {
   ValidateStacks(connection);
@@ -273,7 +273,7 @@ void ReadDisplay(duckorm::Connection connection, sl_element_id_t folder_id,
     items.sql_.append(kItemColumns);
     items.sql_.append(" FROM display d ORDER BY d.display_position");
     for (const auto& row : duckorm::query<ItemRow>(connection, items)) {
-      result.display_items.push_back(DisplayItem(row, folder_id, options.group_field_));
+      result.display_items.push_back(DisplayItem(row, scope, options.group_field_));
     }
   }
   if (read.limit_ == 0) return;
@@ -290,7 +290,7 @@ void ReadDisplay(duckorm::Connection connection, sl_element_id_t folder_id,
       duckorm::clause::limit_offset(read.limit_, read.display_offset, kMaxAlbumQueryPageRows));
   for (auto& row : duckorm::query<PageRow>(connection, page)) {
     AlbumDisplayRow output;
-    static_cast<AlbumDisplayItem&>(output) = DisplayItem(row, folder_id, options.group_field_);
+    static_cast<AlbumDisplayItem&>(output) = DisplayItem(row, scope, options.group_field_);
     output.photo.photo_                    = album_query_rows::ToSearchResultRow(row);
     output.photo.group_key_ = GroupKey(options.group_field_, row.key);
     if (row.edited_at) output.photo.edited_at_ns_ = static_cast<int64_t>(*row.edited_at);
@@ -299,7 +299,7 @@ void ReadDisplay(duckorm::Connection connection, sl_element_id_t folder_id,
   }
 }
 
-auto ReadPosition(duckorm::Connection connection, sl_element_id_t folder_id,
+auto ReadPosition(duckorm::Connection connection, const AlbumScope& scope,
                   const AlbumQueryOptions& options, const std::string& model,
                   std::span<const AlbumStackFragmentKey> expanded_fragments, bool has_relevance,
                   sl_element_id_t file_id, const std::optional<AlbumGroupKey>& preferred_group)
@@ -324,7 +324,7 @@ auto ReadPosition(duckorm::Connection connection, sl_element_id_t folder_id,
   if (!row) return std::nullopt;
   return AlbumDisplayPosition{
       row->position,
-      Identity(folder_id, options.group_field_, GroupKey(options.group_field_, row->key),
+      Identity(scope, options.group_field_, GroupKey(options.group_field_, row->key),
                row->stack.value_or(std::string{}), FileId(row->file), FileId(row->cover)),
       row->hidden};
 }

@@ -13,6 +13,7 @@
 #include <string_view>
 #include <vector>
 
+#include "edit/graph/ai_denoise_model_version.hpp"
 #include "edit/graph/develop_raster_input.hpp"
 #include "edit/graph/i_node_model.hpp"
 #include "edit/operators/models/builtin_type_ids.hpp"
@@ -84,9 +85,10 @@ struct DevelopCameraProfileFile {
   std::string         camera_model;      ///< UniqueCameraModel of the DCP file.
   std::string         profile_name;      ///< ProfileName of the DCP file.
   std::uint64_t       fingerprint  = 0;  ///< DcpCameraProfile::fingerprint of the file content.
-  /// The profile tone stage of the display transform applies the `ProfileToneCurve` of the
-  /// profile (dcp_profile_tone_curve_study.md, section 6). Key `profile_tone`, written only as
-  /// `false`, so a reference made before the key keeps its bytes. The camera pass does not read it.
+  /// The Tone Curve switch of the camera profile: while it is on, the RGB curve of Color Grade 1
+  /// follows the `ProfileToneCurve` of the profile (the entry rules of
+  /// ProfileToneCurveWrites, #911). Key `profile_tone`, written only as `false`, so a reference
+  /// made before the key keeps its bytes. No render reads it.
   bool                profile_tone = true;
   DcpCameraProfilePtr profile;  ///< Bound profile; null for an unbound reference.
   /// For a DNG source: the tables of @ref profile merged with the source values (AnalogBalance,
@@ -166,6 +168,31 @@ inline auto operator==(const DevelopCameraProfileFile& a, const DevelopCameraPro
 [[nodiscard]] auto DevelopCameraProfileFileFromJson(const nlohmann::json& json)
     -> DevelopCameraProfileFile;
 
+/**
+ * @brief The AI Denoise switch of the Develop node while it is on (plan decision D10).
+ *
+ * @ref model_version is the SHA-256 of the FP16 graph that was installed when the user turned
+ * the switch on, in 64 lowercase hexadecimal digits. The render uses the installed model; the
+ * recorded version only lets the editor state that the installed model differs.
+ */
+struct DevelopAiDenoise {
+  std::string model_version;
+};
+
+inline auto operator==(const DevelopAiDenoise& a, const DevelopAiDenoise& b) -> bool {
+  return a.model_version == b.model_version;
+}
+
+/// Persisted form: `{"model_version": "<64 lowercase hexadecimal digits>"}`.
+[[nodiscard]] auto DevelopAiDenoiseToJson(const DevelopAiDenoise& denoise) -> nlohmann::json;
+
+/**
+ * @brief Read a persisted AI Denoise object.
+ * @throws std::runtime_error when @p json is not an object whose `model_version` is a SHA-256
+ *         in 64 lowercase hexadecimal digits.
+ */
+[[nodiscard]] auto DevelopAiDenoiseFromJson(const nlohmann::json& json) -> DevelopAiDenoise;
+
 struct DevelopPayload {
   std::string          demosaic_method        = "default";
   bool                 highlights_reconstruct = true;
@@ -198,6 +225,9 @@ struct DevelopPayload {
   /// Present only for a raster (JPEG, PNG, TIFF, OpenEXR) document; absent means RAW. A RAW
   /// document never serializes the `input` key, so its JSON and root id stay as before.
   std::optional<DevelopRasterInput> input;
+  /// Present while AI Denoise is on (RAW Bayer documents only). Absent means off; the JSON key
+  /// `ai_denoise` is then absent too, so the JSON and the root id of the document stay as before.
+  std::optional<DevelopAiDenoise>         ai_denoise;
 };
 
 inline auto operator==(const DevelopPayload& a, const DevelopPayload& b) -> bool {
@@ -214,7 +244,7 @@ inline auto operator==(const DevelopPayload& a, const DevelopPayload& b) -> bool
          a.projection_enabled == b.projection_enabled &&
          a.target_projection == b.target_projection &&
          a.lens_profile_db_path == b.lens_profile_db_path && a.lens_maker == b.lens_maker &&
-         a.lens_model == b.lens_model && a.input == b.input;
+         a.lens_model == b.lens_model && a.input == b.input && a.ai_denoise == b.ai_denoise;
 }
 
 inline auto operator!=(const DevelopPayload& a, const DevelopPayload& b) -> bool {
@@ -230,10 +260,13 @@ enum class DevelopDirty : std::uint32_t {
   /// Raster input description or profile override. Changes the raster linearize step, so it
   /// invalidates from the sensor result.
   Input        = 1U << 4,
-  /// `camera_profile_file.profile_tone` alone. The camera pass does not read it, so it invalidates
-  /// the display result only (dcp_profile_tone_curve_study.md, section 6.3).
+  /// `camera_profile_file.profile_tone` alone. No render reads it, so it invalidates no result;
+  /// the editor writes the RGB curve that follows it (#911).
   ProfileTone  = 1U << 5,
-  All          = Demosaic | Highlights | WhiteBalance | Lens | Input | ProfileTone,
+  /// `ai_denoise`: the switch or the recorded model version. Part of the sensor group, so it
+  /// invalidates from the sensor result.
+  Denoise      = 1U << 6,
+  All          = Demosaic | Highlights | WhiteBalance | Lens | Input | ProfileTone | Denoise,
 };
 
 /**
@@ -244,6 +277,9 @@ struct DevelopRawDecodeUpdate {
   std::optional<bool>        highlights_reconstruct;
   std::optional<bool>        use_camera_wb;
   std::optional<float>       user_wb;
+  /// The AI Denoise switch (integration plan, DN7): absent keeps it; an empty inner value turns
+  /// it off; a value turns it on with the recorded model version.
+  std::optional<std::optional<DevelopAiDenoise>> ai_denoise;
 };
 
 /**
@@ -303,7 +339,7 @@ struct DevelopInputProfileUpdate {
  * @ref unresolved reference keeps its own value.
  *
  * A change of `profile_tone` alone marks DevelopDirty::ProfileTone and not
- * DevelopDirty::WhiteBalance, so the camera pass result stays valid.
+ * DevelopDirty::WhiteBalance, so every render result stays valid.
  */
 struct DevelopCameraProfileFileUpdate {
   DcpCameraProfilePtr                     profile;
@@ -352,10 +388,25 @@ class DevelopParamsModel final
   /// Raster input object, or std::nullopt for a RAW document.
   [[nodiscard]] auto RasterInput() const -> std::optional<DevelopRasterInput>;
 
+  /// The AI Denoise switch with its recorded model version, or std::nullopt while it is off.
+  [[nodiscard]] auto AiDenoise() const -> std::optional<DevelopAiDenoise>;
+
+  /**
+   * @brief Turn AI Denoise on with @p denoise, or off with std::nullopt.
+   *
+   * Marks DevelopDirty::Denoise when the switch or the recorded version changes; an equal value
+   * marks nothing. The Model does not check the sensor type: the render rejects a photo that is
+   * not Bayer (plan decision D14).
+   * @throws std::logic_error for a raster document; std::invalid_argument when the version is not
+   *         a SHA-256 in 64 lowercase hexadecimal digits. The payload is unchanged in both cases.
+   */
+  void               ApplyAiDenoiseUpdate(std::optional<DevelopAiDenoise> denoise);
+
   /**
    * @brief Apply RAW decode fields atomically and mark only changed field groups dirty.
-   * @throws std::logic_error for a raster document, which has no RAW decode; the payload is
-   *         unchanged.
+   * @throws std::logic_error for a raster document, which has no RAW decode;
+   *         std::invalid_argument when the AI Denoise version is not a SHA-256 in 64 lowercase
+   *         hexadecimal digits. The payload is unchanged in both cases.
    */
   void               ApplyRawDecodeUpdate(DevelopRawDecodeUpdate update);
 

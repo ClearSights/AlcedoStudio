@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "storage/store/sleeve/element_store.hpp"
+#include "type/album_scope.hpp"
 #include "ui/alcedo_main/album_backend/album_thumbnail_model.hpp"
 
 namespace alcedo::ui {
@@ -65,7 +66,7 @@ class LibraryDisplayModel final : public QAbstractListModel {
   auto SetStackExpanded(const AlbumStackFragmentKey& key, bool expanded) -> bool;
   [[nodiscard]] auto IsStackExpanded(const AlbumStackFragmentKey& key) const -> bool;
   /// Minimal request values for this exact scope/group, including currently absent fragments.
-  [[nodiscard]] auto ExpandedFragments(sl_element_id_t folder, AlbumGroupField group) const
+  [[nodiscard]] auto ExpandedFragments(const AlbumScope& scope, AlbumGroupField group) const
       -> std::vector<AlbumStackFragmentKey>;
   /// Scoped const reads, valid until the next GUI-thread mutation. Do not retain references.
   [[nodiscard]] auto pages() const -> const PageMap& { return pages_; }

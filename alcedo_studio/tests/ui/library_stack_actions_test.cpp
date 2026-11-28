@@ -64,7 +64,7 @@ class LibraryStackActionsTest : public PhotoStackProjectFixture {
 
 TEST_F(LibraryStackActionsTest, CollapsedCoverRatingChangesOnlyTheExplicitlySelectedFile) {
   Selection()->Replace(QVariantList{Item(0)});
-  const auto targets = host->library_mutations()->ResolveTargets(Item(0), true);
+  const auto targets = host->library_mutations()->ResolveTargets(Item(0));
   ASSERT_EQ(targets.size(), 1);
   ASSERT_TRUE(host->library_mutations()->RateTargets(targets, 5).value("success").toBool());
   const auto rows = Rows();
@@ -90,7 +90,7 @@ TEST_F(LibraryStackActionsTest, WholeStackSelectionIsExplicitAndReportsOutsideRe
     return Selection()->SelectedCount() == 3 && Selection()->OutsideResultCount() == 1 &&
            Selection()->HiddenSelectedCount() == 1;
   }));
-  const auto targets = host->library_mutations()->ResolveTargets(Item(1), true);
+  const auto targets = host->library_mutations()->ResolveTargets(Item(1));
   EXPECT_EQ(targets.size(), 3);
   host->export_queue()->AddTargets(targets);
   EXPECT_EQ(host->export_queue()->Count(), 3);
@@ -106,7 +106,7 @@ TEST_F(LibraryStackActionsTest, RepeatedLabelOccurrencesProduceOneExportAndOneMu
   first.insert("groupTitle", "bird");
   second.insert("groupTitle", "flight");
   Selection()->Replace(QVariantList{first, second});
-  const auto targets = host->library_mutations()->ResolveTargets(first, true);
+  const auto targets = host->library_mutations()->ResolveTargets(first);
   ASSERT_EQ(targets.size(), 1);
   host->export_queue()->AddTargets(targets);
   host->export_queue()->AddTargets(targets);
@@ -220,7 +220,7 @@ TEST_F(LibraryStackActionsTest, FilteredDeleteLeavesNonMatchingStackMembersAndRe
 
 TEST_F(LibraryStackActionsTest, CoverMarksAndAlbumLinkUseOnlyExplicitTargets) {
   Selection()->Replace(QVariantList{Item(0)});
-  const auto targets = host->library_mutations()->ResolveTargets(Item(0), true);
+  const auto targets = host->library_mutations()->ResolveTargets(Item(0));
   QSignalSpy marks(host->images(), &ImageController::ImageMarksFinished);
   ASSERT_TRUE(
       host->library_mutations()->SetDeleteMarkOfTargets(targets, true).value("started").toBool());
@@ -256,7 +256,7 @@ TEST_F(LibraryStackActionsTest, AdjustmentPasteUpdatesOnlyTheSelectedCover) {
   ASSERT_TRUE(transfer->PrepareCopy(files[3]).value("success").toBool());
   ASSERT_TRUE(transfer->CommitCopy().value("success").toBool());
   Selection()->Replace(QVariantList{Item(0)});
-  const auto targets      = host->library_mutations()->ResolveTargets(Item(0), true);
+  const auto targets      = host->library_mutations()->ResolveTargets(Item(0));
   auto       pipeline     = host->project()->handler().pipeline_service();
   const auto first_count  = pipeline->LoadHistorySnapshot(files[1]).graph_->CommitCount();
   const auto second_count = pipeline->LoadHistorySnapshot(files[2]).graph_->CommitCount();

@@ -8,6 +8,7 @@
 #include <string>
 #include <variant>
 
+#include "type/album_scope.hpp"
 #include "type/type.hpp"
 
 namespace alcedo {
@@ -93,7 +94,7 @@ enum class AlbumReadMode : uint8_t { kPhotos, kDisplay };
 /// monostate with another grouping tags its unknown group. Project lifetime supplies the
 /// session identity; callers release these keys when the project closes.
 struct AlbumStackFragmentKey {
-  sl_element_id_t folder_id   = 0;
+  AlbumScope      scope;
   AlbumGroupField group_field = AlbumGroupField::kNone;
   AlbumGroupKey   group_key{};
   std::string     stack_id;

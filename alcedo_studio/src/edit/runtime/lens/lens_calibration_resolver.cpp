@@ -12,10 +12,14 @@
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
+#include <iterator>
 #include <memory>
 #include <mutex>
+#include <optional>
+#include <regex>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <tuple>
 #include <vector>
 
@@ -419,7 +423,8 @@ auto RangeFit(float value, float min_value, float max_value, float slack) -> int
  * The Lensfun score comes first: it rates the lens name, maker, mount, and crop factor, and the
  * focal length and aperture that the searched name states. The shooting focal length and
  * aperture only decide between results with equal Lensfun scores, so a lens with another name
- * cannot replace the named lens because its range fits the shot.
+ * cannot replace the named lens because its range fits the shot. A result for a RAW lens name
+ * that fails @ref PassesShotLensCheck takes no part in the ranking.
  */
 auto RankLensCandidate(const lfLens* lens, const LensInputMeta& input)
     -> std::tuple<int, int, int> {
@@ -427,32 +432,418 @@ auto RankLensCandidate(const lfLens* lens, const LensInputMeta& input)
           RangeFit(input.aperture_f_number_, lens->MinAperture, lens->MaxAperture, 0.1f)};
 }
 
+/**
+ * @brief @p name with one spelling of the focal range and of the spaces.
+ *
+ * EXIF names write a focal range as "28-70mm", "28 - 70mm", or with an en dash (U+2013). The
+ * result writes each as "28-70mm", with single spaces and no space at either end. Lensfun splits
+ * names into the same words in all three forms, but reads the focal range only from "28-70mm":
+ * from "28 - 70mm f2.8" it reads a 70 mm lens (issue #1142).
+ */
+auto CanonicalLensName(std::string_view name) -> std::string {
+  constexpr std::string_view kEnDash = "\xE2\x80\x93";
+
+  std::string                spaced;
+  spaced.reserve(name.size());
+  for (std::size_t i = 0; i < name.size(); ++i) {
+    if (name.substr(i, kEnDash.size()) == kEnDash) {
+      spaced.push_back('-');
+      i += kEnDash.size() - 1;
+      continue;
+    }
+    const auto c = static_cast<unsigned char>(name[i]);
+    if (std::isspace(c) != 0) {
+      if (!spaced.empty() && spaced.back() != ' ') {
+        spaced.push_back(' ');
+      }
+      continue;
+    }
+    spaced.push_back(static_cast<char>(c));
+  }
+  if (!spaced.empty() && spaced.back() == ' ') {
+    spaced.pop_back();
+  }
+
+  const auto is_digit_at = [&spaced](std::size_t i) {
+    return i < spaced.size() && std::isdigit(static_cast<unsigned char>(spaced[i])) != 0;
+  };
+  std::string canonical;
+  canonical.reserve(spaced.size());
+  for (std::size_t i = 0; i < spaced.size(); ++i) {
+    if (spaced[i] == ' ') {
+      // A space before "-" in "28 - 70" or "28 -70".
+      const bool before_range_dash =
+          !canonical.empty() && std::isdigit(static_cast<unsigned char>(canonical.back())) != 0 &&
+          i + 1 < spaced.size() && spaced[i + 1] == '-' &&
+          (is_digit_at(i + 2) ||
+           (i + 2 < spaced.size() && spaced[i + 2] == ' ' && is_digit_at(i + 3)));
+      // A space after "-" in "28 - 70" or "28- 70".
+      const bool after_range_dash =
+          canonical.size() >= 2 && canonical.back() == '-' &&
+          std::isdigit(static_cast<unsigned char>(canonical[canonical.size() - 2])) != 0 &&
+          is_digit_at(i + 1);
+      if (before_range_dash || after_range_dash) {
+        continue;
+      }
+    }
+    canonical.push_back(spaced[i]);
+  }
+  return canonical;
+}
+
+/**
+ * @brief @p name with each aperture letter written as @p letter ('f' or 'F').
+ *
+ * An aperture letter is an "f" or "F" that starts a word and comes before a digit or "/"
+ * ("F2.8", "f/2.8"). Lensfun reads the focal range and the aperture from the searched name only
+ * when that letter is a lower-case "f"; with an upper-case "F" it compares only the words. The
+ * letter does not change the words: Lensfun skips a word of one letter "f".
+ */
+auto WithApertureLetter(std::string name, char letter) -> std::string {
+  for (std::size_t i = 0; i + 1 < name.size(); ++i) {
+    if (name[i] != 'F' && name[i] != 'f') {
+      continue;
+    }
+    const auto previous = i == 0 ? ' ' : static_cast<unsigned char>(name[i - 1]);
+    const auto next     = static_cast<unsigned char>(name[i + 1]);
+    if (std::isalnum(previous) == 0 && (std::isdigit(next) != 0 || next == '/')) {
+      name[i] = letter;
+    }
+  }
+  return name;
+}
+
+/// Focal range and widest aperture that a lens name states.
+struct NamedLensSpec {
+  /// Focal range in millimetres; a prime has equal ends.
+  float min_focal_mm_ = 0.0f;
+  float max_focal_mm_ = 0.0f;
+  /// Widest aperture (smallest f-number) after the focal range; zero when the name states none.
+  float min_aperture_ = 0.0f;
+};
+
+/// Value of a decimal number of digits and one ".". The C locale of the process can use another
+/// decimal separator, so the number is read here.
+auto DecimalValue(const std::string& digits) -> float {
+  float value = 0.0f;
+  float scale = 0.0f;
+  for (const char c : digits) {
+    if (c == '.') {
+      scale = 0.1f;
+    } else if (scale == 0.0f) {
+      value = value * 10.0f + static_cast<float>(c - '0');
+    } else {
+      value += scale * static_cast<float>(c - '0');
+      scale *= 0.1f;
+    }
+  }
+  return value;
+}
+
+/**
+ * @brief Focal range that @p name states before "mm" ("28-70mm", "28 - 70mm", "RF50mm",
+ * "XF18-55mmF2.8"), with the aperture right after it ("F2.8", "f/2.8", "1:2.8"); nothing when the
+ * name states no focal range ("LEICA DG 12-60/F2.8-4.0").
+ */
+auto LensSpecInName(std::string_view name) -> std::optional<NamedLensSpec> {
+  // [min focal][-max focal]mm, then an optional [F|f|f/|1:][min aperture].
+  static const std::regex kSpec(R"(([0-9]+(?:\.[0-9]+)?)(?:-([0-9]+(?:\.[0-9]+)?))? ?mm)"
+                                R"((?: ?(?:[fF]/?|1:) ?([0-9]+(?:\.[0-9]+)?))?)");
+  const std::string       canonical = CanonicalLensName(name);
+  std::smatch             match;
+  if (!std::regex_search(canonical, match, kSpec)) {
+    return std::nullopt;
+  }
+  NamedLensSpec spec;
+  spec.min_focal_mm_ = DecimalValue(match[1].str());
+  spec.max_focal_mm_ = match[2].matched ? DecimalValue(match[2].str()) : spec.min_focal_mm_;
+  spec.min_aperture_ = match[3].matched ? DecimalValue(match[3].str()) : 0.0f;
+  return spec;
+}
+
+/**
+ * @brief Words of a lens name as Lensfun splits them: runs of digits with their decimal point
+ * (without a final ".0"), of punctuation, and of other characters, in lower case. A word of one
+ * punctuation character or a single "f" is not a word; "+" and "*" are.
+ */
+auto LensNameWords(std::string_view name) -> std::vector<std::string> {
+  const auto is_space = [](char c) { return std::isspace(static_cast<unsigned char>(c)) != 0; };
+  const auto is_digit = [](char c) { return std::isdigit(static_cast<unsigned char>(c)) != 0; };
+  const auto is_punct = [](char c) { return std::ispunct(static_cast<unsigned char>(c)) != 0; };
+
+  std::vector<std::string> words;
+  std::size_t              i = 0;
+  while (i < name.size()) {
+    if (is_space(name[i])) {
+      ++i;
+      continue;
+    }
+    const std::size_t start = i++;
+    std::size_t       strip = 0;
+    if (is_digit(name[start])) {
+      while (i < name.size() && (is_digit(name[i]) || name[i] == '.')) {
+        ++i;
+      }
+      if (i - start >= 2 && name[i - 2] == '.' && name[i - 1] == '0') {
+        strip = 2;
+      }
+    } else if (is_punct(name[start])) {
+      while (i < name.size() && is_punct(name[i])) {
+        ++i;
+      }
+    } else {
+      while (i < name.size() && !is_space(name[i]) && !is_digit(name[i]) && !is_punct(name[i])) {
+        ++i;
+      }
+    }
+    const char first = name[start];
+    if (i - start == 1 && (is_punct(first) || first == 'f' || first == 'F') && first != '*' &&
+        first != '+') {
+      continue;
+    }
+    std::string word(name.substr(start, i - start - strip));
+    std::transform(word.begin(), word.end(), word.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    words.push_back(std::move(word));
+  }
+  std::sort(words.begin(), words.end());
+  return words;
+}
+
+/**
+ * @brief Share of the RAW name words @p raw_words that the profile name @p profile_name also has,
+ * 0 to 1.
+ *
+ * Lensfun rates the shared words too, but adds that rating to the points of focal length,
+ * aperture, mount, and crop factor, so its score cannot tell a name that shares one word. A
+ * profile name may add words that the RAW name leaves out (maker, series, "IF-ED"), so the share
+ * counts only the words of the RAW name.
+ */
+auto ShareOfRawWordsInProfile(const std::vector<std::string>& raw_words,
+                              std::string_view                profile_name) -> float {
+  const std::vector<std::string> profile_words = LensNameWords(profile_name);
+  if (raw_words.empty()) {
+    return 0.0f;
+  }
+  std::vector<std::string> common;
+  std::set_intersection(raw_words.begin(), raw_words.end(), profile_words.begin(),
+                        profile_words.end(), std::back_inserter(common));
+  return static_cast<float>(common.size()) / static_cast<float>(raw_words.size());
+}
+
+/// Least share of the RAW name words in a profile name. Of the 7 words of "70mm F2.8 DG Macro |
+/// Art 018", "Sigma 70mm f/2.8 DG Macro | Art 018" has all 7, and "LUMIX S 24-60/F2.8" has 1.
+constexpr float kMinShareOfRawWords     = 0.6f;
+/// Largest difference between the focal lengths of two names that still names the same lens.
+constexpr float kNamedFocalToleranceMm  = 0.5f;
+/// Largest difference between the f-numbers of two names that still names the same lens.
+constexpr float kNamedApertureTolerance = 0.05f;
+/// The shooting focal length may lie this far outside the profile range: at least
+/// @ref kShotFocalMinSlackMm, and @ref kShotFocalSlackRatio of the longest focal length.
+constexpr float kShotFocalMinSlackMm    = 1.0f;
+constexpr float kShotFocalSlackRatio    = 0.05f;
+/// A recorded focal length below this is no measurement: some lenses on Sony bodies record
+/// 0.1 mm or 0.2 mm.
+constexpr float kLeastRecordedFocalMm   = 1.0f;
+
+/**
+ * @brief What a RAW lens name and the shot state about the lens, which every profile that
+ * auto-detect accepts must agree with.
+ */
+struct ShotLensCheck {
+  /// Words of the RAW lens name (@ref LensNameWords).
+  std::vector<std::string>     name_words_;
+  /// Focal range and aperture of the RAW lens name, when it states a focal range.
+  std::optional<NamedLensSpec> name_spec_;
+  /// Focal length that the camera recorded for the shot; zero when unknown.
+  float                        shot_focal_mm_ = 0.0f;
+};
+
+auto DiffersBeyond(float a, float b, float tolerance) -> bool {
+  return IsFinitePositive(a) && IsFinitePositive(b) && std::fabs(a - b) > tolerance;
+}
+
+/**
+ * @brief True when @p lens can be the lens that @p check describes.
+ *
+ * Lensfun ranks profiles by their words, so a profile whose name shares the words "70mm", "2.8",
+ * and "DG" with "28-70mm F2.8 DG DN" can win. Lensfun compares the focal range and the aperture
+ * only with values that the profile XML states, and most profiles state none. These facts reject
+ * a profile:
+ * - its name has less than @ref kMinShareOfRawWords of the RAW name words;
+ * - its name states another focal range or another widest aperture than the RAW name;
+ * - its focal range (from the XML, else from its name) does not contain the shooting focal
+ *   length.
+ * A value that one side does not state rejects nothing.
+ */
+auto PassesShotLensCheck(const lfLens* lens, const ShotLensCheck& check) -> bool {
+  if (lens->Model == nullptr ||
+      ShareOfRawWordsInProfile(check.name_words_, lens->Model) < kMinShareOfRawWords) {
+    return false;
+  }
+  const std::optional<NamedLensSpec> profile_spec = LensSpecInName(lens->Model);
+  if (check.name_spec_ && profile_spec &&
+      (DiffersBeyond(profile_spec->min_focal_mm_, check.name_spec_->min_focal_mm_,
+                     kNamedFocalToleranceMm) ||
+       DiffersBeyond(profile_spec->max_focal_mm_, check.name_spec_->max_focal_mm_,
+                     kNamedFocalToleranceMm) ||
+       DiffersBeyond(profile_spec->min_aperture_, check.name_spec_->min_aperture_,
+                     kNamedApertureTolerance))) {
+    return false;
+  }
+
+  if (check.shot_focal_mm_ < kLeastRecordedFocalMm) {
+    return true;
+  }
+  float min_mm = lens->MinFocal;
+  float max_mm = lens->MaxFocal;
+  if ((!IsFinitePositive(min_mm) || !IsFinitePositive(max_mm)) && profile_spec) {
+    min_mm = profile_spec->min_focal_mm_;
+    max_mm = profile_spec->max_focal_mm_;
+  }
+  const float slack = std::max(kShotFocalMinSlackMm, kShotFocalSlackRatio * max_mm);
+  return RangeFit(check.shot_focal_mm_, min_mm, max_mm, slack) >= 0;
+}
+
+/**
+ * @brief Best entry of a Lensfun search result by @ref RankLensCandidate; frees @p lenses.
+ *
+ * With @p check, only entries that pass @ref PassesShotLensCheck compete.
+ */
+auto TakeBestRankedLens(const lfLens** lenses, const LensInputMeta& input,
+                        const ShotLensCheck* check = nullptr) -> const lfLens* {
+  if (!lenses) {
+    return nullptr;
+  }
+  const lfLens*             best = nullptr;
+  std::tuple<int, int, int> best_rank{};
+  for (int i = 0; lenses[i] != nullptr; ++i) {
+    if (check && !PassesShotLensCheck(lenses[i], *check)) {
+      continue;
+    }
+    const auto rank = RankLensCandidate(lenses[i], input);
+    if (best == nullptr || rank > best_rank) {
+      best_rank = rank;
+      best      = lenses[i];
+    }
+  }
+  lf_free((void*)lenses);
+  return best;
+}
+
+/**
+ * @brief Profile for the lens that the RAW names, or for the lens that the user selected.
+ *
+ * A RAW lens name is searched twice, and each result must pass @ref PassesShotLensCheck:
+ * 1. with a lower-case aperture letter, so Lensfun also compares the focal range and the aperture
+ *    that the name states: "E 15-30mm F2.8" no longer matches the Zeiss "E 21mm F2.8" (#1128);
+ * 2. when that finds no profile, with an upper-case aperture letter, so Lensfun compares only the
+ *    words. A name that Lensfun reads wrongly still finds its profile this way.
+ * When neither search finds a profile, the shot has none, and the user selects the lens.
+ */
 auto FindBestLens(const lfDatabase* db, const lfCamera* camera, const LensInputMeta& input)
     -> const lfLens* {
   if (!db || input.lens_model_.empty()) {
     return nullptr;
   }
 
-  const char*    lens_maker = input.lens_maker_.empty() ? nullptr : input.lens_maker_.c_str();
-  constexpr int  flags      = LF_SEARCH_SORT_AND_UNIQUIFY | LF_SEARCH_LOOSE;
-  const lfLens** lenses =
-      lf_db_find_lenses(db, camera, lens_maker, input.lens_model_.c_str(), flags);
-  if (!lenses) {
-    return nullptr;
+  const char* lens_maker = input.lens_maker_.empty() ? nullptr : input.lens_maker_.c_str();
+  if (input.lens_selected_) {
+    // A catalog selection is a Lensfun profile name: every word must match, and no camera is
+    // given, so Lensfun does not reject the profile for its mount.
+    return TakeBestRankedLens(lf_db_find_lenses(db, nullptr, lens_maker, input.lens_model_.c_str(),
+                                                LF_SEARCH_SORT_AND_UNIQUIFY),
+                              input);
   }
 
-  const lfLens*             best      = lenses[0];
-  std::tuple<int, int, int> best_rank = RankLensCandidate(best, input);
-  for (int i = 1; lenses[i] != nullptr; ++i) {
-    const auto rank = RankLensCandidate(lenses[i], input);
-    if (rank > best_rank) {
-      best_rank = rank;
-      best      = lenses[i];
+  const std::string   canonical = CanonicalLensName(input.lens_model_);
+  const ShotLensCheck check{LensNameWords(canonical), LensSpecInName(canonical),
+                            input.focal_length_mm_};
+  constexpr int       flags = LF_SEARCH_SORT_AND_UNIQUIFY | LF_SEARCH_LOOSE;
+  for (const char letter : {'f', 'F'}) {
+    const std::string search_name = WithApertureLetter(canonical, letter);
+    if (const lfLens* lens = TakeBestRankedLens(
+            lf_db_find_lenses(db, camera, lens_maker, search_name.c_str(), flags), input, &check)) {
+      return lens;
     }
   }
+  return nullptr;
+}
 
-  lf_free((void*)lenses);
-  return best;
+/**
+ * @brief True when @p camera has a built-in lens.
+ *
+ * The Lensfun database names the mount of a fixed-lens camera with a lower-case first letter
+ * (`fujiGFX100RF`, `ricohGRIIIx`) and an interchangeable mount with an upper-case first letter
+ * (`Fujifilm G`, `Sony E`).
+ */
+auto HasFixedLens(const lfCamera* camera) -> bool {
+  return camera != nullptr && camera->Mount != nullptr &&
+         std::islower(static_cast<unsigned char>(camera->Mount[0])) != 0;
+}
+
+/// Lensfun word-match score of a camera whose maker and model both equal a database name.
+constexpr int kExactMakerAndModelScore = 200;
+
+/**
+ * @brief Lensfun camera with a built-in lens named by @p maker and @p model, or null.
+ *
+ * The exact Lensfun search compares only the first name of a camera entry, which follows the EXIF
+ * name ("Ricoh Imaging Company, Ltd." / "Ricoh GR IIIx"). The RAW loader reports the LibRaw names
+ * ("Ricoh" / "GR IIIx"), which the entries list as English names. When the exact search finds no
+ * camera, a word search over all names accepts a camera whose maker and model words both match.
+ */
+auto FindFixedLensCamera(const lfDatabase* db, const std::string& maker, const std::string& model)
+    -> const lfCamera* {
+  if (const lfCamera* exact = FindBestCamera(db, maker, model)) {
+    return HasFixedLens(exact) ? exact : nullptr;
+  }
+  if (!db || maker.empty() || model.empty()) {
+    return nullptr;
+  }
+  const lfCamera** cameras = lf_db_find_cameras_ext(db, maker.c_str(), model.c_str(), 0);
+  if (!cameras) {
+    return nullptr;
+  }
+  // The search result is sorted by score, best first.
+  const lfCamera* best =
+      (cameras[0] && cameras[0]->Score >= kExactMakerAndModelScore) ? cameras[0] : nullptr;
+  lf_free((void*)cameras);
+  return HasFixedLens(best) ? best : nullptr;
+}
+
+/// Profile of the built-in lens of a fixed-lens @p camera: the best ranked profile on its mount.
+auto FindFixedLens(const lfDatabase* db, const lfCamera* camera, const LensInputMeta& input)
+    -> const lfLens* {
+  if (!db || !HasFixedLens(camera)) {
+    return nullptr;
+  }
+  return TakeBestRankedLens(
+      lf_db_find_lenses(db, camera, nullptr, nullptr, LF_SEARCH_SORT_AND_UNIQUIFY), input);
+}
+
+/// Matched Lensfun camera and lens of one shot. @c camera_ can be null when @c lens_ is not.
+struct ShotLens {
+  const lfCamera* camera_ = nullptr;
+  const lfLens*   lens_   = nullptr;
+};
+
+/**
+ * @brief Camera and lens profile for the lens that took the shot.
+ *
+ * The lens name decides first. A fixed-lens camera whose RAW names no lens, or names one that no
+ * profile matches, gets the profile of its built-in lens (issue #960).
+ */
+auto FindShotLens(const lfDatabase* db, const LensInputMeta& input) -> ShotLens {
+  const lfCamera* camera = FindBestCamera(db, input.cam_maker_, input.cam_model_);
+  if (const lfLens* named = FindBestLens(db, camera, input)) {
+    return {camera, named};
+  }
+  const lfCamera* fixed_camera = FindFixedLensCamera(db, input.cam_maker_, input.cam_model_);
+  if (const lfLens* built_in = FindFixedLens(db, fixed_camera, input)) {
+    return {fixed_camera, built_in};
+  }
+  return {camera, nullptr};
 }
 
 auto ResolveScaleFromModifier(const lfLens* lens, float focal_mm, float crop_factor, int width,
@@ -509,8 +900,7 @@ auto ResolveScaleForImageSize(const LensInputMeta& meta, const std::filesystem::
     return params.resolved_scale;
   }
 
-  const lfCamera* camera = FindBestCamera(db, meta.cam_maker_, meta.cam_model_);
-  const lfLens*   lens   = FindBestLens(db, camera, meta);
+  const lfLens* lens = FindShotLens(db, meta).lens_;
   if (!lens) {
     return params.resolved_scale;
   }
@@ -525,7 +915,7 @@ auto ResolveScaleForImageSize(const LensInputMeta& meta, const std::filesystem::
 
 auto LensCalibrationResolver::Resolve(const DevelopPayload&         develop,
                                       const RawRuntimeColorContext& context, Extent2D extent,
-                                      bool dng_geometry_applied)
+                                      dng::WarpCorrections dng_warp)
     -> std::optional<LensCalibGpuParams> {
   if (!develop.lens_enabled) {
     return std::nullopt;
@@ -539,6 +929,7 @@ auto LensCalibrationResolver::Resolve(const DevelopPayload&         develop,
   meta.cam_model_         = context.camera_model_;
   meta.lens_maker_        = develop.lens_maker.empty() ? context.lens_make_ : develop.lens_maker;
   meta.lens_model_        = develop.lens_model.empty() ? context.lens_model_ : develop.lens_model;
+  meta.lens_selected_     = !develop.lens_model.empty();
   meta.focal_length_mm_   = context.focal_length_mm_;
   meta.aperture_f_number_ = context.aperture_f_number_;
   meta.distance_m_        = context.focus_distance_m_;
@@ -557,7 +948,7 @@ auto LensCalibrationResolver::Resolve(const DevelopPayload&         develop,
   settings.projection_enabled_ = develop.projection_enabled;
   settings.target_projection_  = develop.target_projection;
 
-  const auto profile           = ResolveProfile(meta, settings, dng_geometry_applied);
+  const auto profile           = ResolveProfile(meta, settings, dng_warp);
   if (profile.status_ != LensProfileStatus::Resolved) {
     return std::nullopt;
   }
@@ -570,9 +961,11 @@ auto LensCalibrationResolver::Resolve(const DevelopPayload&         develop,
 
 auto LensCalibrationResolver::ResolveProfile(const LensInputMeta&          meta,
                                              const LensCorrectionSettings& settings,
-                                             bool dng_geometry_applied) -> LensProfileResolution {
+                                             dng::WarpCorrections          dng_warp)
+    -> LensProfileResolution {
   LensProfileResolution result;
-  if (meta.lens_model_.empty() || !IsFinitePositive(meta.focal_length_mm_)) {
+  if (!IsFinitePositive(meta.focal_length_mm_) ||
+      (meta.lens_model_.empty() && meta.cam_model_.empty())) {
     result.status_ = LensProfileStatus::MissingLensIdentity;
     return result;
   }
@@ -584,10 +977,11 @@ auto LensCalibrationResolver::ResolveProfile(const LensInputMeta&          meta,
     return result;
   }
 
-  const lfCamera* camera = FindBestCamera(db, meta.cam_maker_, meta.cam_model_);
-  const lfLens*   lens   = FindBestLens(db, camera, meta);
+  const auto [camera, lens] = FindShotLens(db, meta);
   if (!lens) {
-    result.status_ = LensProfileStatus::LensNotInDatabase;
+    // Without a lens name only the camera can name the lens, and only when the lens is built in.
+    result.status_ = meta.lens_model_.empty() ? LensProfileStatus::MissingLensIdentity
+                                              : LensProfileStatus::LensNotInDatabase;
     return result;
   }
 
@@ -632,7 +1026,10 @@ auto LensCalibrationResolver::ResolveProfile(const LensInputMeta&          meta,
   lfLensCalibCrop crop{};
   const bool      crop_ok =
       lf_lens_interpolate_crop(lens, crop_factor, meta.focal_length_mm_, &crop) != 0;
-  const bool         dng_geometry_wins = dng_geometry_applied;
+  // A DNG warp that corrects distortion owns the geometry. Camera Raw also writes a warp that
+  // corrects only lateral chromatic aberration (issue #1144); Lensfun then corrects the rest.
+  const bool         dng_geometry_wins = dng_warp.distortion;
+  const bool         dng_tca_wins      = dng_warp.distortion || dng_warp.lateral_ca;
 
   LensCalibGpuParams runtime{};
   result.matched_meta_          = meta;
@@ -660,7 +1057,7 @@ auto LensCalibrationResolver::ResolveProfile(const LensInputMeta&          meta,
         distortion.Model == LF_DIST_MODEL_PTLENS))
           ? 1
           : 0;
-  runtime.apply_tca = (!dng_geometry_wins && settings.apply_tca_ && tca_ok &&
+  runtime.apply_tca = (!dng_tca_wins && settings.apply_tca_ && tca_ok &&
                        (tca.Model == LF_TCA_MODEL_LINEAR || tca.Model == LF_TCA_MODEL_POLY3))
                           ? 1
                           : 0;
@@ -799,6 +1196,27 @@ void LensCalibrationResolver::BindImageExtent(const LensInputMeta&         match
       static_cast<float>((extent_w * 0.5 + min_size * 0.5 * params.lens_center_x) * norm_scale);
   params.center_y =
       static_cast<float>((extent_h * 0.5 + min_size * 0.5 * params.lens_center_y) * norm_scale);
+}
+
+void LensCalibrationResolver::PreloadDatabase(const std::filesystem::path& database_path) {
+  (void)GetLensfunDb(ResolveDbRootPath(database_path));
+}
+
+auto LensCalibrationResolver::ShotLensProfile(const LensInputMeta&         meta,
+                                              const std::filesystem::path& database_path)
+    -> std::optional<LensProfileName> {
+  if (meta.lens_model_.empty() && meta.cam_model_.empty()) {
+    return std::nullopt;
+  }
+  lfDatabase* db = GetLensfunDb(ResolveDbRootPath(database_path));
+  if (!db) {
+    return std::nullopt;
+  }
+  const lfLens* lens = FindShotLens(db, meta).lens_;
+  if (!lens) {
+    return std::nullopt;
+  }
+  return LensProfileName{lens->Maker ? lens->Maker : "", lens->Model ? lens->Model : ""};
 }
 
 auto LensCalibrationResolver::DefaultDatabasePath() -> std::filesystem::path {

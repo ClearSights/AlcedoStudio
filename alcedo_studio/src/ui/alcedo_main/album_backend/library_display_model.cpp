@@ -166,8 +166,10 @@ void LibraryDisplayModel::InstallPhotoPages(int64_t total, PhotoPageMap pages, b
 auto LibraryDisplayModel::RetainedPages(std::vector<AlbumDisplayItem>& result) const -> PageMap {
   const auto less = [](const AlbumDisplayIdentity& a, const AlbumDisplayIdentity& b) {
     const auto parts = [](const AlbumDisplayIdentity& id) {
-      return std::tie(id.fragment.folder_id, id.fragment.group_field, id.fragment.group_key,
-                      id.fragment.stack_id, id.kind, id.file_id);
+      return std::tuple_cat(
+          std::tuple(id.fragment.scope.FolderId(), id.fragment.scope.IsLibraryRoot()),
+          std::tie(id.fragment.group_field, id.fragment.group_key, id.fragment.stack_id, id.kind,
+                   id.file_id));
     };
     return parts(a) < parts(b);
   };
@@ -223,11 +225,11 @@ auto LibraryDisplayModel::SetStackExpanded(const AlbumStackFragmentKey& key, boo
 auto LibraryDisplayModel::IsStackExpanded(const AlbumStackFragmentKey& key) const -> bool {
   return std::find(expanded_.begin(), expanded_.end(), key) != expanded_.end();
 }
-auto LibraryDisplayModel::ExpandedFragments(sl_element_id_t folder, AlbumGroupField group) const
+auto LibraryDisplayModel::ExpandedFragments(const AlbumScope& scope, AlbumGroupField group) const
     -> std::vector<AlbumStackFragmentKey> {
   std::vector<AlbumStackFragmentKey> keys;
   for (const auto& key : expanded_)
-    if (key.folder_id == folder && key.group_field == group) keys.push_back(key);
+    if (key.scope == scope && key.group_field == group) keys.push_back(key);
   return keys;
 }
 auto LibraryDisplayModel::ItemAt(int64_t position) const -> const AlbumDisplayItem* {

@@ -365,6 +365,10 @@
 <context>
     <name>AdjustmentTransferDialog</name>
     <message>
+        <source>Save as Preset</source>
+        <translation>存储为预设</translation>
+    </message>
+    <message>
         <location filename="../qml/AdjustmentTransferDialog.qml" line="+70"/>
         <source>Other</source>
         <translation>其他</translation>
@@ -1232,6 +1236,182 @@
 <context>
     <name>Alcedo</name>
     <message>
+        <source>Export Version</source>
+        <translation>导出版本</translation>
+    </message>
+    <message>
+        <source>Alcedo presets (*.alcpreset)</source>
+        <translation>Alcedo 预设 (*.alcpreset)</translation>
+    </message>
+    <message>
+        <source>Paste is unavailable.</source>
+        <translation>粘贴不可用。</translation>
+    </message>
+    <message>
+        <source>The preset library is unavailable.</source>
+        <translation>预设库不可用。</translation>
+    </message>
+    <message>
+        <source>No photo is open.</source>
+        <translation>没有打开的照片。</translation>
+    </message>
+    <message>
+        <source>Source Version identity is invalid.</source>
+        <translation>来源版本的标识无效。</translation>
+    </message>
+    <message>
+        <source>No source Version is loaded.</source>
+        <translation>没有载入来源版本。</translation>
+    </message>
+    <message>
+        <source>No preset file selected.</source>
+        <translation>没有选择预设文件。</translation>
+    </message>
+    <message>
+        <source>The preset is not in the preset folder.</source>
+        <translation>该预设不在预设文件夹中。</translation>
+    </message>
+    <message>
+        <source>The folder cannot be opened: %1</source>
+        <translation>无法打开文件夹：%1</translation>
+    </message>
+    <message>
+        <source>%1 is no longer connected.</source>
+        <translation>%1 已断开连接。</translation>
+    </message>
+    <message>
+        <source>The folder is inside a mounted folder or holds one.</source>
+        <translation>该文件夹位于已挂载的文件夹内，或包含已挂载的文件夹。</translation>
+    </message>
+    <message>
+        <source>The folder cannot be reached.</source>
+        <translation>无法访问该文件夹。</translation>
+    </message>
+    <message>
+        <source>The mounted folder no longer exists.</source>
+        <translation>该挂载文件夹已不存在。</translation>
+    </message>
+    <message>
+        <source>The change could not be stored.</source>
+        <translation>无法保存此更改。</translation>
+    </message>
+    <message>
+        <source>The photo is not missing.</source>
+        <translation>该照片未丢失。</translation>
+    </message>
+    <message>
+        <source>The file is outside the mounted folder.</source>
+        <translation>该文件不在挂载的文件夹内。</translation>
+    </message>
+    <message>
+        <source>The mounted folder does not show this file.</source>
+        <translation>挂载的文件夹不显示此文件。</translation>
+    </message>
+    <message>
+        <source>Another photo uses this file.</source>
+        <translation>另一张照片正在使用此文件。</translation>
+    </message>
+    <message>
+        <source>The file cannot be read.</source>
+        <translation>无法读取该文件。</translation>
+    </message>
+    <message>
+        <source>The collection is not a mounted folder.</source>
+        <translation>该收藏夹不是挂载的文件夹。</translation>
+    </message>
+    <message>
+        <source>Mounted folders are not available until the project is open.</source>
+        <translation>项目打开后才能使用挂载的文件夹。</translation>
+    </message>
+    <message>
+        <source>Cannot change a mounted folder while import is running.</source>
+        <translation>导入进行时无法更改挂载的文件夹。</translation>
+    </message>
+    <message>
+        <source>Folder mounted.</source>
+        <translation>文件夹已挂载。</translation>
+    </message>
+    <message>
+        <source>Folder unmounted.</source>
+        <translation>文件夹已取消挂载。</translation>
+    </message>
+    <message>
+        <source>Folder located.</source>
+        <translation>已重新定位文件夹。</translation>
+    </message>
+    <message>
+        <source>Removed %1 missing photos.</source>
+        <translation>已移除 %1 张丢失的照片。</translation>
+    </message>
+    <message>
+        <source>Photo located.</source>
+        <translation>已重新定位照片。</translation>
+    </message>
+    <message>
+        <source>Reading the folder</source>
+        <translation>正在读取文件夹</translation>
+    </message>
+    <message>
+        <source>Importing %1 of %2 new photos</source>
+        <translation>正在导入新照片 %1/%2</translation>
+    </message>
+    <message>
+        <source>%1 new</source>
+        <translation>新增 %1</translation>
+    </message>
+    <message>
+        <source>%1 moved</source>
+        <translation>移动 %1</translation>
+    </message>
+    <message>
+        <source>%1 changed</source>
+        <translation>修改 %1</translation>
+    </message>
+    <message>
+        <source>%1 missing</source>
+        <translation>缺失 %1</translation>
+    </message>
+    <message>
+        <source>%1 returned</source>
+        <translation>找回 %1</translation>
+    </message>
+    <message>
+        <source>%1 not imported</source>
+        <translation>%1 张未导入</translation>
+    </message>
+    <message>
+        <source>No changes</source>
+        <translation>无变化</translation>
+    </message>
+    <message>
+        <source>, </source>
+        <translation>，</translation>
+    </message>
+    <message>
+        <source>Offline</source>
+        <translation>离线</translation>
+    </message>
+    <message>
+        <source>The changes could not be stored.</source>
+        <translation>无法保存这些变化。</translation>
+    </message>
+    <message>
+        <source>The project could not be saved.</source>
+        <translation>无法保存项目。</translation>
+    </message>
+    <message>
+        <source>Paused</source>
+        <translation>已暂停</translation>
+    </message>
+    <message>
+        <source>%1 file(s) are already in a mounted folder and will not be imported this time.</source>
+        <translation>%1 个文件已在挂载的文件夹中，本次不会导入。</translation>
+    </message>
+    <message>
+        <source>A mounted folder is being scanned. Please try again.</source>
+        <translation>正在扫描挂载文件夹，请稍后再试。</translation>
+    </message>
+    <message>
         <source>The collection is no longer in the library.</source>
         <translation>该影集已不在图库中。</translation>
     </message>
@@ -1667,12 +1847,12 @@ Alcedo 将改用 %1。</translation>
         <translation>正在将 %1 张导入的照片保存到图库…</translation>
     </message>
     <message>
-        <source>Import complete: %1 imported, %2 not selected, %3 unsupported, %4 failed</source>
-        <translation>导入完成：已导入 %1 张，未选择类型 %2 个，不受支持 %3 个，失败 %4 个</translation>
+        <source>Import complete: %1 imported, %2 duplicates skipped, %3 not selected, %4 unsupported, %5 failed</source>
+        <translation>导入完成：已导入 %1 张，跳过重复项 %2 个，未选择类型 %3 个，不受支持 %4 个，失败 %5 个</translation>
     </message>
     <message>
-        <source>Import canceled: %1 imported, %2 not read, %3 not selected, %4 unsupported, %5 failed</source>
-        <translation>导入已取消：已导入 %1 张，未读取 %2 个，未选择类型 %3 个，不受支持 %4 个，失败 %5 个</translation>
+        <source>Import canceled: %1 imported, %2 duplicates skipped, %3 not read, %4 not selected, %5 unsupported, %6 failed</source>
+        <translation>导入已取消：已导入 %1 张，跳过重复项 %2 个，未读取 %3 个，未选择类型 %4 个，不受支持 %5 个，失败 %6 个</translation>
     </message>
     <message>
         <source>Cancelling import...</source>
@@ -1878,6 +2058,54 @@ Alcedo 将改用 %1。</translation>
         <source>Activate an AI model in Settings before generating labels.</source>
         <translation>请先在设置中激活 AI 模型，再生成标签。</translation>
     </message>
+    <message>
+        <source>AI Denoise is already being changed.</source>
+        <translation>AI 降噪正在更改中。</translation>
+    </message>
+    <message>
+        <source>AI Denoise is being changed.</source>
+        <translation>正在更改 AI 降噪。</translation>
+    </message>
+    <message>
+        <source>AI Denoise</source>
+        <translation>AI 降噪</translation>
+    </message>
+    <message>
+        <source>Turn Off AI Denoise</source>
+        <translation>关闭 AI 降噪</translation>
+    </message>
+    <message>
+        <source>No valid image was selected.</source>
+        <translation>未选择有效的图像。</translation>
+    </message>
+    <message>
+        <source>Pipeline service is unavailable.</source>
+        <translation>管线服务不可用。</translation>
+    </message>
+    <message>
+        <source>The editor did not accept the change.</source>
+        <translation>编辑器未接受此更改。</translation>
+    </message>
+    <message>
+        <source>AI Denoise could not be turned off: %1</source>
+        <translation>无法关闭 AI 降噪：%1</translation>
+    </message>
+    <message>
+        <source>Scanning folder...</source>
+        <translation>正在扫描文件夹…</translation>
+    </message>
+    <message>
+        <source>The folder could not be read.</source>
+        <translation>无法读取该文件夹。</translation>
+    </message>
+    <message>
+        <source>No files found in this folder.</source>
+        <translation>此文件夹中没有文件。</translation>
+    </message>
+    <message>
+        <source>The project changed, so the folder was not imported.</source>
+        <translation>项目已切换，因此未导入该文件夹。</translation>
+    </message>
 </context>
 <context>
     <name>AgentSessionCard</name>
@@ -1924,6 +2152,22 @@ Alcedo 将改用 %1。</translation>
 </context>
 <context>
     <name>AppDialogs</name>
+    <message>
+        <source>Apply Preset...</source>
+        <translation>应用预设...</translation>
+    </message>
+    <message>
+        <source>Preset saved.</source>
+        <translation>预设已存储。</translation>
+    </message>
+    <message>
+        <source>Locate Photo...</source>
+        <translation>定位照片...</translation>
+    </message>
+    <message>
+        <source>Locate Photo</source>
+        <translation>定位照片</translation>
+    </message>
     <message>
         <location filename="../qml/AppDialogs.qml" line="+39"/>
         <source>Select Images</source>
@@ -1991,6 +2235,10 @@ Alcedo 将改用 %1。</translation>
 </context>
 <context>
     <name>BackgroundTaskBar</name>
+    <message>
+        <source>Folder Scan</source>
+        <translation>文件夹扫描</translation>
+    </message>
     <message>
         <location filename="../qml/BackgroundTaskBar.qml" line="+65"/>
         <source>AI Analysis</source>
@@ -2063,9 +2311,21 @@ Alcedo 将改用 %1。</translation>
         <source>Labels and Marks</source>
         <translation>标签与标记</translation>
     </message>
+    <message>
+        <source>Ratings</source>
+        <translation>评分</translation>
+    </message>
+    <message>
+        <source>AI Denoise</source>
+        <translation>AI 降噪</translation>
+    </message>
 </context>
 <context>
     <name>BackgroundTasksDialog</name>
+    <message>
+        <source>Folder Scan</source>
+        <translation>文件夹扫描</translation>
+    </message>
     <message>
         <location filename="../qml/BackgroundTasksDialog.qml" line="+80"/>
         <source>Failed</source>
@@ -2195,6 +2455,14 @@ Alcedo 将改用 %1。</translation>
         <source>Other Tasks</source>
         <translation>其他任务</translation>
     </message>
+    <message>
+        <source>Ratings</source>
+        <translation>评分</translation>
+    </message>
+    <message>
+        <source>AI Denoise</source>
+        <translation>AI 降噪</translation>
+    </message>
 </context>
 <context>
     <name>CameraProfileFolderTile</name>
@@ -2210,6 +2478,179 @@ Alcedo 将改用 %1。</translation>
     <message>
         <source>The folder of the DCP camera profiles that the editor lists for each camera.</source>
         <translation>存放 DCP 相机配置文件的文件夹。编辑器按相机列出其中的配置文件。</translation>
+    </message>
+    <message>
+        <source>Browse…</source>
+        <translation>浏览…</translation>
+    </message>
+    <message>
+        <source>Rescan</source>
+        <translation>重新扫描</translation>
+    </message>
+</context>
+<context>
+    <name>ApplyPresetDialog</name>
+    <message>
+        <source>The preset cannot be applied</source>
+        <translation>无法应用预设</translation>
+    </message>
+    <message>
+        <source>Apply Preset</source>
+        <translation>应用预设</translation>
+    </message>
+    <message>
+        <source>Close</source>
+        <translation>关闭</translation>
+    </message>
+    <message>
+        <source>Open File...</source>
+        <translation>打开文件...</translation>
+    </message>
+    <message>
+        <source>Cancel</source>
+        <translation>取消</translation>
+    </message>
+    <message>
+        <source>Apply</source>
+        <translation>应用</translation>
+    </message>
+    <message>
+        <source>Apply Preset File</source>
+        <translation>应用预设文件</translation>
+    </message>
+    <message>
+        <source>Alcedo presets (*.alcpreset)</source>
+        <translation>Alcedo 预设 (*.alcpreset)</translation>
+    </message>
+    <message>
+        <source>All Files (*)</source>
+        <translation>所有文件 (*)</translation>
+    </message>
+</context>
+<context>
+    <name>EditorPresetsSection</name>
+    <message>
+        <source>Drag here to save as a preset</source>
+        <translation>拖到这里，存储为预设</translation>
+    </message>
+    <message>
+        <source>Release to save as a preset</source>
+        <translation>松开即存储为预设</translation>
+    </message>
+    <message>
+        <source>The preset operation failed</source>
+        <translation>预设操作失败</translation>
+    </message>
+    <message>
+        <source>Presets</source>
+        <translation>预设</translation>
+    </message>
+    <message>
+        <source>Add Preset...</source>
+        <translation>添加预设...</translation>
+    </message>
+    <message>
+        <source>Preset actions</source>
+        <translation>预设操作</translation>
+    </message>
+    <message>
+        <source>Apply Preset File...</source>
+        <translation>应用预设文件...</translation>
+    </message>
+    <message>
+        <source>Refresh</source>
+        <translation>刷新</translation>
+    </message>
+    <message>
+        <source>Show Folder</source>
+        <translation>显示文件夹</translation>
+    </message>
+    <message>
+        <source>Apply</source>
+        <translation>应用</translation>
+    </message>
+    <message>
+        <source>Rename</source>
+        <translation>重命名</translation>
+    </message>
+    <message>
+        <source>Show in Folder</source>
+        <translation>在文件夹中显示</translation>
+    </message>
+    <message>
+        <source>Delete</source>
+        <translation>删除</translation>
+    </message>
+    <message>
+        <source>Add Preset</source>
+        <translation>添加预设</translation>
+    </message>
+    <message>
+        <source>Alcedo presets (*.alcpreset)</source>
+        <translation>Alcedo 预设 (*.alcpreset)</translation>
+    </message>
+    <message>
+        <source>All Files (*)</source>
+        <translation>所有文件 (*)</translation>
+    </message>
+    <message>
+        <source>Apply Preset File</source>
+        <translation>应用预设文件</translation>
+    </message>
+</context>
+<context>
+    <name>PresetBrowser</name>
+    <message>
+        <source>Presets</source>
+        <translation>预设</translation>
+    </message>
+    <message>
+        <source>No presets</source>
+        <translation>没有预设</translation>
+    </message>
+    <message>
+        <source>Search Presets</source>
+        <translation>搜索预设</translation>
+    </message>
+    <message>
+        <source>No presets match</source>
+        <translation>没有匹配的预设</translation>
+    </message>
+</context>
+<context>
+    <name>BrowserSearchField</name>
+    <message>
+        <source>Clear search</source>
+        <translation>清除搜索</translation>
+    </message>
+</context>
+<context>
+    <name>BrowserViewModeToggle</name>
+    <message>
+        <source>Grid view</source>
+        <translation>网格视图</translation>
+    </message>
+    <message>
+        <source>List view</source>
+        <translation>列表视图</translation>
+    </message>
+</context>
+<context>
+    <name>PresetTile</name>
+    <message>
+        <source>Rename Preset</source>
+        <translation>重命名预设</translation>
+    </message>
+</context>
+<context>
+    <name>PresetSettingsSection</name>
+    <message>
+        <source>Choose the preset folder</source>
+        <translation>选择预设文件夹</translation>
+    </message>
+    <message>
+        <source>Presets</source>
+        <translation>预设</translation>
     </message>
     <message>
         <source>Browse…</source>
@@ -2372,7 +2813,78 @@ Alcedo 将改用 %1。</translation>
     </message>
 </context>
 <context>
+    <name>CollectionsRail</name>
+    <message>
+        <source>Search</source>
+        <translation>搜索</translation>
+    </message>
+    <message>
+        <source>Background Tasks</source>
+        <translation>后台任务</translation>
+    </message>
+    <message>
+        <source>All Photos</source>
+        <translation>全部图片</translation>
+    </message>
+    <message>
+        <source>Collections</source>
+        <translation>影集</translation>
+    </message>
+    <message>
+        <source>Import</source>
+        <translation>导入</translation>
+    </message>
+</context>
+<context>
     <name>CollectionsPanel</name>
+    <message>
+        <source>Import</source>
+        <translation>导入</translation>
+    </message>
+    <message>
+        <source>Import Images...</source>
+        <translation>导入图像...</translation>
+    </message>
+    <message>
+        <source>Import Folder...</source>
+        <translation>导入文件夹...</translation>
+    </message>
+    <message>
+        <source>Mount Folder</source>
+        <translation>挂载文件夹</translation>
+    </message>
+    <message>
+        <source>Synchronize</source>
+        <translation>同步</translation>
+    </message>
+    <message>
+        <source>Locate Folder...</source>
+        <translation>定位文件夹...</translation>
+    </message>
+    <message>
+        <source>Locate Folder</source>
+        <translation>定位文件夹</translation>
+    </message>
+    <message>
+        <source>Show in File Manager</source>
+        <translation>在文件管理器中显示</translation>
+    </message>
+    <message>
+        <source>Remove Missing Photos</source>
+        <translation>移除丢失的照片</translation>
+    </message>
+    <message>
+        <source>Unmount</source>
+        <translation>取消挂载</translation>
+    </message>
+    <message>
+        <source>Offline</source>
+        <translation>离线</translation>
+    </message>
+    <message>
+        <source>Remove %1 missing photos of &quot;%2&quot; from the project? Their edit history and Versions are removed.</source>
+        <translation>从项目中移除“%2”的 %1 张丢失的照片？它们的编辑历史和版本将被移除。</translation>
+    </message>
     <message>
         <location filename="../qml/CollectionsPanel.qml" line="+22"/>
         <source>Search</source>
@@ -2430,8 +2942,8 @@ Alcedo 将改用 %1。</translation>
     </message>
     <message>
         <location line="+22"/>
-        <source>Import From Folder</source>
-        <translation>从文件夹导入</translation>
+        <source>Import Folder</source>
+        <translation>导入文件夹</translation>
     </message>
     <message>
         <location line="+49"/>
@@ -2440,7 +2952,7 @@ Alcedo 将改用 %1。</translation>
     </message>
     <message>
         <location line="+39"/>
-        <source>全部图片</source>
+        <source>All Photos</source>
         <translation>全部图片</translation>
     </message>
     <message>
@@ -2462,6 +2974,26 @@ Alcedo 将改用 %1。</translation>
     <message>
         <source>Rename</source>
         <translation>重命名</translation>
+    </message>
+    <message>
+        <source>Library</source>
+        <translation>资料库</translation>
+    </message>
+    <message>
+        <source>Disk</source>
+        <translation>磁盘</translation>
+    </message>
+    <message>
+        <source>Close</source>
+        <translation>关闭</translation>
+    </message>
+    <message>
+        <source>Import...</source>
+        <translation>导入...</translation>
+    </message>
+    <message>
+        <source>Mount...</source>
+        <translation>挂载...</translation>
     </message>
 </context>
 <context>
@@ -2556,6 +3088,14 @@ Original source files on disk will be kept.</source>
         <location line="+25"/>
         <source>Add Gradient Mask</source>
         <translation>添加渐变蒙版</translation>
+    </message>
+    <message>
+        <source>Edit AI Mask</source>
+        <translation>编辑 AI 蒙版</translation>
+    </message>
+    <message>
+        <source>Add AI Mask</source>
+        <translation>添加 AI 蒙版</translation>
     </message>
 </context>
 <context>
@@ -3578,7 +4118,7 @@ Original source files on disk will be kept.</source>
     <message>
         <location line="+300"/>
         <source> | Rating %1/5</source>
-        <translation type="unfinished"></translation>
+        <translation> | 评分 %1/5</translation>
     </message>
     <message>
         <location line="-227"/>
@@ -3604,12 +4144,12 @@ Original source files on disk will be kept.</source>
     <message>
         <location line="-293"/>
         <source>Editing %1</source>
-        <translation type="unfinished"></translation>
+        <translation>正在编辑 %1</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>No image selected</source>
-        <translation type="unfinished"></translation>
+        <translation>未选择图像</translation>
     </message>
     <message>
         <location line="+294"/>
@@ -3619,7 +4159,7 @@ Original source files on disk will be kept.</source>
     <message>
         <location line="+1"/>
         <source>Selected image</source>
-        <translation type="unfinished"></translation>
+        <translation>所选图像</translation>
     </message>
     <message>
         <location line="+1"/>
@@ -3639,6 +4179,10 @@ Original source files on disk will be kept.</source>
     <message>
         <source>Edited</source>
         <translation>已编辑</translation>
+    </message>
+    <message>
+        <source>Current image, not in this list</source>
+        <translation>当前图像，不在此列表中</translation>
     </message>
 </context>
 <context>
@@ -3735,6 +4279,14 @@ Original source files on disk will be kept.</source>
         <location line="+78"/>
         <source>Reset crop and rotation</source>
         <translation>重置裁剪和旋转</translation>
+    </message>
+    <message>
+        <source>Source %1 × %2 (aspect %3)</source>
+        <translation>原图 %1 × %2（宽高比 %3）</translation>
+    </message>
+    <message>
+        <source>Source size is available after the image is shown.</source>
+        <translation>显示图像后可查看原图尺寸。</translation>
     </message>
 </context>
 <context>
@@ -4275,8 +4827,8 @@ Refresh the library afterwards; they are listed under the User category. Import 
     </message>
     <message>
         <location line="+3"/>
-        <source>disabled</source>
-        <translation>已禁用</translation>
+        <source>hidden</source>
+        <translation>已隐藏</translation>
     </message>
     <message>
         <location line="+3"/>
@@ -4317,6 +4869,22 @@ Refresh the library afterwards; they are listed under the User category. Import 
         <location line="+70"/>
         <source>No masks</source>
         <translation>暂无蒙版</translation>
+    </message>
+    <message>
+        <source>Hide %1</source>
+        <translation>隐藏%1</translation>
+    </message>
+    <message>
+        <source>Show %1</source>
+        <translation>显示%1</translation>
+    </message>
+    <message>
+        <source>detached</source>
+        <translation>已断开</translation>
+    </message>
+    <message>
+        <source>Detached</source>
+        <translation>已断开</translation>
     </message>
 </context>
 <context>
@@ -4374,14 +4942,12 @@ Refresh the library afterwards; they are listed under the User category. Import 
         <translation>已反相</translation>
     </message>
     <message>
-        <location line="+1"/>
-        <source>Turn off Invert for %1</source>
-        <translation>取消反相%1</translation>
+        <source>Combine mode: Add</source>
+        <translation>合并方式：添加</translation>
     </message>
     <message>
-        <location line="+1"/>
-        <source>Invert %1</source>
-        <translation>反相%1</translation>
+        <source>Add</source>
+        <translation>添加</translation>
     </message>
 </context>
 <context>
@@ -4815,6 +5381,107 @@ Refresh the library afterwards; they are listed under the User category. Import 
     </message>
 </context>
 <context>
+    <name>EditorRenderProgress</name>
+    <message>
+        <source>Reading RAW</source>
+        <translation>读取 RAW</translation>
+    </message>
+    <message>
+        <source>AI Denoise</source>
+        <translation>AI 降噪</translation>
+    </message>
+    <message>
+        <source>Developing</source>
+        <translation>显影</translation>
+    </message>
+    <message>
+        <source>%1 / %2 tiles</source>
+        <translation>%1 / %2 块</translation>
+    </message>
+    <message>
+        <source>Sensor</source>
+        <translation>传感器</translation>
+    </message>
+    <message>
+        <source>Lens and geometry</source>
+        <translation>镜头与几何</translation>
+    </message>
+    <message>
+        <source>Color</source>
+        <translation>色彩</translation>
+    </message>
+    <message>
+        <source>Color Grade %1 of %2</source>
+        <translation>调色 %1 / %2</translation>
+    </message>
+    <message>
+        <source>Display</source>
+        <translation>显示</translation>
+    </message>
+</context>
+<context>
+    <name>EditorAiDenoiseErrorCard</name>
+    <message>
+        <source>AI Denoise model not installed</source>
+        <translation>未安装 AI 降噪模型</translation>
+    </message>
+    <message>
+        <source>This GPU is too slow for AI Denoise</source>
+        <translation>此 GPU 运行 AI 降噪太慢</translation>
+    </message>
+    <message>
+        <source>AI Denoise does not support this sensor</source>
+        <translation>AI 降噪不支持此传感器</translation>
+    </message>
+    <message>
+        <source>AI Denoise failed</source>
+        <translation>AI 降噪失败</translation>
+    </message>
+    <message>
+        <source>Manage</source>
+        <translation>管理</translation>
+    </message>
+    <message>
+        <source>Turn Off AI Denoise</source>
+        <translation>关闭 AI 降噪</translation>
+    </message>
+    <message>
+        <source>The model file is not in the AI model folder.</source>
+        <translation>AI 模型文件夹中没有该模型文件。</translation>
+    </message>
+    <message>
+        <source>This photo would take too long on this GPU.</source>
+        <translation>此照片在此 GPU 上耗时过长。</translation>
+    </message>
+    <message>
+        <source>AI Denoise supports Bayer RAW photos only.</source>
+        <translation>AI 降噪仅支持 Bayer RAW 照片。</translation>
+    </message>
+    <message>
+        <source>The model stopped while processing this photo.</source>
+        <translation>模型处理此照片时出错。</translation>
+    </message>
+</context>
+<context>
+    <name>ViewportRenderAlert</name>
+    <message>
+        <source>Hide Details</source>
+        <translation>隐藏详细信息</translation>
+    </message>
+    <message>
+        <source>Show Details</source>
+        <translation>显示详细信息</translation>
+    </message>
+    <message>
+        <source>Copy</source>
+        <translation>复制</translation>
+    </message>
+    <message>
+        <source>Copied</source>
+        <translation>已复制</translation>
+    </message>
+</context>
+<context>
     <name>EditorRawDecodePanel</name>
     <message>
         <location filename="../qml/EditorRawDecodePanel.qml" line="+35"/>
@@ -4823,13 +5490,13 @@ Refresh the library afterwards; they are listed under the User category. Import 
     </message>
     <message>
         <location line="+1"/>
-        <source>Neural Engine</source>
-        <translation>神经引擎</translation>
+        <source>Neural</source>
+        <translation>神经网络</translation>
     </message>
     <message>
         <location line="-2"/>
-        <source>Default</source>
-        <translation>默认</translation>
+        <source>Auto</source>
+        <translation>自动</translation>
     </message>
     <message>
         <location line="+321"/>
@@ -4972,6 +5639,18 @@ Refresh the library afterwards; they are listed under the User category. Import 
         <source>Display referred</source>
         <translation>显示参考</translation>
     </message>
+    <message>
+        <source>AI Denoise</source>
+        <translation>AI 降噪</translation>
+    </message>
+    <message>
+        <source>Not supported for X-Trans sensors</source>
+        <translation>不支持 X-Trans 传感器</translation>
+    </message>
+    <message>
+        <source>Not supported for this sensor</source>
+        <translation>不支持此传感器</translation>
+    </message>
 </context>
 <context>
     <name>EditorSaveRecoveryBar</name>
@@ -5067,8 +5746,8 @@ Refresh the library afterwards; they are listed under the User category. Import 
         <translation>强对比度</translation>
     </message>
     <message>
-        <source>Film-like</source>
-        <translation>胶片感</translation>
+        <source>Cl. Digit</source>
+        <translation>经典数码</translation>
     </message>
 </context>
 <context>
@@ -5245,6 +5924,18 @@ Refresh the library afterwards; they are listed under the User category. Import 
     <message>
         <source>Compare Versions</source>
         <translation>对比版本</translation>
+    </message>
+    <message>
+        <source>Drag here to apply this preset</source>
+        <translation>拖到这里，使用该预设</translation>
+    </message>
+    <message>
+        <source>Release to apply this preset</source>
+        <translation>松开即使用该预设</translation>
+    </message>
+    <message>
+        <source>Export Version...</source>
+        <translation>导出版本…</translation>
     </message>
 </context>
 <context>
@@ -5566,11 +6257,16 @@ Refresh the library afterwards; they are listed under the User category. Import 
     </message>
     <message>
         <location line="+2"/>
+        <source>Missing</source>
+        <translation>文件缺失</translation>
+    </message>
+    <message>
+        <location line="+2"/>
         <source>Queued</source>
         <translation>已排队</translation>
     </message>
     <message>
-        <location line="+148"/>
+        <location line="+149"/>
         <source>Quality</source>
         <translation>质量</translation>
     </message>
@@ -5763,6 +6459,30 @@ Refresh the library afterwards; they are listed under the User category. Import 
     <message>
         <source>Max edge (px)</source>
         <translation>最长边（像素）</translation>
+    </message>
+    <message>
+        <source>AI Denoise model not installed</source>
+        <translation>未安装 AI 降噪模型</translation>
+    </message>
+    <message>
+        <source>This GPU is too slow for AI Denoise</source>
+        <translation>此 GPU 运行 AI 降噪太慢</translation>
+    </message>
+    <message>
+        <source>AI Denoise does not support this sensor</source>
+        <translation>AI 降噪不支持此传感器</translation>
+    </message>
+    <message>
+        <source>AI Denoise failed</source>
+        <translation>AI 降噪失败</translation>
+    </message>
+    <message>
+        <source>Manage</source>
+        <translation>管理</translation>
+    </message>
+    <message>
+        <source>Turn Off AI Denoise</source>
+        <translation>关闭 AI 降噪</translation>
     </message>
 </context>
 <context>
@@ -5985,8 +6705,8 @@ Refresh the library afterwards; they are listed under the User category. Import 
     </message>
     <message>
         <location filename="../qml/FolderImportConfirmDialog.qml" line="+84"/>
-        <source>Import From Folder</source>
-        <translation>从文件夹导入</translation>
+        <source>Import Folder</source>
+        <translation>导入文件夹</translation>
     </message>
     <message>
         <location line="+10"/>
@@ -6127,7 +6847,7 @@ Refresh the library afterwards; they are listed under the User category. Import 
         <translation>筛选影集</translation>
     </message>
     <message>
-        <source>全部图片</source>
+        <source>All Photos</source>
         <translation>全部图片</translation>
     </message>
     <message>
@@ -6137,6 +6857,14 @@ Refresh the library afterwards; they are listed under the User category. Import 
     <message>
         <source>No matching collections</source>
         <translation>没有匹配的影集</translation>
+    </message>
+    <message>
+        <source>L</source>
+        <translation>i</translation>
+    </message>
+    <message>
+        <source>资</source>
+        <translation>料</translation>
     </message>
 </context>
 <context>
@@ -6221,6 +6949,37 @@ Refresh the library afterwards; they are listed under the User category. Import 
         <location line="+17"/>
         <source>AI Rating</source>
         <translation>AI 评分</translation>
+    </message>
+</context>
+<context>
+    <name>ImportFolderChoiceCard</name>
+    <message>
+        <source>Import into Collection</source>
+        <translation>导入到影集</translation>
+    </message>
+    <message>
+        <source>Mount Folder</source>
+        <translation>挂载文件夹</translation>
+    </message>
+    <message>
+        <source>Arrange freely</source>
+        <translation>自由整理</translation>
+    </message>
+    <message>
+        <source>Sync folder structure</source>
+        <translation>同步文件夹结构</translation>
+    </message>
+    <message>
+        <source>Disk</source>
+        <translation>磁盘</translation>
+    </message>
+    <message>
+        <source>Library</source>
+        <translation>资料库</translation>
+    </message>
+    <message>
+        <source>Collection</source>
+        <translation>影集</translation>
     </message>
 </context>
 <context>
@@ -6334,6 +7093,27 @@ Refresh the library afterwards; they are listed under the User category. Import 
         <location line="+1"/>
         <source>Expand Inspector</source>
         <translation>展开检查器</translation>
+    </message>
+</context>
+<context>
+    <name>JustifiedThumbnailTile</name>
+    <message>
+        <source>Source file was moved or deleted</source>
+        <translation>源文件已被移动或删除</translation>
+    </message>
+    <message numerus="yes">
+        <source>%n star(s)</source>
+        <translation>
+            <numerusform>%n 星</numerusform>
+        </translation>
+    </message>
+    <message>
+        <source>Unrated</source>
+        <translation>未评分</translation>
+    </message>
+    <message>
+        <source>Edited</source>
+        <translation>已编辑</translation>
     </message>
 </context>
 <context>
@@ -6476,7 +7256,26 @@ Refresh the library afterwards; they are listed under the User category. Import 
     </message>
 </context>
 <context>
+    <name>LibraryFolderSection</name>
+    <message>
+        <source>Offline</source>
+        <translation>离线</translation>
+    </message>
+    <message>
+        <source>Folders</source>
+        <translation>文件夹</translation>
+    </message>
+    <message>
+        <source>Show folder %1</source>
+        <translation>显示文件夹 %1</translation>
+    </message>
+</context>
+<context>
     <name>LibraryWorkspace</name>
+    <message>
+        <source>All Photos</source>
+        <translation>全部图片</translation>
+    </message>
     <message>
         <source>Import to %1</source>
         <translation>导入到 %1</translation>
@@ -6542,6 +7341,21 @@ Refresh the library afterwards; they are listed under the User category. Import 
     <message>
         <source>Show larger photos</source>
         <translation>显示更大的照片</translation>
+    </message>
+    <message>
+        <source>Library</source>
+        <translation>资料库</translation>
+    </message>
+    <message>
+        <source>Disk</source>
+        <translation>磁盘</translation>
+    </message>
+</context>
+<context>
+    <name>LoadingSpinner</name>
+    <message>
+        <source>Loading</source>
+        <translation>正在加载</translation>
     </message>
 </context>
 <context>
@@ -6987,6 +7801,14 @@ Create a new layer above it and draw the Mask there?</source>
         <location line="+292"/>
         <source>Could not save edits. Resolve the save error, then quit again.</source>
         <translation>无法保存编辑。请先解决保存错误，然后再退出。</translation>
+    </message>
+    <message>
+        <source>L</source>
+        <translation>i</translation>
+    </message>
+    <message>
+        <source>资</source>
+        <translation>料</translation>
     </message>
 </context>
 <context>
@@ -7827,6 +8649,18 @@ CLIP / SigLIP 这类视觉语言模型会把图像和文字映射到同一语义
         <translation>每次询问</translation>
     </message>
     <message>
+        <source>Skip duplicate imports</source>
+        <translation>跳过重复导入</translation>
+    </message>
+    <message>
+        <source>Import</source>
+        <translation>导入</translation>
+    </message>
+    <message>
+        <source>Import Folder</source>
+        <translation>导入文件夹</translation>
+    </message>
+    <message>
         <source>Create a new layer, then draw</source>
         <translation>新建图层后绘制</translation>
     </message>
@@ -7850,6 +8684,26 @@ CLIP / SigLIP 这类视觉语言模型会把图像和文字映射到同一语义
         <source>The AI model runs on this computer, and no photo is uploaded. The labeling speed depends on the CPU, the GPU, and the disk.</source>
         <translation>AI 模型在本机运行，照片不会上传。标注速度取决于 CPU、GPU 和磁盘。</translation>
     </message>
+    <message>
+        <source>Library</source>
+        <translation>图库</translation>
+    </message>
+    <message>
+        <source>Photo layout</source>
+        <translation>照片布局</translation>
+    </message>
+    <message>
+        <source>Classic grid</source>
+        <translation>经典网格</translation>
+    </message>
+    <message>
+        <source>Justified rows</source>
+        <translation>自适应行</translation>
+    </message>
+    <message>
+        <source>Classic grid shows each photo in a card of the same size, with its details below it. Justified rows show the photos in rows of one height that fill the width; each photo keeps its shape, and its details and rating show when the pointer is on it. Grouped photos always use the classic grid.</source>
+        <translation>经典网格以相同大小的卡片显示每张照片，详细信息位于照片下方。自适应行将照片排成等高的行并铺满宽度，每张照片保持原始比例，鼠标悬停时显示详细信息和星级。分组显示的照片始终使用经典网格。</translation>
+    </message>
 </context>
 <context>
     <name>ShellSignals</name>
@@ -7862,6 +8716,12 @@ CLIP / SigLIP 这类视觉语言模型会把图像和文字映射到同一语义
         <location line="+23"/>
         <source>Exported %1 image(s).</source>
         <translation>已导出 %1 张图像。</translation>
+    </message>
+    <message numerus="yes">
+        <source>%n photo(s) are already in the mounted folder and will not be imported this time.</source>
+        <translation>
+            <numerusform>%n 张照片已在挂载的文件夹中，本次不会导入。</numerusform>
+        </translation>
     </message>
 </context>
 <context>
@@ -8760,6 +9620,18 @@ CLIP / SigLIP 这类视觉语言模型会把图像和文字映射到同一语义
         <translation>只有色彩分级具有可编辑的删除保护</translation>
     </message>
     <message>
+        <source>Finish the node graph before showing or hiding a Color Grade</source>
+        <translation>请先完成节点图，再显示或隐藏色彩分级</translation>
+    </message>
+    <message>
+        <source>Only a Color Grade can be shown or hidden</source>
+        <translation>只有色彩分级可以显示或隐藏</translation>
+    </message>
+    <message>
+        <source>Connect the Mask Group in Nodes before moving it</source>
+        <translation>请先在节点页连接该图层（蒙版组），再移动它</translation>
+    </message>
+    <message>
         <location line="+20"/>
         <location line="+44"/>
         <source>Only a Color Grade can be deleted</source>
@@ -9084,6 +9956,26 @@ CLIP / SigLIP 这类视觉语言模型会把图像和文字映射到同一语义
         <translation>在 GitHub 上打开 AI 蒙版模型项目</translation>
     </message>
     <message>
+        <source>Removes the noise of Bayer RAW photos in the Develop stage, with the demosaic.</source>
+        <translation>在显影阶段为 Bayer RAW 照片降噪，同时完成去马赛克。</translation>
+    </message>
+    <message>
+        <source>Open the AI Denoise model project on GitHub</source>
+        <translation>在 GitHub 上打开 AI 降噪模型项目</translation>
+    </message>
+    <message>
+        <source>Remove the AI Denoise model</source>
+        <translation>移除 AI 降噪模型</translation>
+    </message>
+    <message>
+        <source>Remove the AI Denoise model?</source>
+        <translation>要移除 AI 降噪模型吗？</translation>
+    </message>
+    <message>
+        <source>Without the model, photos with AI Denoise show an error until you download it again.</source>
+        <translation>移除后，在重新下载模型之前，开启 AI 降噪的照片会显示错误。</translation>
+    </message>
+    <message>
         <source>v%1 %2</source>
         <translation>v%1 %2</translation>
     </message>
@@ -9200,8 +10092,8 @@ CLIP / SigLIP 这类视觉语言模型会把图像和文字映射到同一语义
         <translation>模型文件夹</translation>
     </message>
     <message>
-        <source>The folder that holds the AI Mask models and the content recognition models. Changing it does not move the installed models.</source>
-        <translation>存放 AI 蒙版模型和内容识别模型的文件夹。更换文件夹不会移动已安装的模型。</translation>
+        <source>The folder that holds the AI Mask, AI Denoise, and content recognition models. Changing it does not move the installed models.</source>
+        <translation>存放 AI 蒙版、AI 降噪和内容识别模型的文件夹。更换文件夹不会移动已安装的模型。</translation>
     </message>
     <message>
         <source>Change folder…</source>
@@ -9224,16 +10116,16 @@ CLIP / SigLIP 这类视觉语言模型会把图像和文字映射到同一语义
         <translation>重新读取已安装的模型</translation>
     </message>
     <message>
-        <source>AI Mask</source>
-        <translation>AI 蒙版</translation>
+        <source>Editor Models</source>
+        <translation>编辑器模型</translation>
     </message>
     <message>
         <source>The AI model check failed: %1</source>
         <translation>AI 模型检查失败：%1</translation>
     </message>
     <message>
-        <source>AI Mask model downloads are not available in this build.</source>
-        <translation>此版本不提供 AI 蒙版模型下载。</translation>
+        <source>AI Mask and AI Denoise model downloads are not available in this build.</source>
+        <translation>此版本不提供 AI 蒙版和 AI 降噪模型下载。</translation>
     </message>
     <message>
         <source>Check again</source>
@@ -9317,6 +10209,10 @@ CLIP / SigLIP 这类视觉语言模型会把图像和文字映射到同一语义
     <message>
         <source>AI Mask</source>
         <translation>AI 蒙版</translation>
+    </message>
+    <message>
+        <source>AI Denoise</source>
+        <translation>AI 降噪</translation>
     </message>
     <message>
         <source>The AI model server URL is not allowed.</source>
@@ -9599,6 +10495,265 @@ CLIP / SigLIP 这类视觉语言模型会把图像和文字映射到同一语义
     <message>
         <source>About %1 h %2 min remaining</source>
         <translation>剩余约 %1 小时 %2 分钟</translation>
+    </message>
+</context>
+<context>
+    <name>RawImportLookSettingsSection</name>
+    <message>
+        <source>RAW Import</source>
+        <translation>RAW 导入</translation>
+    </message>
+    <message>
+        <source>Exposure</source>
+        <translation>曝光</translation>
+    </message>
+    <message>
+        <source>Saturation</source>
+        <translation>饱和度</translation>
+    </message>
+    <message>
+        <source>Tone Curve</source>
+        <translation>色调曲线</translation>
+    </message>
+    <message>
+        <source>Display Transform</source>
+        <translation>显示变换</translation>
+    </message>
+    <message>
+        <source>OpenDRT Look</source>
+        <translation>OpenDRT 外观</translation>
+    </message>
+    <message>
+        <source>Lens Correction</source>
+        <translation>镜头校正</translation>
+    </message>
+    <message>
+        <source>Restore Defaults</source>
+        <translation>恢复默认</translation>
+    </message>
+</context>
+<context>
+    <name>alcedo::ui::RawImportLookSettingsModel</name>
+    <message>
+        <source>Linear</source>
+        <translation>线性</translation>
+    </message>
+    <message>
+        <source>Soft Contrast</source>
+        <translation>柔和对比度</translation>
+    </message>
+    <message>
+        <source>Medium Contrast</source>
+        <translation>中等对比度</translation>
+    </message>
+    <message>
+        <source>Strong Contrast</source>
+        <translation>强对比度</translation>
+    </message>
+    <message>
+        <source>Cl. Digit</source>
+        <translation>经典数码</translation>
+    </message>
+    <message>
+        <source>Kodak 2383</source>
+        <translation>Kodak 2383</translation>
+    </message>
+    <message>
+        <source>Velvia 50</source>
+        <translation>Velvia 50</translation>
+    </message>
+    <message>
+        <source>Ektachrome E100</source>
+        <translation>Ektachrome E100</translation>
+    </message>
+    <message>
+        <source>Contrast</source>
+        <translation>对比度</translation>
+    </message>
+    <message>
+        <source>Rendering</source>
+        <translation>渲染</translation>
+    </message>
+    <message>
+        <source>Film</source>
+        <translation>胶片</translation>
+    </message>
+    <message>
+        <source>ACES 2.0</source>
+        <translation>ACES 2.0</translation>
+    </message>
+    <message>
+        <source>OpenDRT</source>
+        <translation>OpenDRT</translation>
+    </message>
+    <message>
+        <source>Standard</source>
+        <translation>标准</translation>
+    </message>
+    <message>
+        <source>Arriba</source>
+        <translation>Arriba</translation>
+    </message>
+    <message>
+        <source>Sylvan</source>
+        <translation>Sylvan</translation>
+    </message>
+    <message>
+        <source>Colorful</source>
+        <translation>多彩</translation>
+    </message>
+    <message>
+        <source>Aery</source>
+        <translation>Aery</translation>
+    </message>
+    <message>
+        <source>Dystopic</source>
+        <translation>Dystopic</translation>
+    </message>
+    <message>
+        <source>Umbra</source>
+        <translation>Umbra</translation>
+    </message>
+    <message>
+        <source>Exposure must be from -10 to +10 EV.</source>
+        <translation>曝光必须在 -10 到 +10 EV 之间。</translation>
+    </message>
+    <message>
+        <source>Saturation must be from -100 to +100.</source>
+        <translation>饱和度必须在 -100 到 +100 之间。</translation>
+    </message>
+    <message>
+        <source>No Tone Curve preset has the id %1.</source>
+        <translation>没有 ID 为 %1 的色调曲线预设。</translation>
+    </message>
+    <message>
+        <source>The display transform must be ACES 2.0 or OpenDRT.</source>
+        <translation>显示变换必须是 ACES 2.0 或 OpenDRT。</translation>
+    </message>
+    <message>
+        <source>No OpenDRT look preset has the id %1.</source>
+        <translation>没有 ID 为 %1 的 OpenDRT 外观预设。</translation>
+    </message>
+</context>
+<context>
+    <name>CollectionPickerTree</name>
+    <message>
+        <source>Library</source>
+        <translation>资料库</translation>
+    </message>
+    <message>
+        <source>Search collections</source>
+        <translation>搜索影集</translation>
+    </message>
+    <message>
+        <source>New collection</source>
+        <translation>新建影集</translation>
+    </message>
+    <message>
+        <source>Import to</source>
+        <translation>导入到</translation>
+    </message>
+    <message>
+        <source>Collection Name</source>
+        <translation>影集名称</translation>
+    </message>
+    <message>
+        <source>No matching collections</source>
+        <translation>无匹配的影集</translation>
+    </message>
+</context>
+<context>
+    <name>ImportFolderDialog</name>
+    <message>
+        <source>RAW</source>
+        <translation>RAW</translation>
+    </message>
+    <message>
+        <source>JPEG</source>
+        <translation>JPEG</translation>
+    </message>
+    <message>
+        <source>TIFF</source>
+        <translation>TIFF</translation>
+    </message>
+    <message>
+        <source>PNG</source>
+        <translation>PNG</translation>
+    </message>
+    <message>
+        <source>OpenEXR</source>
+        <translation>OpenEXR</translation>
+    </message>
+    <message>
+        <source>The dropped items could not be read.</source>
+        <translation>无法读取拖入的项目。</translation>
+    </message>
+    <message>
+        <source>The folder could not be read.</source>
+        <translation>无法读取该文件夹。</translation>
+    </message>
+    <message>
+        <source>No files found in the dropped items.</source>
+        <translation>拖入的项目中没有文件。</translation>
+    </message>
+    <message>
+        <source>No files found in this folder.</source>
+        <translation>此文件夹中没有文件。</translation>
+    </message>
+    <message>
+        <source>Close</source>
+        <translation>关闭</translation>
+    </message>
+    <message>
+        <source>Scanning...</source>
+        <translation>正在扫描…</translation>
+    </message>
+    <message>
+        <source>photos</source>
+        <translation>张</translation>
+    </message>
+    <message>
+        <source>%1 subfolders</source>
+        <translation>%1 个子文件夹</translation>
+    </message>
+    <message>
+        <source>Mount to</source>
+        <translation>挂载到</translation>
+    </message>
+    <message>
+        <source>Import to</source>
+        <translation>导入到</translation>
+    </message>
+    <message>
+        <source>Disk</source>
+        <translation>磁盘</translation>
+    </message>
+    <message>
+        <source>Remember my choice</source>
+        <translation>记住我的选项</translation>
+    </message>
+    <message>
+        <source>Cancel</source>
+        <translation>取消</translation>
+    </message>
+    <message>
+        <source>Mount %1 photos</source>
+        <translation>挂载 %1 张</translation>
+    </message>
+    <message>
+        <source>Import %1 photos</source>
+        <translation>导入 %1 张</translation>
+    </message>
+</context>
+<context>
+    <name>ImportFolderFlow</name>
+    <message>
+        <source>Select Folder to Mount</source>
+        <translation>选择要挂载的文件夹</translation>
+    </message>
+    <message>
+        <source>Select Folder to Import</source>
+        <translation>选择要导入的文件夹</translation>
     </message>
 </context>
 </TS>
