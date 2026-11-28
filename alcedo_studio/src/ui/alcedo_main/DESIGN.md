@@ -384,8 +384,9 @@ bottom part of the photo only (`bgDeepColor` gradient from transparent to alpha
 0.78). The photo, the shade, the stars, and the edit mark are one layer with
 one rounded mask, so none of them shows outside the photo corners. An
 unrated image has no overlay and no shade. There is no container around the
-stars, and they are display only: the user rates with the context menu and the
-keyboard shortcuts. The Saving and Rendering badges of the editing tile sit on
+stars. Use the context menu or press 1 through 5 to rate the filmstrip selection.
+Press 0 to clear the rating. When the selection is empty, the keys apply to
+the open photo. The Saving and Rendering badges of the editing tile sit on
 the top-left corner of the photo. Every slot in the strip has the same size.
 The tile width fits the 3:2 slot to the slot height. The dock minimum and
 default height is 168 px (`EditorFilmstrip.minExpandedHeight`,
@@ -508,6 +509,11 @@ wordmark and the small import progress ring.
 | Photo Inspector AI description | `sparkles.svg` in `textMutedColor` and a 3 px `dividerColor` rule |
 
 ### Library thumbnail cards
+
+Press 1 through 5 to rate the Library selection or press 0 to clear its ratings.
+The Library and Editor share these bindings in Settings > Keyboard. A text
+field, numeric field, or dialog has priority over the rating keys. With viewport
+focus, Ctrl+1 zooms to actual pixels. Home and Ctrl+0 reset the view.
 
 The Library cards (`ThumbnailGridView.qml` and the photo cells of
 `AlbumSectionView.qml`) and the editor filmstrip tiles use one language for the

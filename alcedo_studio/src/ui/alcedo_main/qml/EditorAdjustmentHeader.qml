@@ -11,6 +11,7 @@ import QtQuick.Layouts
 // selected AI Mask and creates nothing, so it does not ask.
 Item {
     id: root
+    readonly property bool lockedNodeMaskPromptVisible: lockedNodeMaskPrompt.visible
     objectName: "editorAdjustmentHeader"
 
     property var theme: null

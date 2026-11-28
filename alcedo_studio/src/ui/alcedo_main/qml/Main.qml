@@ -983,6 +983,22 @@ ApplicationWindow {
     // active workspace, so Ctrl+A / Ctrl+S resolve to exactly one owner.
     readonly property string activeShortcutScope: "workspace." + root.activeWorkspace
 
+    readonly property bool photoShortcutInputBlocked: appDialogs.photoShortcutInputBlocked
+        || (root.activeWorkspace === "editor" && workspaceHost.editorItem
+            && workspaceHost.editorItem.lockedNodeMaskPromptVisible)
+
+    PhotoRatingShortcuts {
+        workspace: root.activeWorkspace
+        inputAvailable: root.backendInteractive && appModules.project.projectEntered
+                        && !root.photoShortcutInputBlocked
+                        && (root.selectedCount > 0
+                            || (root.activeWorkspace === "editor"
+                                && appModules.editorSession.hasImage
+                                && appModules.editorSession.elementId > 0
+                                && appModules.editorSession.imageId > 0))
+        onRatingRequested: rating => imageActionsController.requestSetSelectionRating(rating)
+    }
+
     RegisteredShortcut {
         objectName: "librarySelectAllShortcut"
         commandId: "library.selectAll"

@@ -188,6 +188,69 @@ TEST_F(ShortcutRegistryTest, DisjointScopesMayShareOneBinding) {
             QLatin1String(shortcut_id::kEditorSaveCurrentImage));
 }
 
+TEST_F(ShortcutRegistryTest, PhotoRatingDefaultsShareOneSettingsBindingPerValue) {
+  auto registry = MakeRegistry();
+  ASSERT_TRUE(registry->FinalizeRegistration().isEmpty());
+  const QString scope = QLatin1String(shortcut_scope::kWorkspacePhotoRatings);
+  const char* commands[] = {shortcut_id::kPhotoRatingClear, shortcut_id::kPhotoRatingSet1,
+                            shortcut_id::kPhotoRatingSet2, shortcut_id::kPhotoRatingSet3,
+                            shortcut_id::kPhotoRatingSet4, shortcut_id::kPhotoRatingSet5};
+  for (int rating = 0; rating <= 5; ++rating) {
+    const QString id = QLatin1String(commands[rating]);
+    EXPECT_EQ(registry->commandIdForKey(scope, Qt::Key_0 + rating, Qt::NoModifier), id);
+    EXPECT_TRUE(RoleValue(*registry, id, ShortcutRegistry::SettingsVisibleRole).toBool());
+    EXPECT_FALSE(registry->commandAutoRepeat(id));
+  }
+  for (const char* command : {shortcut_id::kLibrarySelectAll, shortcut_id::kEditorUndo,
+                              shortcut_id::kMaskFinishEdit, shortcut_id::kComparisonClose}) {
+    const auto result =
+        registry->saveCandidate(QLatin1String(command), Qt::Key_4, Qt::NoModifier, kKeyChord);
+    EXPECT_EQ(result.value(QStringLiteral("conflictingCommandId")).toString(),
+              QLatin1String(shortcut_id::kPhotoRatingSet4));
+  }
+  const QString set4 = QLatin1String(shortcut_id::kPhotoRatingSet4);
+  EXPECT_TRUE(registry->saveCandidate(set4, Qt::Key_F8, Qt::NoModifier, kKeyChord)
+                  .value(QStringLiteral("succeeded"))
+                  .toBool());
+  EXPECT_EQ(registry->commandIdForKey(scope, Qt::Key_F8, Qt::NoModifier), set4);
+  EXPECT_TRUE(registry->commandIdForKey(scope, Qt::Key_4, Qt::NoModifier).isEmpty());
+  EXPECT_TRUE(registry->restoreDefault(set4).value(QStringLiteral("succeeded")).toBool());
+  EXPECT_EQ(registry->commandIdForKey(scope, Qt::Key_4, Qt::NoModifier), set4);
+}
+
+TEST_F(ShortcutRegistryTest, ViewportResetAndNodesFitMayShareCtrlZero) {
+  auto registry = MakeRegistry();
+  ASSERT_TRUE(registry->FinalizeRegistration().isEmpty());
+  const QString viewport = QLatin1String(shortcut_scope::kEditorViewport);
+  const QString nodes    = QLatin1String(shortcut_scope::kEditorNodes);
+  const QString reset    = QLatin1String(shortcut_id::kEditorResetView);
+  EXPECT_EQ(registry->commandIdForKey(viewport, Qt::Key_0, Qt::ControlModifier), reset);
+  EXPECT_EQ(registry->commandIdForKey(viewport, Qt::Key_Home, Qt::NoModifier), reset);
+  EXPECT_EQ(registry->commandIdForKey(viewport, Qt::Key_1, Qt::ControlModifier),
+            QLatin1String(shortcut_id::kEditorZoomToActualPixels));
+  EXPECT_EQ(registry->commandIdForKey(nodes, Qt::Key_0, Qt::ControlModifier),
+            QLatin1String(shortcut_id::kNodesFitGraph));
+  EXPECT_EQ(registry->commandIdForKey(nodes, Qt::Key_Home, Qt::NoModifier),
+            QLatin1String(shortcut_id::kNodesSelectDevelop));
+  EXPECT_TRUE(registry->commandIdForKey(viewport, Qt::Key_0, Qt::NoModifier).isEmpty());
+  EXPECT_TRUE(registry->commandIdForKey(viewport, Qt::Key_1, Qt::NoModifier).isEmpty());
+}
+
+TEST_F(ShortcutRegistryTest, NewPhotoDefaultsReportConflictingSavedCustomBinding) {
+  const QString file = QStringLiteral("rating-conflict.ini");
+  const QString undo = QLatin1String(shortcut_id::kEditorUndo);
+  const QStringList saved{QStringLiteral("chord:1")};
+  WriteSavedOverride(file, undo, QStringLiteral("custom"), saved);
+  auto registry = MakeRegistry(file);
+  ASSERT_TRUE(registry->FinalizeRegistration().isEmpty());
+  EXPECT_FALSE(Assigned(*registry, undo));
+  EXPECT_FALSE(RowError(*registry, undo).isEmpty());
+  EXPECT_TRUE(registry->matches(QLatin1String(shortcut_id::kPhotoRatingSet1), Qt::Key_1, Qt::NoModifier));
+  QSettings settings(SettingsPath(file), QSettings::IniFormat);
+  EXPECT_EQ(settings.value(QStringLiteral("keyboardShortcuts/v1/editor.undo/bindings")).toStringList(),
+            saved);
+}
+
 TEST_F(ShortcutRegistryTest, OverlappingScopesRejectDuplicateBindingWithoutChangingPriorValue) {
   auto registry = MakeRegistry();
   ASSERT_TRUE(registry->FinalizeRegistration().isEmpty());

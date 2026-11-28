@@ -10756,4 +10756,43 @@ CLIP / SigLIP 这类视觉语言模型会把图像和文字映射到同一语义
         <translation>选择要导入的文件夹</translation>
     </message>
 </context>
+<context>
+    <name>ShortcutRegistry</name>
+    <message>
+        <source>Photo Ratings</source>
+        <translation>照片评分</translation>
+    </message>
+    <message>
+        <source>Clear rating</source>
+        <translation>清除评分</translation>
+    </message>
+    <message>
+        <source>Set rating to 1 star</source>
+        <translation>设为 1 星</translation>
+    </message>
+    <message>
+        <source>Set rating to 2 stars</source>
+        <translation>设为 2 星</translation>
+    </message>
+    <message>
+        <source>Set rating to 3 stars</source>
+        <translation>设为 3 星</translation>
+    </message>
+    <message>
+        <source>Set rating to 4 stars</source>
+        <translation>设为 4 星</translation>
+    </message>
+    <message>
+        <source>Set rating to 5 stars</source>
+        <translation>设为 5 星</translation>
+    </message>
+    <message>
+        <source>Zoom to actual pixels</source>
+        <translation>缩放至实际像素大小</translation>
+    </message>
+    <message>
+        <source>Reset view</source>
+        <translation>重置视图</translation>
+    </message>
+</context>
 </TS>

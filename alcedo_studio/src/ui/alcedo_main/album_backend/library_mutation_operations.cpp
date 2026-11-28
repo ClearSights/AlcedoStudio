@@ -77,6 +77,36 @@ auto LibraryMutationOperations::RateTargetsAsUser(const QVariantList& targets, i
   return RateTargets(targets, rating);
 }
 
+auto LibraryMutationOperations::RateSelectionAsUser(int rating) -> QVariantMap {
+  const QString workspace = workspace_router_ ? workspace_router_->workspace() : QString{};
+  if (workspace != QLatin1String("library") && workspace != QLatin1String("editor")) {
+    return RateTargetsAsUser({}, rating);
+  }
+
+  QVariantList targets = selection_ ? selection_->SelectedItems() : QVariantList{};
+  if (targets.isEmpty() && workspace == QLatin1String("editor") && editor_session_ &&
+      editor_session_->has_image() && editor_session_->element_id() != 0 &&
+      editor_session_->image_id() != 0) {
+    targets.append(QVariantMap{{QStringLiteral("elementId"), editor_session_->element_id()},
+                               {QStringLiteral("imageId"), editor_session_->image_id()}});
+  }
+  if (targets.size() != 1) {
+    return RateTargetsAsUser(targets, rating);
+  }
+
+  const uint element_id = targets.front().toMap().value(QStringLiteral("elementId")).toUInt();
+  if (interaction_policy_) {
+    const QVariantMap permission = interaction_policy_->EvaluateEditImageRating(element_id);
+    if (!permission.value(QStringLiteral("allowed")).toBool()) {
+      return QVariantMap{{QStringLiteral("success"), false},
+                         {QStringLiteral("message"), permission.value(QStringLiteral("reason"))}};
+    }
+  }
+  QVariantMap result = RateTargetsAsUser(targets, rating);
+  result.insert(QStringLiteral("elementId"), element_id);
+  return result;
+}
+
 auto LibraryMutationOperations::SetColorLabelOfTargets(const QVariantList& targets, int code,
                                                        bool on) -> QVariantMap {
   if (images_ == nullptr || targets.isEmpty()) {

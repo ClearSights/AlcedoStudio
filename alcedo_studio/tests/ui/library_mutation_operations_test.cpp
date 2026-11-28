@@ -21,6 +21,7 @@
 
 #include "app/editor_session_service.hpp"
 #include "app/editor_session_types.hpp"
+#include "ui/album_backend_populated_project_fixture.hpp"
 #include "ui/album_backend_test_fixture.hpp"
 #include "ui/saved_project_invariants.hpp"
 
@@ -125,6 +126,18 @@ auto DeleteAndWait(LibraryMutationOperations& operations, const QVariantList& ta
     return {};
   }
   return finished.takeFirst().at(0).toMap();
+}
+
+void SelectPhoto(ApplicationModuleHost& host, const PopulatedProject::ImageKey& photo) {
+  host.library()->selection()->SetImageSelected(photo.file_id_, photo.image_id_, QString(), false,
+                                                 true);
+}
+
+void ExpectStoredRating(ApplicationModuleHost& host, const PopulatedProject::ImageKey& photo,
+                        int rating) {
+  const QVariantMap result = host.images()->GetImageRating(photo.file_id_, photo.image_id_);
+  EXPECT_TRUE(result.value("success").toBool());
+  EXPECT_EQ(result.value("rating").toInt(), rating);
 }
 
 class LibraryMutationOperationsTest : public ApplicationModuleHostTestFixture {
@@ -240,6 +253,173 @@ TEST_F(LibraryMutationOperationsTest, SingleRatingUsesDirectPathAndRejectsOutOfR
   EXPECT_TRUE(result.value(QStringLiteral("success")).toBool())
       << result.value(QStringLiteral("message")).toString().toStdString();
   EXPECT_EQ(result.value(QStringLiteral("rating")).toInt(), 2);
+}
+
+TEST_F(LibraryMutationOperationsTest, RatingUsesSharedSelectionBeforeOpenEditorPhoto) {
+  const auto project = CreatePopulatedPackedProject(temp_dir_, {}, 3);
+  ASSERT_TRUE(project.has_value());
+  ApplicationModuleHost host;
+  ASSERT_TRUE(LoadPackedProject(host, project->packed_path_));
+  const auto& photos = project->images_;
+  ImmediateSessionBackend backend;
+  EditorSessionController editor(&backend);
+  WorkspaceRouter router(&editor);
+  router.OpenEditor(photos[2].file_id_, photos[2].image_id_);
+  ASSERT_TRUE(editor.has_image());
+  LibraryMutationOperations operations(host.images(), host.library()->selection(), host.folders(),
+                                       &editor, &router);
+  SelectPhoto(host, photos[0]);
+  SelectPhoto(host, photos[1]);
+  QSignalSpy finished(host.images(), &ImageController::ImageRatingsFinished);
+  ASSERT_TRUE(operations.RateSelectionAsUser(5).value("started").toBool());
+  ASSERT_TRUE(WaitForSignal(finished, 60000));
+  EXPECT_TRUE(finished.first().first().toMap().value("success").toBool());
+  ExpectStoredRating(host, photos[0], 5);
+  ExpectStoredRating(host, photos[1], 5);
+  ExpectStoredRating(host, photos[2], 0);
+  EXPECT_EQ(editor.element_id(), photos[2].file_id_);
+  EXPECT_EQ(host.library()->selection()->SelectedCount(), 2);
+}
+
+TEST_F(LibraryMutationOperationsTest, EmptySelectionRatesOpenPhotoOnlyInEditor) {
+  const auto project =
+      CreatePopulatedPackedProject(temp_dir_, {}, 2, {{.rating_ = 1}, {.rating_ = 5}});
+  ASSERT_TRUE(project.has_value());
+  ApplicationModuleHost host;
+  ASSERT_TRUE(LoadPackedProject(host, project->packed_path_));
+  const auto& photo = project->images_.front();
+  ImmediateSessionBackend backend;
+  EditorSessionController editor(&backend);
+  WorkspaceRouter router(&editor);
+  router.OpenEditor(photo.file_id_, photo.image_id_);
+  ASSERT_TRUE(editor.has_image());
+  LibraryMutationOperations operations(host.images(), host.library()->selection(), host.folders(),
+                                       &editor, &router);
+  host.stats()->ToggleStatsFilter(QStringLiteral("rating"), QStringLiteral("5"));
+  ASSERT_TRUE(WaitForLibraryQuery(host));
+  ASSERT_EQ(host.library()->Thumbnails().size(), 1);
+  EXPECT_NE(host.library()->Thumbnails().front().toMap().value("elementId").toUInt(), photo.file_id_);
+
+  const QVariantMap result = operations.RateSelectionAsUser(3);
+  EXPECT_TRUE(result.value("success").toBool());
+  EXPECT_EQ(result.value("elementId").toUInt(), photo.file_id_);
+  ExpectStoredRating(host, photo, 3);
+
+  router.OpenLibrary();
+  EXPECT_FALSE(operations.RateSelectionAsUser(4).value("success").toBool());
+  router.OpenEditor(0, 0);
+  EXPECT_FALSE(operations.RateSelectionAsUser(4).value("success").toBool());
+  ExpectStoredRating(host, photo, 3);
+}
+
+TEST_F(LibraryMutationOperationsTest, ClearingRatingsWritesZeroForEverySelectedPhoto) {
+  const auto project =
+      CreatePopulatedPackedProject(temp_dir_, {}, 3, {{.rating_ = 5}, {.rating_ = 5}, {.rating_ = 2}});
+  ASSERT_TRUE(project.has_value());
+  const auto& photos = project->images_;
+  {
+    ApplicationModuleHost host;
+    ASSERT_TRUE(LoadPackedProject(host, project->packed_path_));
+    host.stats()->ToggleStatsFilter(QStringLiteral("rating"), QStringLiteral("5"));
+    ASSERT_TRUE(WaitForLibraryQuery(host));
+    SelectPhoto(host, photos[0]);
+    SelectPhoto(host, photos[1]);
+    QSignalSpy finished(host.images(), &ImageController::ImageRatingsFinished);
+    ASSERT_TRUE(host.library_mutations()->RateSelectionAsUser(0).value("started").toBool());
+    ASSERT_TRUE(WaitForSignal(finished, 60000));
+    ASSERT_TRUE(finished.first().first().toMap().value("success").toBool());
+    ASSERT_TRUE(WaitForLibraryQuery(host));
+    EXPECT_EQ(host.library()->selection()->SelectedCount(), 0);
+    EXPECT_TRUE(host.library()->Thumbnails().isEmpty());
+  }
+  ApplicationModuleHost reopened;
+  ASSERT_TRUE(LoadPackedProject(reopened, project->packed_path_));
+  ExpectStoredRating(reopened, photos[0], 0);
+  ExpectStoredRating(reopened, photos[1], 0);
+  ExpectStoredRating(reopened, photos[2], 2);
+}
+
+TEST_F(LibraryMutationOperationsTest, RatingSelectionIncludesAnUnloadedLibraryPage) {
+  const auto project = CreatePopulatedPackedProject(temp_dir_, {}, 121);
+  ASSERT_TRUE(project.has_value());
+  ApplicationModuleHost host;
+  ASSERT_TRUE(LoadPackedProject(host, project->packed_path_));
+  host.search()->ApplyFuzzySearch(QStringLiteral("album"));
+  ASSERT_TRUE(WaitForLibraryQuery(host));
+  ASSERT_EQ(host.library()->TotalCount(), 121);
+  const QVariantList loaded = host.library()->Thumbnails();
+  ASSERT_EQ(loaded.size(), 120);
+  const auto unloaded = std::find_if(project->images_.begin(), project->images_.end(),
+                                     [&loaded](const PopulatedProject::ImageKey& candidate) {
+    return std::none_of(loaded.begin(), loaded.end(), [&candidate](const QVariant& row) {
+      return row.toMap().value("elementId").toUInt() == candidate.file_id_;
+    });
+  });
+  ASSERT_NE(unloaded, project->images_.end());
+  QSignalSpy selected(host.library()->selection(), &LibrarySelection::SelectionChanged);
+  host.library()->SelectAllInCurrentView();
+  ASSERT_TRUE(WaitForSignal(selected, 15000));
+  ASSERT_EQ(host.library()->selection()->SelectedCount(), 121);
+  EXPECT_TRUE(host.library()->selection()->IsSelected(unloaded->file_id_));
+
+  QSignalSpy finished(host.images(), &ImageController::ImageRatingsFinished);
+  ASSERT_TRUE(host.library_mutations()->RateSelectionAsUser(3).value("started").toBool());
+  ASSERT_TRUE(WaitForSignal(finished, 60000));
+  EXPECT_TRUE(finished.first().first().toMap().value("success").toBool());
+  EXPECT_EQ(finished.first().first().toMap().value("ratedCount").toInt(), 121);
+  ExpectStoredRating(host, *unloaded, 3);
+}
+
+TEST_F(LibraryMutationOperationsTest, RatingRefusesLockedTargetWithoutChangingOtherRatings) {
+  const auto project = CreatePopulatedPackedProject(temp_dir_, {}, 2);
+  ASSERT_TRUE(project.has_value());
+  ApplicationModuleHost host;
+  ASSERT_TRUE(LoadPackedProject(host, project->packed_path_));
+  const auto& photos = project->images_;
+  const QString reason = QStringLiteral("This photo is being analyzed.");
+  BackgroundTaskSnapshot task;
+  task.kind_ = BackgroundTaskKind::AdjustmentPaste;
+  task.state_ = BackgroundTaskState::Running;
+  task.locks_ = {{InteractionCapability::EditImageRating, photos[0].file_id_, reason}};
+  const QString task_id = host.background_tasks()->RegisterTask(task);
+  SelectPhoto(host, photos[0]);
+  const QVariantMap single = host.library_mutations()->RateSelectionAsUser(4);
+  EXPECT_FALSE(single.value("success").toBool());
+  EXPECT_EQ(single.value("message").toString(), reason);
+  SelectPhoto(host, photos[1]);
+  const QVariantMap batch = host.library_mutations()->RateSelectionAsUser(4);
+  EXPECT_FALSE(batch.value("started").toBool());
+  EXPECT_EQ(batch.value("message").toString(), reason);
+  host.background_tasks()->FinishTask(task_id, BackgroundTaskState::Succeeded, QString());
+  ExpectStoredRating(host, photos[0], 0);
+  ExpectStoredRating(host, photos[1], 0);
+}
+
+TEST_F(LibraryMutationOperationsTest, BusyRatingRejectsSecondRequestWithoutStartingAnotherWrite) {
+  const auto project = CreatePopulatedPackedProject(temp_dir_, {}, 2);
+  ASSERT_TRUE(project.has_value());
+  ApplicationModuleHost host;
+  ASSERT_TRUE(LoadPackedProject(host, project->packed_path_));
+  const auto& photos = project->images_;
+  SelectPhoto(host, photos[0]);
+  SelectPhoto(host, photos[1]);
+  QSignalSpy finished(host.images(), &ImageController::ImageRatingsFinished);
+  ASSERT_TRUE(host.library_mutations()->RateSelectionAsUser(4).value("started").toBool());
+  const QVariantMap batch = host.library_mutations()->RateSelectionAsUser(2);
+  EXPECT_FALSE(batch.value("started").toBool());
+  EXPECT_FALSE(batch.value("message").toString().isEmpty());
+
+  host.library()->selection()->SetImageSelected(photos[1].file_id_, photos[1].image_id_, QString(),
+                                                 false, false);
+  const QVariantMap single = host.library_mutations()->RateSelectionAsUser(1);
+  EXPECT_FALSE(single.value("success").toBool());
+  EXPECT_FALSE(single.value("message").toString().isEmpty());
+  ASSERT_TRUE(WaitForSignal(finished, 60000));
+  EXPECT_TRUE(finished.first().first().toMap().value("success").toBool());
+  ProcessEvents(50);
+  EXPECT_EQ(finished.count(), 1);
+  ExpectStoredRating(host, photos[0], 4);
+  ExpectStoredRating(host, photos[1], 4);
 }
 
 // Issue 957: a menu on a selected image acts on the whole selection, from the Library grid and

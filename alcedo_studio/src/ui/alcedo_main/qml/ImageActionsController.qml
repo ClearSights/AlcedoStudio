@@ -573,6 +573,17 @@ Item {
         }
     }
 
+    function requestSetSelectionRating(rating) {
+        const result = appModules.libraryMutations.RateSelectionAsUser(rating)
+        if (result.success === true && result.batch === false
+                && Number(result.elementId) === Number(root.focusedImageTarget.elementId || 0)) {
+            root.refreshFocusedImageInspection()
+        }
+        if (result.message) {
+            host.showSnackbar(result.message)
+        }
+    }
+
     function requestSetImageRating(rating) {
         if (!root.pendingRatingTarget || Number(root.pendingRatingTarget.imageId) <= 0) {
             return

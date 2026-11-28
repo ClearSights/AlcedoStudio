@@ -204,7 +204,8 @@ auto IsEditorLocalScope(const ShortcutScope& scope) -> bool {
   return scope == QLatin1String(shortcut_scope::kEditorFilmstrip) ||
          scope == QLatin1String(shortcut_scope::kEditorVersions) ||
          scope == QLatin1String(shortcut_scope::kEditorLut) ||
-         scope == QLatin1String(shortcut_scope::kEditorNodes);
+         scope == QLatin1String(shortcut_scope::kEditorNodes) ||
+         scope == QLatin1String(shortcut_scope::kEditorViewport);
 }
 
 /// Whether two scopes can own the active input path at the same time. The
@@ -230,6 +231,12 @@ auto ScopesCanCoactivate(const ShortcutScope& first, const ShortcutScope& second
   const auto pair_with = [&is_mode](const ShortcutScope& scope) {
     return IsEditorLocalScope(scope) || is_mode(scope);
   };
+  const QString photo_ratings = QLatin1String(shortcut_scope::kWorkspacePhotoRatings);
+  if (first == photo_ratings || second == photo_ratings) {
+    const ShortcutScope& other = first == photo_ratings ? second : first;
+    return other == editor || other == QLatin1String(shortcut_scope::kWorkspaceLibrary) ||
+           pair_with(other);
+  }
   if (first == editor && pair_with(second)) {
     return true;
   }
@@ -245,6 +252,12 @@ auto ScopesCanCoactivate(const ShortcutScope& first, const ShortcutScope& second
 auto MayShareScopes(const ShortcutScope& first, const ShortcutScope& second) -> bool {
   if (!ScopesCanCoactivate(first, second)) {
     return true;
+  }
+  const QLatin1String photo_ratings(shortcut_scope::kWorkspacePhotoRatings);
+  const QLatin1String viewport(shortcut_scope::kEditorViewport);
+  if (first == photo_ratings || second == photo_ratings || first == viewport || second == viewport) {
+    // These commands stay active alongside Editor mode commands when focus permits.
+    return false;
   }
   return IsExclusiveScope(first) != IsExclusiveScope(second);
 }

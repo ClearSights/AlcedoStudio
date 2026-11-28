@@ -36,6 +36,13 @@ Item {
     property alias globalSearchDialog: globalSearchDialogObj
     property alias backgroundTasksDialog: backgroundTasksDialogObj
 
+    readonly property bool photoShortcutInputBlocked: root.anyDialogOpened()
+                                                       || globalSearchDialogObj.visible
+                                                       || imageContextMenuObj.visible
+                                                       || importDialogObj.visible
+                                                       || lutImportDialogObj.visible
+                                                       || locatePhotoDialogObj.visible
+
     // Every extension of the import categories, read from C++
     // (ImportExportHandler::SupportedImportPatterns). The dialog filter ignores case on
     // Windows and macOS.

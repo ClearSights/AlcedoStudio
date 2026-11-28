@@ -1,7 +1,7 @@
 # Photo Rating Shortcuts
 
 - Date 2026-11-28
-- Status planned
+- Status complete on Windows
 - Source audit at upstream `main` commit `99af8b992ff684d9f956abb7e4633f32cb9e4a72`
 - Related work [Library batch rating](https://github.com/zidage/AlcedoStudio/pull/256),
   [Library rating operations](https://github.com/zidage/AlcedoStudio/pull/340),
@@ -160,7 +160,7 @@ Digit key -> RegisteredShortcut -> ImageActionsController
 
 | Result | Main modules | Dependency | Expected diff | Status |
 | --- | --- | --- | ---: | --- |
-| Rate photos with digits and retain viewport shortcuts in their own scope | Shortcut registry, QML shell and viewport, Library rating operations | Current selection, Editor session, rating persistence | 420–750 lines | Planned |
+| Rate photos with digits and retain viewport shortcuts in their own scope | Shortcut registry, QML shell and viewport, Library rating operations | Current selection, Editor session, rating persistence | 420–750 lines | Complete on Windows |
 
 The estimate includes source, translations, test registration, tests, and the
 completion record. The viewport changes belong in the same phase as the rating
@@ -194,8 +194,7 @@ defaults because the bare viewport digits move to the rating commands.
    and viewport in `alcedo_studio/src/ui/alcedo_main/DESIGN.md`. Keep the
    visual design descriptions as applicable.
 8. Implement the checks below. Use current owner fixtures and focused QML
-   tests. Register the proposed QML test in
-   `alcedo_studio/tests/ui/CMakeLists.txt` with the existing UI test helpers.
+   tests. Add the photo-rating cases to the `RegisteredShortcutQmlTest` executable.
 
 ### Test and evidence requirements
 
@@ -203,7 +202,7 @@ defaults because the bare viewport digits move to the rating commands.
 | --- | --- |
 | `ShortcutRegistryTest` | `PhotoRatingDefaultsShareOneSettingsBindingPerValue` checks six visible bindings, both workspace conflicts, coactive Editor mode conflicts, and rebind or reset. `ViewportResetAndNodesFitMayShareCtrlZero` checks the viewport and Nodes scopes and both reset defaults. `NewPhotoDefaultsReportConflictingSavedCustomBinding` checks a saved custom collision and verifies that the saved setting remains intact. |
 | `LibraryMutationOperationsTest` | `RatingUsesSharedSelectionBeforeOpenEditorPhoto` rates a selection that excludes the open photo. `EmptySelectionRatesOpenPhotoOnlyInEditor` checks the open photo outside the result, the Library with no selection, and the Editor with no targets. `ClearingRatingsWritesZeroForEverySelectedPhoto` reopens the project and checks zero on each target and the original rating on an unselected photo. `RatingRefusesLockedTargetWithoutChangingOtherRatings` checks both a single locked target and a selection containing one locked target. |
-| `PhotoRatingShortcutQmlTest` (proposed) | `DigitShortcutsSetAbsoluteRatingsOnceInBothWorkspaces` uses the production component and checks the values 0 through 5, repeat behavior, and scope switching. `EditableFocusAndOpenDialogsKeepDigits` checks the shortcut against text and numeric entry, search, dialogs, and shortcut recording. `BusyRatingReportsReasonWithoutResubmitting` checks one refusal and no automatic submission after the busy state ends. |
+| `PhotoRatingShortcutQmlTest` cases in `RegisteredShortcutQmlTest` | `DigitShortcutsSetAbsoluteRatingsOnceInBothWorkspaces` uses the production component and checks the values 0 through 5, repeat behavior, and scope switching. `EditableFocusAndOpenDialogsKeepDigits` checks the shortcut against text and numeric entry, search, dialogs, and shortcut recording. `BusyRatingReportsReasonWithoutResubmitting` checks one refusal and no automatic submission after the busy state ends. |
 | Existing rating and shortcut tests | Run `AlbumBackendRatingTest`, `RegisteredShortcutQmlTest`, `ShortcutSettingsQmlTest`, `EditorFilmstripQmlTest`, and `ImageContextMenuTargetsQmlTest`. Verify batch publication, project persistence, settings behavior, and menu targets. |
 | Manual app verification | In a real window, rate a Library multi-selection and an Editor filmstrip selection that excludes the open photo. Clear the ratings with `0` and reopen the project. Check the keypad when available. Check the viewport and Nodes actions with `Ctrl+0` and `Home`, and check actual pixels with `Ctrl+1`. Rebind a rating via Settings and confirm the new key works in both views. Repeat in a real text or numeric field and with the Search Palette open. |
 
@@ -224,47 +223,99 @@ and the platform's required dependencies. Keep logs in
 
 ```powershell
 cmd /c scripts\msvc_env.cmd --preset win_debug
-cmd /c scripts\msvc_env.cmd --build --preset win_debug --parallel 4 --target alcedo_main ShortcutRegistryTest RegisteredShortcutQmlTest ShortcutSettingsQmlTest LibraryMutationOperationsTest AlbumBackendRatingTest EditorFilmstripQmlTest ImageContextMenuTargetsQmlTest PhotoRatingShortcutQmlTest
+cmd /c scripts\msvc_env.cmd --build --preset win_debug --parallel 4 --target alcedo_main ShortcutRegistryTest RegisteredShortcutQmlTest ShortcutSettingsQmlTest LibraryMutationOperationsTest AlbumBackendRatingTest EditorFilmstripQmlTest ImageContextMenuTargetsQmlTest
 $env:PATH = "$(Resolve-Path 'build/debug/vcpkg_installed/x64-windows/debug/bin');$env:PATH"
-$ratingChecks = '^(ShortcutRegistryTest|RegisteredShortcutQmlTest|ShortcutSettingsQmlTest|LibraryMutationOperationsTest|AlbumBackendRatingTest|EditorFilmstripQmlTest|ImageContextMenuTargetsQmlTest|PhotoRatingShortcutQmlTest)\.'
+$ratingChecks = '^(ShortcutRegistryTest|RegisteredShortcutQmlTest|ShortcutSettingsQmlTest|LibraryMutationOperationsTest|AlbumBackendRatingTest|EditorFilmstripQmlTest|ImageContextMenuTargetsQmlTest)\.'
 ctest --test-dir build/debug -N -R $ratingChecks
 ctest --test-dir build/debug -j 1 --output-on-failure -R $ratingChecks
 ```
 
 ```sh
 cmake --preset macos_debug -DALCEDO_BUILD_TESTS=ON
-cmake --build --preset macos_debug --parallel 4 --target alcedo_main ShortcutRegistryTest RegisteredShortcutQmlTest ShortcutSettingsQmlTest LibraryMutationOperationsTest AlbumBackendRatingTest EditorFilmstripQmlTest ImageContextMenuTargetsQmlTest PhotoRatingShortcutQmlTest
-rating_checks='^(ShortcutRegistryTest|RegisteredShortcutQmlTest|ShortcutSettingsQmlTest|LibraryMutationOperationsTest|AlbumBackendRatingTest|EditorFilmstripQmlTest|ImageContextMenuTargetsQmlTest|PhotoRatingShortcutQmlTest)\.'
+cmake --build --preset macos_debug --parallel 4 --target alcedo_main ShortcutRegistryTest RegisteredShortcutQmlTest ShortcutSettingsQmlTest LibraryMutationOperationsTest AlbumBackendRatingTest EditorFilmstripQmlTest ImageContextMenuTargetsQmlTest
+rating_checks='^(ShortcutRegistryTest|RegisteredShortcutQmlTest|ShortcutSettingsQmlTest|LibraryMutationOperationsTest|AlbumBackendRatingTest|EditorFilmstripQmlTest|ImageContextMenuTargetsQmlTest)\.'
 ctest --test-dir build/macos-debug -N -R "$rating_checks"
 ctest --test-dir build/macos-debug -j 1 --output-on-failure -R "$rating_checks"
 ```
 
-The build commands include the proposed QML target after registration.
 Record each platform separately. A test that does not receive its synthetic
 key event needs real-window evidence for that path. Record that gap as
 unverified until the manual check runs. Run only the named tests.
 
 ### Exit criteria
 
-- [ ] All six default rating keys reach the correct photos in both workspaces.
-- [ ] Rating respects input ownership and displays existing save or policy results.
-- [ ] The command applies to offscreen and unloaded rows in the accepted selection.
-- [ ] The new viewport bindings and existing Nodes bindings act only in their own focus scopes.
-- [ ] Stored ratings survive reopen, including a rating cleared with `0`.
-- [ ] The completion record identifies exercised paths, results, and unavailable checks.
+- [x] All six default rating keys reach the correct photos in both workspaces.
+- [x] Rating respects input ownership and displays existing save or policy results.
+- [x] The command applies to offscreen and unloaded rows in the accepted selection.
+- [x] The new viewport bindings and existing Nodes bindings act only in their own focus scopes.
+- [x] Stored ratings survive reopen, including a rating cleared with `0`.
+- [x] The completion record identifies exercised paths, results, and unavailable checks.
 
-### Completion record
+### Completion record | 2026-11-28
+
+**Status**
+
+Complete on Windows. Implementation follows design commit `2e3eb656e` on
+`feature/photo-rating-shortcuts`. macOS remains untested.
+
+**Implementation decisions**
+
+The three photo-rating QML cases run in the existing
+`RegisteredShortcutQmlTest` executable. This reuses its Qt runtime setup.
+Main also reads the Editor's locked-node mask dialog state. This dialog
+belongs to the adjustment header and sits outside the application dialog owner.
+
+**Primary success path**
 
 ```text
-Phase / date / status:
-Source revision and branch:
-Actual changed modules:
-Implemented behavior:
-Primary success call chain:
-Primary failure and restore call chain:
-Build and test commands with exit codes:
-Discovered / passed / failed / skipped counts:
-Manual verification by platform:
-Evidence path:
-Remaining defects or unavailable checks:
+0–5 -> RegisteredShortcut -> ImageActionsController::requestSetSelectionRating
+  -> LibraryMutationOperations::RateSelectionAsUser -> selection or open Editor photo
+  -> RateTargetsAsUser -> SetImageRating or StartSetImageRatings
+  -> storage and project package -> Library and filmstrip stars
 ```
+
+The viewport's registered commands require viewport focus. They call
+`zoomToActualPixels()` or `resetView()` on the existing interaction controller.
+
+**Primary failure and restore path**
+
+```text
+Rating lock or active batch -> rating owner refuses -> ImageActionsController shows reason
+Batch write failure -> ImageController::FinishRatingBatch restores failed view rows
+  -> imageRatingsFinished -> Inspector refresh and snackbar
+```
+
+**Windows verification**
+
+MSVC 14.44, CUDA 12.8, Qt 6.12.0, and DuckDB 1.5.6.
+The phase's `win_debug` build linked `alcedo_main` and the seven named test
+executables. The build used `--parallel 8` and exited 0. The corresponding
+`ctest -N` command discovered 89 tests. The targeted CTest run took 139.66
+seconds and exited 8.
+
+| Suite | Passed | Failed | Skipped |
+| --- | ---: | ---: | ---: |
+| `ShortcutRegistryTest` | 21 | 0 | 0 |
+| `RegisteredShortcutQmlTest` | 8 | 0 | 0 |
+| `ShortcutSettingsQmlTest` | 16 | 1 | 0 |
+| `LibraryMutationOperationsTest` | 11 | 0 | 0 |
+| `AlbumBackendRatingTest` | 10 | 0 | 0 |
+| `EditorFilmstripQmlTest` | 19 | 0 | 0 |
+| `ImageContextMenuTargetsQmlTest` | 3 | 0 | 0 |
+| Total | 88 | 1 | 0 |
+
+All new R1 cases passed. The owner tests cleared and reopened two ratings,
+rated an unloaded row in a 121-photo selection, and refused single and batch
+requests while ratings were locked. The only failure was
+`KeyboardCategoryIsReachableAndAboutStillOpens`. Its assertion looks up
+`settingsNavItem:11`, while the unchanged Settings dialog assigns About
+category 10. This matches [upstream issue #978](https://github.com/zidage/AlcedoStudio/issues/978).
+
+The registry tests verified the viewport and Nodes binding scopes. The
+packaged offscreen host stopped before QML startup because the Windows
+offscreen plugin could not create the OpenGL context required by OpenCL.
+
+The user confirmed that the manual test passed on the staged Windows
+Release build of Alcedo Studio 0.3.7 on 2026-11-28.
+
+Temporary evidence was collected under `build/tmp/photo_rating_shortcuts/`.

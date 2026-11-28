@@ -36,6 +36,22 @@ void AddSpec(ShortcutRegistry* registry, const char* id, const char* group, cons
   registry->Register(std::move(spec));
 }
 
+void RegisterPhotoRatingShortcuts(ShortcutRegistry* registry) {
+  if (registry == nullptr) {
+    return;
+  }
+  const auto add = [registry](const char* id, const char* label, Qt::Key key) {
+    AddSpec(registry, id, "Photo Ratings", label, {Chord(key)}, shortcut_scope::kWorkspacePhotoRatings,
+            ShortcutInputKind::KeyChord, false);
+  };
+  add(shortcut_id::kPhotoRatingClear, "Clear rating", Qt::Key_0);
+  add(shortcut_id::kPhotoRatingSet1, "Set rating to 1 star", Qt::Key_1);
+  add(shortcut_id::kPhotoRatingSet2, "Set rating to 2 stars", Qt::Key_2);
+  add(shortcut_id::kPhotoRatingSet3, "Set rating to 3 stars", Qt::Key_3);
+  add(shortcut_id::kPhotoRatingSet4, "Set rating to 4 stars", Qt::Key_4);
+  add(shortcut_id::kPhotoRatingSet5, "Set rating to 5 stars", Qt::Key_5);
+}
+
 }  // namespace
 
 void RegisterLibraryShortcuts(ShortcutRegistry* registry) {
@@ -67,6 +83,12 @@ void RegisterEditorShortcuts(ShortcutRegistry* registry) {
   add(shortcut_id::kEditorRedo, "Redo", {Chord(Qt::Key_R, Qt::ControlModifier)});
   add(shortcut_id::kEditorSaveCurrentImage, "Save current image",
       {Chord(Qt::Key_S, Qt::ControlModifier)});
+  AddSpec(registry, shortcut_id::kEditorZoomToActualPixels, "Editor", "Zoom to actual pixels",
+          {Chord(Qt::Key_1, Qt::ControlModifier)}, shortcut_scope::kEditorViewport,
+          ShortcutInputKind::KeyChord, false);
+  AddSpec(registry, shortcut_id::kEditorResetView, "Editor", "Reset view",
+          {Chord(Qt::Key_Home), Chord(Qt::Key_0, Qt::ControlModifier)},
+          shortcut_scope::kEditorViewport, ShortcutInputKind::KeyChord, false);
 }
 
 void RegisterFilmstripShortcuts(ShortcutRegistry* registry) {
@@ -166,6 +188,7 @@ void RegisterNodesPanelShortcuts(ShortcutRegistry* registry) {
 void RegisterBuiltinShortcuts(ShortcutRegistry* registry) {
   RegisterLibraryShortcuts(registry);
   RegisterEditorShortcuts(registry);
+  RegisterPhotoRatingShortcuts(registry);
   RegisterFilmstripShortcuts(registry);
   RegisterVersionsShortcuts(registry);
   RegisterLutShortcuts(registry);

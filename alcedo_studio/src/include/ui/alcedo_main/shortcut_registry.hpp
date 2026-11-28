@@ -33,8 +33,10 @@ inline constexpr const char* kEditorFilmstrip  = "editor.filmstrip";
 inline constexpr const char* kEditorVersions   = "editor.versions";
 inline constexpr const char* kEditorLut        = "editor.lut";
 inline constexpr const char* kEditorNodes      = "editor.nodes";
+inline constexpr const char* kEditorViewport   = "editor.viewport";
 inline constexpr const char* kWorkspaceEditor  = "workspace.editor";
 inline constexpr const char* kWorkspaceLibrary = "workspace.library";
+inline constexpr const char* kWorkspacePhotoRatings = "workspace.photoRatings";
 inline constexpr const char* kApplication      = "application";
 }  // namespace shortcut_scope
 
@@ -47,6 +49,15 @@ inline constexpr const char* kLibrarySaveProject            = "library.saveProje
 inline constexpr const char* kEditorUndo                    = "editor.undo";
 inline constexpr const char* kEditorRedo                    = "editor.redo";
 inline constexpr const char* kEditorSaveCurrentImage        = "editor.saveCurrentImage";
+inline constexpr const char* kEditorZoomToActualPixels       = "editor.zoomToActualPixels";
+inline constexpr const char* kEditorResetView               = "editor.resetView";
+
+inline constexpr const char* kPhotoRatingClear               = "photoRating.clear";
+inline constexpr const char* kPhotoRatingSet1                = "photoRating.set1";
+inline constexpr const char* kPhotoRatingSet2                = "photoRating.set2";
+inline constexpr const char* kPhotoRatingSet3                = "photoRating.set3";
+inline constexpr const char* kPhotoRatingSet4                = "photoRating.set4";
+inline constexpr const char* kPhotoRatingSet5                = "photoRating.set5";
 
 inline constexpr const char* kFilmstripPreviousImage        = "filmstrip.previousImage";
 inline constexpr const char* kFilmstripNextImage            = "filmstrip.nextImage";

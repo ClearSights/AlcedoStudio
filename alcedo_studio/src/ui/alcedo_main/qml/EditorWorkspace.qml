@@ -21,6 +21,7 @@ Item {
     // True while the workspace width follows the collections sidebar fold (WorkspaceHost). The
     // viewport keeps its size and scales the presented frame, and renders once at the final size.
     property bool geometryAnimating: false
+    readonly property bool lockedNodeMaskPromptVisible: adjustmentStack.lockedNodeMaskPromptVisible
 
     readonly property color colPanel: theme ? theme.colGlassPanel : "#1C1C1D"
     readonly property color colStroke: theme ? theme.colGlassStroke : Qt.rgba(1, 1, 1, 0.08)
@@ -764,7 +765,7 @@ Item {
                         }
                     }
 
-                    // Phase 5D: TapHandler.gesturePolicy uses DragThreshold so a left-button drag
+                    // DragThreshold allows a left-button drag
                     // (now owned by viewportPanDrag above) cancels the tap instead
                     // of being held as a would-be double-tap. A clean double-click
                     // (two clicks without a drag) still fires onDoubleTapped and
@@ -858,14 +859,7 @@ Item {
                             if (!root.viewportInputEnabled) {
                                 return
                             }
-                            if (event.key === Qt.Key_0 || event.key === Qt.Key_Home) {
-                                editorInteraction.resetView()
-                                event.accepted = true
-                            } else if (event.key === Qt.Key_1) {
-                                // 1:1 (actual pixels). Pro-editor convention.
-                                editorInteraction.zoomToActualPixels()
-                                event.accepted = true
-                            } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+                            if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
                                 // Geometry: Enter leaves the panel for Tone.
                                 if (typeof adjustmentStack.returnFromGeometryToTone === "function"
                                         && adjustmentStack.returnFromGeometryToTone()) {
@@ -1115,6 +1109,27 @@ Item {
     // transient Mask mode finishes.
     readonly property bool maskEditScopeActive: !!(root.maskCreation
                                                  && root.maskCreation.maskControlsActive)
+
+    readonly property string viewportShortcutScope: viewportInteractionLayer.activeFocus
+                                                    ? "editor.viewport" : ""
+    readonly property bool viewportShortcutsAllowed: root.viewportInputEnabled
+                                                     && !root.lockedNodeMaskPromptVisible
+                                                     && (!root.host
+                                                         || root.host.photoShortcutInputBlocked !== true)
+
+    RegisteredShortcut {
+        commandId: "editor.zoomToActualPixels"
+        activeScope: root.viewportShortcutScope
+        commandEnabled: root.viewportShortcutsAllowed
+        onActivated: editorInteraction.zoomToActualPixels()
+    }
+
+    RegisteredShortcut {
+        commandId: "editor.resetView"
+        activeScope: root.viewportShortcutScope
+        commandEnabled: root.viewportShortcutsAllowed
+        onActivated: editorInteraction.resetView()
+    }
 
     RegisteredShortcut {
         objectName: "maskFinishEditShortcut"

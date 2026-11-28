@@ -947,6 +947,7 @@ set(ALCEDO_MAIN_QML_FILES
     "${ALCEDO_UI_SHELL_ROOT}/qml/BrowserViewModeToggle.qml"
     "${ALCEDO_UI_SHELL_ROOT}/qml/BrowserPreviewThumb.qml"
     "${ALCEDO_UI_SHELL_ROOT}/qml/EditorRailButton.qml"
+    "${ALCEDO_UI_SHELL_ROOT}/qml/PhotoRatingShortcuts.qml"
     "${ALCEDO_UI_SHELL_ROOT}/qml/RegisteredShortcut.qml"
     "${ALCEDO_UI_SHELL_ROOT}/qml/SlidingIconNav.qml"
     "${ALCEDO_UI_SHELL_ROOT}/qml/CollapsibleSection.qml"

@@ -414,10 +414,10 @@ TEST(ShortcutSettingsQmlTest, RegistryRowsAppearInStableGroups) {
   ASSERT_FALSE(expected_commands.empty());
   // The registered catalog starts with the known group sequence.
   EXPECT_EQ(expected_groups,
-            (QStringList{RegistryText("Library"), RegistryText("Editor"),
+            (QStringList{RegistryText("Library"), RegistryText("Editor"), RegistryText("Photo Ratings"),
                          RegistryText("Filmstrip"), RegistryText("Versions"),
                          RegistryText("LUT"), RegistryText("Masks"),
-                         RegistryText("Nodes")}));
+                         RegistryText("Comparison"), RegistryText("Nodes")}));
 
   const auto headers =
       harness.window_->findChildren<QQuickItem*>(QStringLiteral("shortcutGroupHeader"));

@@ -2,16 +2,19 @@
 //  SPDX-License-Identifier: GPL-3.0-only
 //  Additional permission under GPLv3 section 7 applies; see the LICENSE file.
 
-// Phase A2: RegisteredShortcut.qml binds a window-context Shortcut to one
+// RegisteredShortcut.qml binds a window-context Shortcut to one
 // ShortcutRegistry command. This harness loads the component from its source
-// file directly (no application shell boot) and verifies scope gating,
+// file directly (no application shell boot) and verifies scope matching,
 // editable-focus suppression, live rebinding, and auto-repeat resolution.
 
 #include <gtest/gtest.h>
 
 #include <QCoreApplication>
 #include <QEventLoop>
+#include <QKeyEvent>
+#include <QObject>
 #include <QQmlApplicationEngine>
+#include <QQmlComponent>
 #include <QQmlContext>
 #include <QQmlError>
 #include <QQuickItem>
@@ -23,7 +26,10 @@
 #include <QTest>
 #include <QTimer>
 #include <QUrl>
+#include <QVariant>
+#include <QVariantMap>
 #include <filesystem>
+#include <memory>
 
 #include "ui/alcedo_main/shortcut_registry.hpp"
 
@@ -240,14 +246,14 @@ TEST(RegisteredShortcutQmlTest, EditableFocusSuppressesActivation) {
   ASSERT_NE(field, nullptr);
   harness.FocusTextField();
 
-  // Suppressed: the command's enabled gate closes and the field keeps the
+  // The text field keeps the
   // native Ctrl+A (select-all) behavior.
   EXPECT_FALSE(shortcut->property("shortcutEnabled").toBool());
   harness.ClickA();
   EXPECT_EQ(harness.window_->property("activations").toInt(), 0);
   EXPECT_EQ(field->property("selectedText").toString(), QStringLiteral("sample text"));
 
-  // Suppression off: the enabled gate opens again; the command still fires
+  // With editing suppression disabled, the command fires
   // once a non-editable item owns focus.
   harness.window_->setProperty("testedSuppress", false);
   ProcessEvents();
@@ -307,5 +313,191 @@ TEST(RegisteredShortcutQmlTest, AutoRepeatFollowsCommandSpec) {
   EXPECT_TRUE(shortcut->property("autoRepeat").toBool());
 }
 
+class RatingRequestProbe final : public QObject {
+  Q_OBJECT
+
+ public:
+  Q_INVOKABLE QVariantMap RateSelectionAsUser(int rating) {
+    ratings.append(rating);
+    if (busy) {
+      return {{"success", false}, {"message", QStringLiteral("Ratings are still being saved.")}};
+    }
+    return {{"success", true}, {"batch", false}, {"elementId", 1}, {"rating", rating}};
+  }
+
+  bool         busy = false;
+  QVariantList ratings;
+
+ signals:
+  void deleteTargetsFinished(const QVariantMap& result);
+};
+
+constexpr auto kModules = R"QML(
+import QtQml
+QtObject {
+    property var workspaceRouter: null
+    property var editorSession: null
+    property var interactionPolicy: null
+    property var images: null
+    property QtObject library: QtObject { property var thumbnailModel: null }
+    property var libraryMutations: ratingRequestProbe
+}
+)QML";
+
+constexpr auto kWindow  = R"QML(
+import QtQuick
+import QtQuick.Controls.Basic
+import "__QML_DIR__"
+
+ApplicationWindow {
+    id: root
+    width: 300
+    height: 200
+    visible: true
+    property string workspace: "library"
+    property bool hasTarget: true
+    property bool recording: false
+    property string notice: ""
+    property int noticeCount: 0
+    function showSnackbar(message) {
+        root.notice = message
+        root.noticeCount += 1
+    }
+    function openDialog() { popup.open() }
+    function closeDialog() { popup.close() }
+
+    Dialog {
+        id: popup
+        modal: true
+        focus: true
+    }
+    Item {
+        objectName: "photoFocus"
+        focus: true
+    }
+    TextField { objectName: "textField"; width: 100 }
+    SpinBox { objectName: "numericField"; x: 100; editable: true }
+    ImageActionsController { id: actions; host: root }
+    PhotoRatingShortcuts {
+        workspace: root.workspace
+        inputAvailable: root.hasTarget && !popup.visible && !root.recording
+        onRatingRequested: rating => actions.requestSetSelectionRating(rating)
+    }
+}
+)QML";
+
+class PhotoRatingShortcutQmlTest : public testing::Test {
+ protected:
+  void SetUp() override {
+    ASSERT_TRUE(settings_dir_.isValid());
+    QSettings::setDefaultFormat(QSettings::IniFormat);
+    QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, settings_dir_.path());
+    QCoreApplication::setOrganizationName(QStringLiteral("AlcedoTests"));
+    QCoreApplication::setApplicationName(QStringLiteral("PhotoRatingShortcutQmlTest"));
+    QQuickStyle::setStyle(QStringLiteral("Basic"));
+    RegisterShortcutRegistryQmlType();
+    engine_.addImportPath(QStringLiteral(ALCEDO_QT_QML_IMPORT_PATH));
+    engine_.rootContext()->setContextProperty(QStringLiteral("ratingRequestProbe"), &probe_);
+    QObject::connect(&engine_, &QQmlEngine::warnings, [this](const QList<QQmlError>& warnings) {
+      for (const auto& warning : warnings) {
+        warnings_.append(warning.toString());
+      }
+    });
+    QQmlComponent modules(&engine_);
+    modules.setData(kModules, QUrl(QStringLiteral("file:///PhotoRatingModules.qml")));
+    modules_.reset(modules.create());
+    ASSERT_NE(modules_, nullptr) << modules.errorString().toStdString();
+    engine_.rootContext()->setContextProperty(QStringLiteral("appModules"), modules_.get());
+    QByteArray qml(kWindow);
+    qml.replace(
+        "__QML_DIR__",
+        QUrl::fromLocalFile(QStringLiteral(ALCEDO_TEST_SRC_DIR "/ui/alcedo_main/qml")).toEncoded());
+    engine_.loadData(qml, QUrl(QStringLiteral("file:///PhotoRatingWindow.qml")));
+    ASSERT_FALSE(engine_.rootObjects().isEmpty()) << warnings_.join('\n').toStdString();
+    window_ = qobject_cast<QQuickWindow*>(engine_.rootObjects().front());
+    ASSERT_NE(window_, nullptr);
+    window_->show();
+    window_->requestActivate();
+    QCoreApplication::processEvents();
+    ASSERT_TRUE(warnings_.isEmpty()) << warnings_.join('\n').toStdString();
+  }
+
+  void Click(Qt::Key key, Qt::KeyboardModifiers modifiers = Qt::NoModifier) {
+    QTest::keyClick(window_, key, modifiers);
+    QCoreApplication::processEvents();
+  }
+
+  void Focus(const QString& name) {
+    auto* item = window_->findChild<QQuickItem*>(name);
+    ASSERT_NE(item, nullptr);
+    item->forceActiveFocus();
+    QCoreApplication::processEvents();
+  }
+
+  QTemporaryDir            settings_dir_;
+  QStringList              warnings_;
+  RatingRequestProbe       probe_;
+  std::unique_ptr<QObject> modules_;
+  QQmlApplicationEngine    engine_;
+  QQuickWindow*            window_ = nullptr;
+};
+
+TEST_F(PhotoRatingShortcutQmlTest, DigitShortcutsSetAbsoluteRatingsOnceInBothWorkspaces) {
+  for (const QString& workspace : {QStringLiteral("library"), QStringLiteral("editor")}) {
+    window_->setProperty("workspace", workspace);
+    Focus(QStringLiteral("photoFocus"));
+    for (int rating = 0; rating <= 5; ++rating) {
+      Click(static_cast<Qt::Key>(Qt::Key_0 + rating));
+    }
+    Click(Qt::Key_3, Qt::KeypadModifier);
+    QKeyEvent repeat(QEvent::KeyPress, Qt::Key_3, Qt::NoModifier, QStringLiteral("3"), true);
+    QCoreApplication::sendEvent(window_, &repeat);
+  }
+  const QVariantList expected{0, 1, 2, 3, 4, 5, 3, 0, 1, 2, 3, 4, 5, 3};
+  ASSERT_EQ(probe_.ratings, expected);
+  window_->setProperty("hasTarget", false);
+  Click(Qt::Key_4);
+  window_->setProperty("hasTarget", true);
+  window_->setProperty("workspace", QStringLiteral("welcome"));
+  Click(Qt::Key_4);
+  EXPECT_EQ(probe_.ratings, expected);
+}
+
+TEST_F(PhotoRatingShortcutQmlTest, EditableFocusAndOpenDialogsKeepDigits) {
+  Focus(QStringLiteral("textField"));
+  Click(Qt::Key_3);
+  auto* text = window_->findChild<QQuickItem*>(QStringLiteral("textField"));
+  ASSERT_NE(text, nullptr);
+  EXPECT_EQ(text->property("text").toString(), QStringLiteral("3"));
+  Focus(QStringLiteral("numericField"));
+  Click(Qt::Key_2);
+  EXPECT_TRUE(probe_.ratings.isEmpty());
+  Focus(QStringLiteral("photoFocus"));
+  ASSERT_TRUE(QMetaObject::invokeMethod(window_, "openDialog"));
+  Click(Qt::Key_4);
+  ASSERT_TRUE(QMetaObject::invokeMethod(window_, "closeDialog"));
+  Focus(QStringLiteral("photoFocus"));
+  window_->setProperty("recording", true);
+  Click(Qt::Key_5);
+  EXPECT_TRUE(probe_.ratings.isEmpty());
+  window_->setProperty("recording", false);
+  Click(Qt::Key_5);
+  EXPECT_EQ(probe_.ratings, QVariantList{5});
+}
+
+TEST_F(PhotoRatingShortcutQmlTest, BusyRatingReportsReasonWithoutResubmitting) {
+  probe_.busy = true;
+  Click(Qt::Key_2);
+  EXPECT_EQ(probe_.ratings, QVariantList{2});
+  EXPECT_EQ(window_->property("notice").toString(),
+            QStringLiteral("Ratings are still being saved."));
+  EXPECT_EQ(window_->property("noticeCount").toInt(), 1);
+  probe_.busy = false;
+  QCoreApplication::processEvents();
+  EXPECT_EQ(probe_.ratings, QVariantList{2});
+}
+
 }  // namespace
 }  // namespace alcedo::ui::test
+
+#include "registered_shortcut_qml_test.moc"

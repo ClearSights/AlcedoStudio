@@ -7012,4 +7012,43 @@ CLIP / SigLIP 这类视觉语言模型会把图像和文字映射到同一语义
         </translation>
     </message>
 </context>
+<context>
+    <name>ShortcutRegistry</name>
+    <message>
+        <source>Photo Ratings</source>
+        <translation>Photo Ratings</translation>
+    </message>
+    <message>
+        <source>Clear rating</source>
+        <translation>Clear rating</translation>
+    </message>
+    <message>
+        <source>Set rating to 1 star</source>
+        <translation>Set rating to 1 star</translation>
+    </message>
+    <message>
+        <source>Set rating to 2 stars</source>
+        <translation>Set rating to 2 stars</translation>
+    </message>
+    <message>
+        <source>Set rating to 3 stars</source>
+        <translation>Set rating to 3 stars</translation>
+    </message>
+    <message>
+        <source>Set rating to 4 stars</source>
+        <translation>Set rating to 4 stars</translation>
+    </message>
+    <message>
+        <source>Set rating to 5 stars</source>
+        <translation>Set rating to 5 stars</translation>
+    </message>
+    <message>
+        <source>Zoom to actual pixels</source>
+        <translation>Zoom to actual pixels</translation>
+    </message>
+    <message>
+        <source>Reset view</source>
+        <translation>Reset view</translation>
+    </message>
+</context>
 </TS>

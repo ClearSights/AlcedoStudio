@@ -71,6 +71,11 @@ class LibraryMutationOperations final : public QObject {
   /// RateTargets directly.
   Q_INVOKABLE QVariantMap  StartDeleteTargetsAsUser(const QVariantList& targets);
   Q_INVOKABLE QVariantMap  RateTargetsAsUser(const QVariantList& targets, int rating);
+
+  /// On the UI thread, rate the current selection or the open Editor photo if selection is empty.
+  /// Accepts 0 through 5. A single write returns its element ID. A batch returns its task result.
+  /// Refusals return the owner's message without starting a write.
+  Q_INVOKABLE QVariantMap RateSelectionAsUser(int rating);
   /// Sets (@p on) or clears the color label @p code (0 to 6) on every image of @p targets
   /// through ImageController::StartSetImageColorLabel and returns its result (started, taskId,
   /// message). ImageController::ImageMarksFinished reports the write.

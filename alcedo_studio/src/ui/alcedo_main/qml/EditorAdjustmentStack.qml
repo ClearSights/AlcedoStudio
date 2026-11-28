@@ -19,6 +19,7 @@ import Alcedo.Main 1.0
 // works if session is assigned before StackLayout children exist.
 Item {
     id: root
+    readonly property bool lockedNodeMaskPromptVisible: adjustmentHeader.lockedNodeMaskPromptVisible
     objectName: "editorAdjustmentStack"
 
     property var theme: null
