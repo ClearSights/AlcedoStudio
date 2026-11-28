@@ -203,6 +203,7 @@ auto EditorActionPolicy::ActionForCommand(EditorSessionCommandKind kind)
     case EditorSessionCommandKind::CommitAdjustment:
     case EditorSessionCommandKind::RenameColorGrade:
     case EditorSessionCommandKind::SetColorGradeDeletionProtected:
+    case EditorSessionCommandKind::SetColorGradeEnabled:
     case EditorSessionCommandKind::EditNodeGraph:
     case EditorSessionCommandKind::InsertColorGradeAtTop:
     case EditorSessionCommandKind::RemoveColorGradeAndBridge:
@@ -246,6 +247,7 @@ auto EditorActionPolicy::ActionForCommand(EditorSessionCommandKind kind)
     case EditorSessionCommandKind::RenderPreviewImages:
     case EditorSessionCommandKind::RenderAiMaskAnalysisImage:
     case EditorSessionCommandKind::RenderLutPreview:
+    case EditorSessionCommandKind::RenderPresetPreview:
       return std::nullopt;
     // The AI Mask edit commands evaluate CommitAdjustment admission on the owner themselves, so
     // that a refused Open still reaches its completion and Commit ignores its own lease.
@@ -269,7 +271,7 @@ auto EditorActionPolicy::ActionForCommand(EditorSessionCommandKind kind)
     case EditorSessionCommandKind::SetPresentationSize:
     case EditorSessionCommandKind::SetGeometryOverlay:
     case EditorSessionCommandKind::SetPresentationSuspended:
-    case EditorSessionCommandKind::SetSuspendedForExport:
+    case EditorSessionCommandKind::SetSuspendedForGpuRelease:
     case EditorSessionCommandKind::SetAdjustmentProjectionNode:
       return std::nullopt;
   }

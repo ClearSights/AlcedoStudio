@@ -5,27 +5,55 @@
 #include <gtest/gtest.h>
 
 #include <QString>
+#include <algorithm>
 #include <chrono>
 #include <filesystem>
 #include <format>
 #include <fstream>
 #include <future>
 #include <memory>
+#include <span>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 
 #include "app/import_service.hpp"
+#include "app/mount_tree.hpp"
 #include "app/project_package_backend.hpp"
+#include "app/sleeve_service.hpp"
 #include "image/color_label.hpp"
 #include "image/image.hpp"
 #include "json.hpp"
+#include "sleeve/sleeve_element/sleeve_folder.hpp"
+#include "storage/store/mount/mount_store.hpp"
 #include "support/non_raw_import_files.hpp"
 #include "support/photo_stack_test_library.hpp"
 #include "support/storage_invariants.hpp"
+#include "type/mount_records.hpp"
+#include "type/source_file_record.hpp"
+#include "type/type.hpp"
 
 namespace alcedo {
 namespace {
-class PhotoStackPackageTest : public test::PhotoStackProjectTest {};
+class PhotoStackPackageTest : public test::PhotoStackProjectTest {
+ protected:
+  void ReopenWithPreStackSchema(std::string_view version) {
+    project->SaveProject(meta_path);
+    Execute("DROP INDEX idx_photo_stack_member_stack");
+    Execute("DROP TABLE PhotoStackMember");
+    Execute("DROP TABLE PhotoStack");
+    auto metadata = nlohmann::json::parse(std::ifstream(meta_path, std::ios::binary));
+    metadata["project_file_version"] = std::string(version);
+    metadata["project_file_max_supported_version"] = std::string(version);
+    metadata["data_summary"]["tables"].erase("PhotoStack");
+    metadata["data_summary"]["tables"].erase("PhotoStackMember");
+    {
+      std::ofstream out(meta_path, std::ios::binary | std::ios::trunc);
+      out << metadata.dump(2);
+    }
+    Reopen();
+  }
+};
 
 TEST_F(PhotoStackPackageTest, Version011ProjectGainsEmptyStackTablesAndKeepsRootIds) {
   const auto roots = TextRows("SELECT root_id FROM PipelineRoot ORDER BY element_id");
@@ -36,20 +64,7 @@ TEST_F(PhotoStackPackageTest, Version011ProjectGainsEmptyStackTablesAndKeepsRoot
     image->SetDeleteMark(true);
   });
   ASSERT_TRUE(project->GetImagePoolService()->SyncWithStorage().failed_images_.empty());
-  project->SaveProject(meta_path);
-  Execute("DROP INDEX idx_photo_stack_member_stack");
-  Execute("DROP TABLE PhotoStackMember");
-  Execute("DROP TABLE PhotoStack");
-  project.reset();
-  auto metadata = nlohmann::json::parse(std::ifstream(meta_path, std::ios::binary));
-  metadata["project_file_version"] = "0.11.0";
-  metadata["data_summary"]["tables"].erase("PhotoStack");
-  metadata["data_summary"]["tables"].erase("PhotoStackMember");
-  {
-    std::ofstream out(meta_path, std::ios::binary | std::ios::trunc);
-    out << metadata.dump(2);
-  }
-  project = std::make_shared<ProjectService>(db_path, meta_path, ProjectOpenMode::kLoadExisting);
+  ReopenWithPreStackSchema("0.11.0");
   EXPECT_TRUE(StackRows().empty());
   EXPECT_EQ(TextRows("SELECT root_id FROM PipelineRoot ORDER BY element_id"), roots);
   const auto rows = project->GetAlbumBrowseService()->ReadAlbumFileRows(files);
@@ -59,10 +74,75 @@ TEST_F(PhotoStackPackageTest, Version011ProjectGainsEmptyStackTablesAndKeepsRoot
   project->SaveProject(meta_path);
   EXPECT_EQ(
       nlohmann::json::parse(std::ifstream(meta_path, std::ios::binary)).at("project_file_version"),
-      "0.12.0");
+      "0.16.0");
   Reopen();
   EXPECT_TRUE(StackRows().empty());
   test::ExpectStorageInvariants(*project->GetStorage());
+}
+
+TEST_F(PhotoStackPackageTest, Version012ProjectGainsEmptyStackTablesAndKeepsMountedFiles) {
+  constexpr mount_id_t mount_id = 1;
+  const auto [root, root_sync] =
+      project->GetSleeveService()->CreateMountRootFolder(L"Mounted", mount_id);
+  ASSERT_TRUE(root_sync.success_) << root_sync.message_;
+  MountTreeChanges changes;
+  changes.mount_id = mount_id;
+  changes.root_folder_id = root->element_id_;
+  changes.placements.push_back({files[0], L"", L"stack0.jpg"});
+  const auto sync = project->GetSleeveService()->ApplyMountTreeChanges(changes);
+  ASSERT_TRUE(sync.success_) << sync.message_;
+  const MountRootRecord mount{.id = mount_id, .root_folder_id = changes.root_folder_id,
+                              .root_path = temp / "Mounted"};
+  const SourceFileRecord source{.element_id = files[0], .byte_size = 42,
+                                 .fingerprint_version = 1};
+  project->GetStorage()->GetMountStore().InsertMountRoot(mount);
+  project->GetStorage()->GetMountStore().UpsertSourceFiles(std::span(&source, 1));
+
+  ReopenWithPreStackSchema("0.12.0");
+
+  EXPECT_TRUE(StackRows().empty());
+  EXPECT_EQ(project->GetStorage()->GetMountStore().ReadMountRoots(),
+            std::vector<MountRootRecord>{mount});
+  EXPECT_EQ(project->GetStorage()->GetMountStore().ReadSourceFile(files[0]), source);
+  project->GetSleeveService()->Read<void>([&](FileSystem& fs) {
+    EXPECT_EQ(fs.Get(files[0])->mount_id_, mount_id);
+    EXPECT_EQ(fs.ListFileIds(root->element_id_), Files({0}));
+  });
+  test::ExpectStorageInvariants(*project->GetStorage());
+}
+
+TEST_F(PhotoStackPackageTest, Version013ProjectKeepsStackMembershipOnSave) {
+  Create({2, 0, 1}, 0);
+  const auto before = StackRows();
+  project->SaveProject(meta_path);
+  auto metadata = nlohmann::json::parse(std::ifstream(meta_path, std::ios::binary));
+  metadata["project_file_version"] = "0.13.0";
+  metadata["project_file_max_supported_version"] = "0.13.0";
+  {
+    std::ofstream out(meta_path, std::ios::binary | std::ios::trunc);
+    out << metadata.dump(2);
+  }
+  Reopen();
+  EXPECT_EQ(StackRows(), before);
+  project->SaveProject(meta_path);
+  EXPECT_EQ(
+      nlohmann::json::parse(std::ifstream(meta_path, std::ios::binary)).at("project_file_version"),
+      "0.16.0");
+}
+
+TEST_F(PhotoStackPackageTest, Version015ProjectKeepsDuplicateFileNamesAndGainsStackTables) {
+  const auto [same_name, result] = project->GetSleeveService()->CreateFileInLibrary(L"stack0.jpg");
+  ASSERT_TRUE(result.success_) << result.message_;
+  const auto same_name_id = same_name->element_id_;
+  ReopenWithPreStackSchema("0.15.0");
+  EXPECT_TRUE(StackRows().empty());
+  project->GetSleeveService()->Read<void>([&](FileSystem& fs) {
+    EXPECT_EQ(fs.Get(files[0])->element_name_, L"stack0.jpg");
+    EXPECT_EQ(fs.Get(same_name_id)->element_name_, L"stack0.jpg");
+    const auto ids = fs.ListFileIds(kLibraryRootFolderId);
+    EXPECT_NE(std::find(ids.begin(), ids.end(), files[0]), ids.end());
+    EXPECT_NE(std::find(ids.begin(), ids.end(), same_name_id), ids.end());
+  });
 }
 
 TEST_F(PhotoStackPackageTest, PackagedProjectReopensWithExactStackMembershipAndCover) {

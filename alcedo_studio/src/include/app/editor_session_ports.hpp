@@ -139,6 +139,16 @@ class IEditorHistoryPort {
     if (error) *error = "Color Grade deletion protection is not supported by this history port";
     return false;
   }
+  /// Show or hide one Color Grade as one history commit that publishes a render reason.
+  /// Equal values succeed without a commit and clear the render reason. @p changed reports
+  /// an effective commit, or false on no-op/failure. Default rejects.
+  virtual auto SetColorGradeEnabled(const EditorHistoryGuardHandle& /*guard*/,
+                                    const NodeId& /*node_id*/, bool /*enabled*/,
+                                    std::string* error, bool* changed = nullptr) -> bool {
+    if (changed) *changed = false;
+    if (error) *error = "Color Grade visibility is not supported by this history port";
+    return false;
+  }
   /// Insert one clean Color Grade at the top of the Mask Groups stack,
   /// directly before DRT/Post, as one typed history commit. The current
   /// predecessor of DRT/Post must equal @p expected_predecessor_id; a mismatch
@@ -340,6 +350,31 @@ class IEditorHistoryPort {
       std::string* error) -> bool {
     if (error != nullptr) {
       *error = "The LUT preview document is not supported by this history port";
+    }
+    return false;
+  }
+
+  /**
+   * @brief Build the frozen preset browser preview document of the held image without changing
+   *        its history (BuildPresetPreviewDocument, edit presets plan 2.4).
+   *
+   * Replays the immutable root, applies @p package with the Paste planner, and gives the result
+   * the sensor settings of @p captured_current. Moves no head, writes no commit, WAL record, or
+   * checkpoint, and does not touch the working document, its dirty state, or the published
+   * previews. Session owner thread.
+   *
+   * @param captured_current Preview of the working values. It must belong to the held image and to
+   *        the lineage of its working document.
+   * @return true with @p preview set; false with @p error set and @p preview unchanged. Default
+   *         ports reject.
+   */
+  virtual auto BuildPresetPreviewDocument(
+      const EditorHistoryGuardHandle& /*guard*/,
+      const std::shared_ptr<const PipelineGraphSnapshot>& /*captured_current*/,
+      const AdjustmentTransferPackage& /*package*/,
+      std::shared_ptr<const PipelineGraphSnapshot>* /*preview*/, std::string* error) -> bool {
+    if (error != nullptr) {
+      *error = "The preset preview document is not supported by this history port";
     }
     return false;
   }

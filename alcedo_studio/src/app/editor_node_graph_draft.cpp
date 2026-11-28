@@ -5,6 +5,7 @@
 #include "app/editor_node_graph_draft.hpp"
 
 #include <algorithm>
+#include <cstdint>
 #include <stdexcept>
 #include <type_traits>
 #include <unordered_set>
@@ -30,7 +31,7 @@ auto MaxInsertedNameNumber(const std::map<NodeId, nlohmann::json>& inserted,
     }
     try {
       const auto number = std::stoull(name.substr(prefix.size()));
-      max_inserted      = std::max(max_inserted, number + 1);
+      max_inserted      = std::max<std::uint64_t>(max_inserted, number + 1);
     } catch (...) {
     }
   }
@@ -161,7 +162,7 @@ auto EditorNodeGraphDraft::NodeJson(const NodeId& node_id) const -> const nlohma
   return &it->second;
 }
 
-auto EditorNodeGraphDraft::DetachedNodeIds() const -> std::vector<NodeId> {
+auto EditorNodeGraphDraft::UnfinishedNodeIds() const -> std::vector<NodeId> {
   const EditorNodeProjection* develop = nullptr;
   const EditorNodeProjection* drt     = nullptr;
   for (const auto& node : nodes_) {
@@ -189,13 +190,24 @@ auto EditorNodeGraphDraft::DetachedNodeIds() const -> std::vector<NodeId> {
       current = edge->destination_node_id;
     }
   }
-  std::vector<NodeId> detached;
+  std::vector<NodeId> unfinished;
   for (const auto& node : nodes_) {
-    if (!on_path.contains(std::string{node.node_id.Value()})) {
-      detached.push_back(node.node_id);
+    if (on_path.contains(std::string{node.node_id.Value()}) || IsDetachedColorGrade(node)) {
+      continue;
     }
+    unfinished.push_back(node.node_id);
   }
-  return detached;
+  return unfinished;
+}
+
+auto EditorNodeGraphDraft::IsDetachedColorGrade(const EditorNodeProjection& node) const -> bool {
+  if (node.node_kind != EditorNodeKind::ColorGrade) {
+    return false;
+  }
+  const auto out = outgoing_.find(node.node_id);
+  const auto in  = incoming_.find(node.node_id);
+  return (out == outgoing_.end() || !out->second.has_value()) &&
+         (in == incoming_.end() || !in->second.has_value());
 }
 
 auto EditorNodeGraphDraft::FindEdgeIndex(const std::string& key) const
@@ -683,9 +695,13 @@ auto EditorNodeGraphDraft::ComputeSubmissionValid() -> bool {
     return false;
   }
   for (const auto& node : nodes_) {
-    if (node.node_kind == EditorNodeKind::ColorGrade &&
-        !on_path.contains(std::string{node.node_id.Value()})) {
-      return false;
+    const bool on_backbone = on_path.contains(std::string{node.node_id.Value()});
+    if (node.node_kind == EditorNodeKind::ColorGrade && !on_backbone) {
+      // A detached Color Grade (no edge at either end) is valid; a half-connected one is not.
+      if (incoming_count[node.node_id] != 0 || outgoing_count[node.node_id] != 0) {
+        return false;
+      }
+      continue;
     }
     if (node.node_kind != EditorNodeKind::Develop && incoming_count[node.node_id] != 1) {
       return false;

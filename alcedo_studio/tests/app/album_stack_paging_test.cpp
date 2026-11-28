@@ -20,13 +20,14 @@
 
 #include "sleeve/sleeve_filesystem.hpp"
 #include "support/album_stack_test_library.hpp"
+#include "type/album_scope.hpp"
 
 namespace alcedo {
 namespace {
 class AlbumStackPagingTest : public test::AlbumStackTestLibrary {
  protected:
   auto Page(const AlbumQueryOptions& options, std::span<const AlbumStackFragmentKey> expanded,
-            sl_element_id_t folder = 0, int64_t offset = 0, int64_t limit = 1000,
+            AlbumScope folder = {}, int64_t offset = 0, int64_t limit = 1000,
             const std::optional<FilterNode>&             filter    = std::nullopt,
             const std::optional<SemanticQueryEmbedding>& relevance = std::nullopt)
       -> AlbumQueryResult {
@@ -50,6 +51,35 @@ class AlbumStackPagingTest : public test::AlbumStackTestLibrary {
         folder, filter, options, model, expanded, file, preferred);
   }
 };
+
+TEST_F(AlbumStackPagingTest, LibraryRootKeepsItsStackFragmentSeparateFromAllPhotos) {
+  ASSERT_TRUE(project->GetSleeveService()->DeleteFileFromFolder(files[2], scope).success_);
+  ASSERT_TRUE(project->GetSleeveService()->DeleteFileFromFolder(files[3], scope).success_);
+  const auto root_scope = AlbumScope::LibraryRoot();
+  const auto all_photos = Page({}, {});
+  const auto root       = Page({}, {}, root_scope);
+  const auto fragment   = [](const AlbumQueryResult& result) {
+    return std::find_if(result.display_rows.begin(), result.display_rows.end(), [](const auto& row) {
+      return row.identity.kind == AlbumDisplayKind::kStackRepresentative;
+    });
+  };
+  const auto all_stack  = fragment(all_photos);
+  const auto root_stack = fragment(root);
+  ASSERT_NE(all_stack, all_photos.display_rows.end());
+  ASSERT_NE(root_stack, root.display_rows.end());
+  const auto& all_key  = all_stack->identity.fragment;
+  const auto& root_key = root_stack->identity.fragment;
+  EXPECT_EQ(all_key.scope, AlbumScope{});
+  EXPECT_EQ(root_key.scope, root_scope);
+  EXPECT_NE(all_key, root_key);
+  EXPECT_EQ(root.unique_file_count_, 4);
+  EXPECT_EQ(root_stack->fragment_match_count, 2);
+  const auto browse = project->GetAlbumBrowseService();
+  EXPECT_EQ(browse->ReadAlbumMatchingFragmentIds(root_scope, {}, {}, model, root_key),
+            Files({2, 3}));
+  EXPECT_THROW((void)Page({}, std::span(&all_key, 1), root_scope), std::invalid_argument);
+  EXPECT_EQ(Page({}, std::span(&root_key, 1), root_scope).display_count, 4);
+}
 
 TEST_F(AlbumStackPagingTest, StackCrossingPageBoundariesKeepsOneRepresentativeAndExactMemberOrder) {
   ASSERT_TRUE(Stacks().SetCover(stack, files[2]).Changed());
@@ -314,7 +344,7 @@ TEST_F(AlbumStackPagingTest, DuplicateAbsentAndUnknownExpansionKeysStayScopedAnd
   EXPECT_EQ(position->identity, out.display_rows.back().identity);
   EXPECT_EQ(position->display_index, out.display_count - 1);
   auto wrong      = unknown;
-  wrong.folder_id = scope;
+  wrong.scope = scope;
   EXPECT_THROW((void)Page(options, std::vector{wrong}), std::invalid_argument);
   wrong             = unknown;
   wrong.group_field = AlbumGroupField::kNone;
