@@ -58,6 +58,7 @@ use their own top-level category.
 - [Editor Render Path Simplification Plan](alcedo_studio/ui/editor_render_path_simplification_plan.md)
 - [PR 93-176 Simplified Chinese UI Translation Plan](alcedo_studio/ui/pr_93_176_simplified_chinese_ui_translation_plan.md)
 - [Configurable Keyboard Shortcut Registry Plan](alcedo_studio/ui/configurable_keyboard_shortcut_registry_plan.md)
+- [Photo Rating Shortcuts](alcedo_studio/ui/photo_rating_shortcuts_design.md)
 - [QML Editor and Qt RHI Unified Workspace Refactor Plan](alcedo_studio/ui/qml_editor_rhi_unified_workspace_plan.md)
 - [Editor Single Live Pipeline + WAL + Checkpoint Simplification Plan](alcedo_studio/ui/editor_single_live_pipeline_wal_checkpoint_plan.md)
   (includes **Final locked identity model**: history owns HEAD; pipeline = params table; chain hash unit = one commit)
